@@ -3,8 +3,7 @@ package ui
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -17,10 +16,20 @@ import (
 )
 
 const (
-	viewRepo   = 0
-	viewStatus = 1
-	viewLog    = 2
+	viewProjects = 0
+	viewDetail   = 1
+	viewLog      = 2
 )
+
+const (
+	tabOverview = 0
+	tabSpecs    = 1
+	tabChanges  = 2
+	tabConfig   = 3
+	tabSearch   = 4
+)
+
+var tabNames = []string{"overview", "specs", "changes", "config", "search"}
 
 // Message types
 
@@ -44,24 +53,12 @@ func (w logWriter) Write(p []byte) (n int, err error) {
 // Styles
 
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Padding(0, 1)
-
 	selectedStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("2")). // green
 			Foreground(lipgloss.Color("0")). // black
 			Width(0)                         // set dynamically
 
 	normalStyle = lipgloss.NewStyle()
-
-	activeBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("2")) // green
-
-	inactiveBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("240")) // gray
 
 	modalStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -77,6 +74,28 @@ var (
 			Background(lipgloss.Color("236")).
 			Foreground(lipgloss.Color("2")).
 			Bold(true)
+
+	headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("4")) // blue
+
+	activeTabStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("2")).
+			Foreground(lipgloss.Color("0")).
+			Bold(true).
+			Padding(0, 1)
+
+	inactiveTabStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("236")).
+				Foreground(lipgloss.Color("250")).
+				Padding(0, 1)
+
+	sectionHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("3")) // yellow
+
+	dimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("250"))
 )
 
 type model struct {
@@ -84,14 +103,16 @@ type model struct {
 	ignoreDirErrors bool
 	projects        scanner.ProjectMap
 	repoPaths       []string
+	displayNames    []string
 	cursor          int
 	activeView      int
 	scanning        bool
 	err             error
 	spinner         spinner.Model
-	statusViewport  viewport.Model
+	detailViewport  viewport.Model
 	logViewport     viewport.Model
 	logContent      string
+	detailTab       int
 	fileCursor      int
 	filePaths       []string
 	logVisible      bool
@@ -100,7 +121,6 @@ type model struct {
 	width           int
 	height          int
 	program         *tea.Program
-	inTmux          bool
 	version         string
 }
 
@@ -112,10 +132,9 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		config:          config,
 		ignoreDirErrors: ignoreDirErrors,
 		scanning:        true,
-		inTmux:          os.Getenv("TMUX") != "",
 		version:         version,
 		spinner:         s,
-		statusViewport:  viewport.New(0, 0),
+		detailViewport:  viewport.New(0, 0),
 		logViewport:     viewport.New(0, 0),
 	}
 }
@@ -150,16 +169,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Handle pending 'g' chord
 		key := msg.String()
 		if m.pendingKey == "g" {
 			m.pendingKey = ""
 			if key == "g" {
 				switch m.activeView {
-				case viewRepo:
+				case viewProjects:
 					m.cursor = 0
 					m.updateFileList()
-				case viewStatus:
+				case viewDetail:
 					m.fileCursor = 0
 				case viewLog:
 					m.logViewport.GotoTop()
@@ -174,11 +192,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "s":
 			m.scanning = true
 			cmds = append(cmds, m.doScan())
-		case "enter":
-			cmd := m.doEdit()
-			if cmd != nil {
-				return m, cmd
-			}
 		case "l":
 			m.logVisible = !m.logVisible
 			if m.logVisible {
@@ -189,7 +202,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				if m.activeView == viewLog {
-					m.activeView = viewRepo
+					m.activeView = viewProjects
 				}
 				m.recalcLayout()
 			}
@@ -197,22 +210,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.logVisible {
 				m.activeView = (m.activeView + 1) % 3
 			} else {
-				if m.activeView == viewRepo {
-					m.activeView = viewStatus
+				if m.activeView == viewProjects {
+					m.activeView = viewDetail
 				} else {
-					m.activeView = viewRepo
+					m.activeView = viewProjects
 				}
 			}
 		case "g":
 			m.pendingKey = "g"
 		case "G":
 			switch m.activeView {
-			case viewRepo:
+			case viewProjects:
 				if len(m.repoPaths) > 0 {
 					m.cursor = len(m.repoPaths) - 1
 					m.updateFileList()
 				}
-			case viewStatus:
+			case viewDetail:
 				if len(m.filePaths) > 0 {
 					m.fileCursor = len(m.filePaths) - 1
 				}
@@ -222,10 +235,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "pgdown", "ctrl+f":
 			half := m.halfPage()
 			switch m.activeView {
-			case viewRepo:
+			case viewProjects:
 				m.cursor = min(m.cursor+half, len(m.repoPaths)-1)
 				m.updateFileList()
-			case viewStatus:
+			case viewDetail:
 				if len(m.filePaths) > 0 {
 					m.fileCursor = min(m.fileCursor+half, len(m.filePaths)-1)
 				}
@@ -235,23 +248,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "pgup", "ctrl+b":
 			half := m.halfPage()
 			switch m.activeView {
-			case viewRepo:
+			case viewProjects:
 				m.cursor = max(m.cursor-half, 0)
 				m.updateFileList()
-			case viewStatus:
+			case viewDetail:
 				if len(m.filePaths) > 0 {
 					m.fileCursor = max(m.fileCursor-half, 0)
 				}
 			case viewLog:
 				m.logViewport.LineUp(half)
 			}
+		case "left":
+			if m.activeView == viewDetail {
+				if m.detailTab > 0 {
+					m.detailTab--
+				}
+			}
+		case "right":
+			if m.activeView == viewDetail {
+				if m.detailTab < len(tabNames)-1 {
+					m.detailTab++
+				}
+			}
+		case "1":
+			if m.activeView == viewDetail {
+				m.detailTab = tabOverview
+			}
+		case "2":
+			if m.activeView == viewDetail {
+				m.detailTab = tabSpecs
+			}
+		case "3":
+			if m.activeView == viewDetail {
+				m.detailTab = tabChanges
+			}
+		case "4":
+			if m.activeView == viewDetail {
+				m.detailTab = tabConfig
+			}
+		case "5":
+			if m.activeView == viewDetail {
+				m.detailTab = tabSearch
+			}
 		case "up", "k":
-			if m.activeView == viewRepo {
+			if m.activeView == viewProjects {
 				if m.cursor > 0 {
 					m.cursor--
 					m.updateFileList()
 				}
-			} else if m.activeView == viewStatus {
+			} else if m.activeView == viewDetail {
 				if len(m.filePaths) > 0 && m.fileCursor > 0 {
 					m.fileCursor--
 				}
@@ -259,12 +304,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logViewport.LineUp(1)
 			}
 		case "down", "j":
-			if m.activeView == viewRepo {
+			if m.activeView == viewProjects {
 				if m.cursor < len(m.repoPaths)-1 {
 					m.cursor++
 					m.updateFileList()
 				}
-			} else if m.activeView == viewStatus {
+			} else if m.activeView == viewDetail {
 				if len(m.filePaths) > 0 && m.fileCursor < len(m.filePaths)-1 {
 					m.fileCursor++
 				}
@@ -284,6 +329,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.repoPaths = append(m.repoPaths, r)
 			}
 			sort.Strings(m.repoPaths)
+			m.displayNames = projectDisplayNames(m.repoPaths)
 			if m.cursor >= len(m.repoPaths) {
 				m.cursor = max(0, len(m.repoPaths)-1)
 			}
@@ -305,48 +351,72 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// projectDisplayNames returns basenames for each path, disambiguating duplicates
+// by appending the parent directory name.
+func projectDisplayNames(paths []string) []string {
+	names := make([]string, len(paths))
+	baseCounts := make(map[string]int)
+
+	for _, p := range paths {
+		base := filepath.Base(p)
+		baseCounts[base]++
+	}
+
+	for i, p := range paths {
+		base := filepath.Base(p)
+		if baseCounts[base] > 1 {
+			parent := filepath.Base(filepath.Dir(p))
+			names[i] = base + " (" + parent + ")"
+		} else {
+			names[i] = base
+		}
+	}
+	return names
+}
+
+func (m model) leftPanelWidth() int {
+	w := m.width * 3 / 10
+	if w < 20 {
+		w = 20
+	}
+	if w > 40 {
+		w = 40
+	}
+	return w
+}
+
+func (m model) rightPanelWidth() int {
+	return m.width - m.leftPanelWidth() - 1 // 1 for gap between panels
+}
+
 func (m *model) recalcLayout() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	innerWidth := m.width - 2
 
-	statusHeight := m.statusPanelHeight()
-	if statusHeight > 0 {
-		m.statusViewport.Width = innerWidth
-		m.statusViewport.Height = statusHeight
-	}
+	rightInner := m.rightPanelWidth() - 2 // border
+	panelH := m.mainPanelHeight()
+
+	m.detailViewport.Width = rightInner
+	m.detailViewport.Height = panelH
 
 	logHeight := m.logPanelHeight()
 	if logHeight > 0 {
-		m.logViewport.Width = innerWidth
+		m.logViewport.Width = m.width - 2
 		m.logViewport.Height = logHeight
 	}
 }
 
-func (m model) repoPanelHeight() int {
-	n := len(m.repoPaths)
-	if n == 0 {
-		n = 1
-	}
-	maxH := (m.height - 6) / 2
-	if n > maxH {
-		return maxH
-	}
-	return n
-}
-
-func (m model) statusPanelHeight() int {
-	repoH := m.repoPanelHeight() + 2
+func (m model) mainPanelHeight() int {
 	logH := m.logPanelHeight()
 	if logH > 0 {
-		logH += 2
+		logH += 2 // border
 	}
-	remaining := m.height - repoH - logH - 1
-	if remaining < 3 {
+	remaining := m.height - logH - 1 // -1 for nav bar
+	if remaining < 5 {
 		return 3
 	}
-	return remaining - 2
+	return remaining - 2 // -border
 }
 
 func (m model) logPanelHeight() int {
@@ -358,16 +428,15 @@ func (m model) logPanelHeight() int {
 
 func (m model) halfPage() int {
 	switch m.activeView {
-	case viewStatus:
-		return max(1, m.statusViewport.Height/2)
+	case viewDetail:
+		return max(1, m.mainPanelHeight()/2)
 	case viewLog:
 		return max(1, m.logViewport.Height/2)
 	default:
-		return max(1, m.repoPanelHeight()/2)
+		return max(1, m.mainPanelHeight()/2)
 	}
 }
 
-// updateFileList rebuilds the file list for the currently selected project.
 func (m *model) updateFileList() {
 	if len(m.repoPaths) == 0 {
 		m.filePaths = nil
@@ -398,69 +467,43 @@ func (m model) doScan() tea.Cmd {
 	}
 }
 
-func (m model) doEdit() tea.Cmd {
-	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
-		return nil
-	}
-	currentProject := m.repoPaths[m.cursor]
-	if currentProject == "" {
-		return nil
-	}
-
-	cmdStr := strings.Replace(m.config.EditCommand, "%WORKING_DIRECTORY", currentProject, -1)
-	if cmdStr == "" {
-		return nil
-	}
-
-	if m.inTmux {
-		return func() tea.Msg {
-			_ = exec.Command("tmux", "display-popup", "-E", "-w", "80%", "-h", "80%", "-d", currentProject).Run()
-			return nil
-		}
-	}
-
-	args := strings.Fields(cmdStr)
-	if len(args) == 0 {
-		return nil
-	}
-	c := exec.Command(args[0], args[1:]...)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return nil
-	})
-}
-
 func (m model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
 	}
-	if m.height < 20 {
-		return "Terminal too small. Need at least 20 lines."
+	if m.width < 60 || m.height < 20 {
+		return "Terminal too small. Need at least 60x20."
 	}
 
-	innerWidth := m.width - 2
+	leftW := m.leftPanelWidth() - 2 // inner width (minus border)
+	rightW := m.rightPanelWidth() - 2
+	panelH := m.mainPanelHeight()
 
-	// Project panel
-	repoContent := m.renderRepoList(innerWidth)
-	repoPanel := m.renderPanel(viewRepo, innerWidth, m.repoPanelHeight(), repoContent)
+	// Left panel: project list
+	projectContent := m.renderProjectList(leftW, panelH)
+	leftPanel := m.renderPanel(viewProjects, m.leftPanelWidth()-2, panelH, projectContent)
 
-	// Contents panel
-	statusContent := m.renderStatusContent(innerWidth, m.statusPanelHeight())
-	statusPanel := m.renderPanel(viewStatus, innerWidth, m.statusPanelHeight(), statusContent)
+	// Right panel: detail
+	detailContent := m.renderDetailPanel(rightW, panelH)
+	rightPanel := m.renderPanel(viewDetail, m.rightPanelWidth()-2, panelH, detailContent)
+
+	// Join panels horizontally
+	mainRow := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
 	// Nav bar
 	navBar := m.renderNavBar()
 
 	var view string
 	if m.logVisible {
-		logPanel := m.renderPanel(viewLog, innerWidth, m.logPanelHeight(), m.logViewport.View())
-		view = lipgloss.JoinVertical(lipgloss.Left, repoPanel, statusPanel, logPanel, navBar)
+		logPanel := m.renderPanel(viewLog, m.width-2, m.logPanelHeight(), m.logViewport.View())
+		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, logPanel, navBar)
 	} else {
-		view = lipgloss.JoinVertical(lipgloss.Left, repoPanel, statusPanel, navBar)
+		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, navBar)
 	}
 
 	// Modal overlays
 	if m.scanning {
-		modal := modalStyle.Width(20).Render(m.spinner.View() + " Scanning...")
+		modal := modalStyle.Width(40).Render(m.spinner.View() + " Scanning for OpenSpec sources...")
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 	if m.err != nil {
@@ -472,19 +515,18 @@ func (m model) View() string {
 	return view
 }
 
-func (m model) renderRepoList(width int) string {
+func (m model) renderProjectList(width int, height int) string {
 	if len(m.repoPaths) == 0 {
 		return "No OpenSpec projects found."
 	}
 
 	var b strings.Builder
-	h := m.repoPanelHeight()
 	offset := 0
-	if m.cursor >= h {
-		offset = m.cursor - h + 1
+	if m.cursor >= height {
+		offset = m.cursor - height + 1
 	}
 
-	end := offset + h
+	end := offset + height
 	if end > len(m.repoPaths) {
 		end = len(m.repoPaths)
 	}
@@ -493,73 +535,114 @@ func (m model) renderRepoList(width int) string {
 		if i > offset {
 			b.WriteString("\n")
 		}
-		line := m.repoPaths[i]
+		name := m.displayNames[i]
 		if i == m.cursor {
-			styled := selectedStyle.Width(width).Render(line)
-			b.WriteString(styled)
+			b.WriteString(selectedStyle.Width(width).Render(name))
 		} else {
-			b.WriteString(normalStyle.Render(line))
+			b.WriteString(normalStyle.Render(name))
 		}
 	}
 	return b.String()
 }
 
-func (m model) renderFileList(width int, height int) string {
-	if len(m.filePaths) == 0 {
-		return "No files."
+func (m model) renderTabHeader(width int) string {
+	var b strings.Builder
+	for i, name := range tabNames {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		if i == m.detailTab {
+			b.WriteString(activeTabStyle.Render(name))
+		} else {
+			b.WriteString(inactiveTabStyle.Render(name))
+		}
 	}
+	return b.String()
+}
 
-	currentProject := m.repoPaths[m.cursor]
-	st := m.projects[currentProject]
-
-	// Build a lookup from path to FileEntry
-	entryMap := make(map[string]scanner.FileEntry, len(st.Files))
-	for _, f := range st.Files {
-		entryMap[f.Path] = f
+func (m model) renderDetailPanel(width int, height int) string {
+	if len(m.repoPaths) == 0 {
+		return "No project selected."
 	}
 
 	var b strings.Builder
-	offset := 0
-	if m.fileCursor >= height {
-		offset = m.fileCursor - height + 1
-	}
-	end := offset + height
-	if end > len(m.filePaths) {
-		end = len(m.filePaths)
+
+	// Tab header
+	b.WriteString(m.renderTabHeader(width))
+	b.WriteString("\n")
+
+	// Tab content (height minus tab header line)
+	contentHeight := height - 1
+	if contentHeight < 1 {
+		contentHeight = 1
 	}
 
-	isActive := m.activeView == viewStatus
-	for i := offset; i < end; i++ {
-		if i > offset {
-			b.WriteString("\n")
-		}
-		path := m.filePaths[i]
-		entry := entryMap[path]
-		indicator := "f"
-		if entry.IsDir {
-			indicator = "d"
-		}
-		line := fmt.Sprintf(" %s  %s", indicator, path)
-		if isActive && i == m.fileCursor {
-			b.WriteString(selectedStyle.Width(width).Render(line))
-		} else {
-			b.WriteString(normalStyle.Render(line))
-		}
+	switch m.detailTab {
+	case tabOverview:
+		b.WriteString(m.renderOverview(width, contentHeight))
+	default:
+		b.WriteString(m.renderNotImplemented(width, contentHeight))
 	}
+
 	return b.String()
 }
 
-func (m model) renderStatusContent(innerWidth int, height int) string {
-	return m.renderFileList(innerWidth, height)
+func (m model) renderOverview(width int, height int) string {
+	currentProject := m.repoPaths[m.cursor]
+	st := m.projects[currentProject]
+	info := st.Info
+
+	var b strings.Builder
+
+	// Project path
+	b.WriteString(headerStyle.Render(currentProject))
+	b.WriteString("\n")
+
+	// Stats line
+	statsLine := fmt.Sprintf("Specs: %d  Changes: %d active  Archived: %d",
+		info.SpecCount, len(info.ActiveChanges), len(info.ArchivedChanges))
+	b.WriteString(dimStyle.Render(statsLine))
+	b.WriteString("\n")
+
+	// Active changes
+	b.WriteString("\n")
+	b.WriteString(sectionHeaderStyle.Render("Active Changes"))
+	b.WriteString("\n")
+	if len(info.ActiveChanges) == 0 {
+		b.WriteString(dimStyle.Render("  None"))
+	} else {
+		for _, c := range info.ActiveChanges {
+			b.WriteString("  - " + c + "\n")
+		}
+	}
+
+	// Recently archived
+	b.WriteString("\n")
+	b.WriteString(sectionHeaderStyle.Render("Recently Archived"))
+	b.WriteString("\n")
+	if len(info.ArchivedChanges) == 0 {
+		b.WriteString(dimStyle.Render("  None"))
+	} else {
+		for _, a := range info.ArchivedChanges {
+			date := a.Date.Format("2006-01-02")
+			b.WriteString(fmt.Sprintf("  - %s (%s)\n", a.Name, date))
+		}
+	}
+
+	return b.String()
+}
+
+func (m model) renderNotImplemented(width int, height int) string {
+	return "\n\n" + dimStyle.Render("  Not yet implemented")
 }
 
 func (m model) renderPanel(view int, width int, height int, content string) string {
 	var title string
 	switch view {
-	case viewRepo:
+	case viewProjects:
 		title = " Projects "
-	case viewStatus:
-		title = " Contents "
+	case viewDetail:
+		title = " Detail "
 	case viewLog:
 		title = " Log "
 	}
@@ -591,11 +674,10 @@ func (m model) renderNavBar() string {
 	keys := []struct{ key, action string }{
 		{"q", "quit"},
 		{"s", "scan"},
-		{"enter", "open"},
 		{"tab", "switch"},
 		{"jk/\u2191\u2193", "navigate"},
+		{"\u2190\u2192/1-5", "tabs"},
 		{"l", "log"},
-		{"pgup/dn", "scroll"},
 		{"gg/G", "jump"},
 	}
 
@@ -620,7 +702,6 @@ func (m model) renderNavBar() string {
 	return bar
 }
 
-// placeOverlay renders a modal centered over the background.
 func placeOverlay(width, height int, modal, background string) string {
 	return lipgloss.Place(
 		width, height,

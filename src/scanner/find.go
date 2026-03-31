@@ -73,11 +73,43 @@ func walkone(ctx context.Context, dir string, config *Config, results chan strin
 				return nil
 			}
 
+			if !isValidOpenSpecDir(path) {
+				return nil
+			}
+
 			results <- filepath.Dir(path)
 			return godirwalk.SkipThis // don't descend further
 		},
 	})
 	return err
+}
+
+// isValidOpenSpecDir checks whether an openspec/ directory contains the required
+// markers: (config.yaml OR project.md) AND (specs/ OR archive/).
+func isValidOpenSpecDir(path string) bool {
+	hasConfig := false
+	if _, err := os.Stat(filepath.Join(path, "config.yaml")); err == nil {
+		hasConfig = true
+	}
+	if !hasConfig {
+		if _, err := os.Stat(filepath.Join(path, "project.md")); err == nil {
+			hasConfig = true
+		}
+	}
+	if !hasConfig {
+		return false
+	}
+
+	hasStructure := false
+	if info, err := os.Stat(filepath.Join(path, "specs")); err == nil && info.IsDir() {
+		hasStructure = true
+	}
+	if !hasStructure {
+		if info, err := os.Stat(filepath.Join(path, "archive")); err == nil && info.IsDir() {
+			hasStructure = true
+		}
+	}
+	return hasStructure
 }
 
 // Walk finds all OpenSpec projects in the directories specified in config

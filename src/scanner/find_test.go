@@ -1,6 +1,10 @@
 package scanner
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestSkip(t *testing.T) {
 	tests := []struct {
@@ -37,4 +41,52 @@ func TestSkip(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsValidOpenSpecDir(t *testing.T) {
+	t.Run("valid with config.yaml and specs/", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(""), 0644)
+		os.Mkdir(filepath.Join(dir, "specs"), 0755)
+
+		if !isValidOpenSpecDir(dir) {
+			t.Error("expected valid, got invalid")
+		}
+	})
+
+	t.Run("valid with project.md and archive/", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "project.md"), []byte(""), 0644)
+		os.Mkdir(filepath.Join(dir, "archive"), 0755)
+
+		if !isValidOpenSpecDir(dir) {
+			t.Error("expected valid, got invalid")
+		}
+	})
+
+	t.Run("invalid empty directory", func(t *testing.T) {
+		dir := t.TempDir()
+
+		if isValidOpenSpecDir(dir) {
+			t.Error("expected invalid, got valid")
+		}
+	})
+
+	t.Run("invalid with config.yaml but no specs/ or archive/", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(""), 0644)
+
+		if isValidOpenSpecDir(dir) {
+			t.Error("expected invalid, got valid")
+		}
+	})
+
+	t.Run("invalid with specs/ but no config.yaml or project.md", func(t *testing.T) {
+		dir := t.TempDir()
+		os.Mkdir(filepath.Join(dir, "specs"), 0755)
+
+		if isValidOpenSpecDir(dir) {
+			t.Error("expected invalid, got valid")
+		}
+	})
 }

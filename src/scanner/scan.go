@@ -19,8 +19,20 @@ type FileEntry struct {
 	IsDir bool
 }
 
+type ArchivedChange struct {
+	Name string
+	Date time.Time
+}
+
+type ProjectInfo struct {
+	SpecCount      int
+	ActiveChanges  []string
+	ArchivedChanges []ArchivedChange
+}
+
 type ProjectStatus struct {
 	Files    []FileEntry
+	Info     ProjectInfo
 	ScanTime time.Duration
 }
 
@@ -93,6 +105,51 @@ func ListOpenSpecContents(dir string) ([]FileEntry, error) {
 	return entries, nil
 }
 
+// ParseProjectInfo reads the openspec/ directory structure to extract stats.
+func ParseProjectInfo(dir string) ProjectInfo {
+	info := ProjectInfo{}
+	openspecDir := filepath.Join(dir, "openspec")
+
+	// Count specs: subdirectories in openspec/specs/
+	specsDir := filepath.Join(openspecDir, "specs")
+	if entries, err := os.ReadDir(specsDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				info.SpecCount++
+			}
+		}
+	}
+
+	// Active changes: subdirectories in openspec/changes/
+	changesDir := filepath.Join(openspecDir, "changes")
+	if entries, err := os.ReadDir(changesDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				info.ActiveChanges = append(info.ActiveChanges, e.Name())
+			}
+		}
+	}
+
+	// Archived changes: subdirectories in openspec/archive/
+	archiveDir := filepath.Join(openspecDir, "archive")
+	if entries, err := os.ReadDir(archiveDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				var modTime time.Time
+				if fi, err := e.Info(); err == nil {
+					modTime = fi.ModTime()
+				}
+				info.ArchivedChanges = append(info.ArchivedChanges, ArchivedChange{
+					Name: e.Name(),
+					Date: modTime,
+				})
+			}
+		}
+	}
+
+	return info
+}
+
 // Scan finds all OpenSpec projects in directories specified by config
 func Scan(config *Config, ignore_dir_errors bool) (ProjectMap, error) {
 	ctx := context.Background()
@@ -125,9 +182,12 @@ func Scan(config *Config, ignore_dir_errors bool) (ProjectMap, error) {
 		duration := time.Since(start)
 		log.Println(d, duration)
 
+		info := ParseProjectInfo(d)
+
 		totalScanDuration += duration
 		results[d] = ProjectStatus{
 			Files:    files,
+			Info:     info,
 			ScanTime: duration,
 		}
 	}

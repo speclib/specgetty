@@ -5,51 +5,23 @@ import (
 	"testing"
 )
 
-func TestRepoPanelHeight(t *testing.T) {
+func TestMainPanelHeight(t *testing.T) {
 	tests := []struct {
-		name      string
-		height    int
-		repoCount int
-		check     func(t *testing.T, got int)
+		name   string
+		height int
 	}{
-		{
-			name:      "few repos returns repo count",
-			height:    40,
-			repoCount: 3,
-			check: func(t *testing.T, got int) {
-				if got != 3 {
-					t.Errorf("got %d, want 3", got)
-				}
-			},
-		},
-		{
-			name:      "many repos capped below half height",
-			height:    40,
-			repoCount: 100,
-			check: func(t *testing.T, got int) {
-				if got >= 20 {
-					t.Errorf("got %d, want < 20 (half of height)", got)
-				}
-			},
-		},
-		{
-			name:      "zero repos returns 1",
-			height:    40,
-			repoCount: 0,
-			check: func(t *testing.T, got int) {
-				if got != 1 {
-					t.Errorf("got %d, want 1", got)
-				}
-			},
-		},
+		{"small terminal", 20},
+		{"medium terminal", 40},
+		{"large terminal", 80},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := model{height: tt.height}
-			m.repoPaths = make([]string, tt.repoCount)
-			got := m.repoPanelHeight()
-			tt.check(t, got)
+			got := m.mainPanelHeight()
+			if got < 3 {
+				t.Errorf("got %d, want >= 3", got)
+			}
 		})
 	}
 }
@@ -86,111 +58,136 @@ func TestLogPanelHeight(t *testing.T) {
 	})
 }
 
-func TestStatusPanelHeight(t *testing.T) {
+func TestLeftPanelWidth(t *testing.T) {
 	tests := []struct {
-		name      string
-		height    int
-		repoCount int
+		name     string
+		width    int
+		expected int
 	}{
-		{"standard terminal", 40, 5},
-		{"small terminal", 20, 2},
-		{"many repos", 40, 50},
+		{"narrow terminal clamps to min 20", 60, 20},
+		{"medium terminal uses 30%", 100, 30},
+		{"wide terminal clamps to max 40", 200, 40},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := model{height: tt.height, logVisible: true}
-			m.repoPaths = make([]string, tt.repoCount)
-			got := m.statusPanelHeight()
-			if got < 1 {
-				t.Errorf("got %d, want >= 1", got)
-			}
-
-			repoH := m.repoPanelHeight() + 2
-			logH := m.logPanelHeight() + 2
-			statusH := got + 2
-			total := repoH + logH + statusH
-			if total > tt.height {
-				t.Errorf("total panel height %d exceeds terminal height %d", total, tt.height)
+			m := model{width: tt.width}
+			got := m.leftPanelWidth()
+			if got != tt.expected {
+				t.Errorf("got %d, want %d", got, tt.expected)
 			}
 		})
 	}
+}
 
-	t.Run("hidden log gives more space to status", func(t *testing.T) {
-		mVisible := model{height: 40, logVisible: true}
-		mVisible.repoPaths = make([]string, 5)
-		mHidden := model{height: 40, logVisible: false}
-		mHidden.repoPaths = make([]string, 5)
+func TestProjectDisplayNames(t *testing.T) {
+	t.Run("unique basenames", func(t *testing.T) {
+		paths := []string{"/home/user/project-a", "/home/user/project-b"}
+		names := projectDisplayNames(paths)
+		if names[0] != "project-a" {
+			t.Errorf("got %q, want project-a", names[0])
+		}
+		if names[1] != "project-b" {
+			t.Errorf("got %q, want project-b", names[1])
+		}
+	})
 
-		statusVisible := mVisible.statusPanelHeight()
-		statusHidden := mHidden.statusPanelHeight()
-		if statusHidden <= statusVisible {
-			t.Errorf("hidden log status height %d should be > visible log status height %d", statusHidden, statusVisible)
+	t.Run("duplicate basenames get parent disambiguation", func(t *testing.T) {
+		paths := []string{"/home/user/work/myapp", "/home/user/personal/myapp"}
+		names := projectDisplayNames(paths)
+		if !strings.Contains(names[0], "myapp") || !strings.Contains(names[0], "work") {
+			t.Errorf("expected 'myapp (work)', got %q", names[0])
+		}
+		if !strings.Contains(names[1], "myapp") || !strings.Contains(names[1], "personal") {
+			t.Errorf("expected 'myapp (personal)', got %q", names[1])
+		}
+	})
+
+	t.Run("empty list", func(t *testing.T) {
+		names := projectDisplayNames([]string{})
+		if len(names) != 0 {
+			t.Errorf("expected empty, got %v", names)
 		}
 	})
 }
 
 func TestTabCyclingSkipsHiddenLog(t *testing.T) {
 	t.Run("tab skips log when hidden", func(t *testing.T) {
-		m := model{logVisible: false, activeView: viewRepo}
-		if m.logVisible {
-			m.activeView = (m.activeView + 1) % 3
+		m := model{logVisible: false, activeView: viewProjects}
+		if m.activeView == viewProjects {
+			m.activeView = viewDetail
 		} else {
-			if m.activeView == viewRepo {
-				m.activeView = viewStatus
-			} else {
-				m.activeView = viewRepo
-			}
+			m.activeView = viewProjects
 		}
-		if m.activeView != viewStatus {
-			t.Errorf("got %d, want viewStatus (%d)", m.activeView, viewStatus)
+		if m.activeView != viewDetail {
+			t.Errorf("got %d, want viewDetail (%d)", m.activeView, viewDetail)
 		}
-		if m.activeView == viewRepo {
-			m.activeView = viewStatus
+		if m.activeView == viewProjects {
+			m.activeView = viewDetail
 		} else {
-			m.activeView = viewRepo
+			m.activeView = viewProjects
 		}
-		if m.activeView != viewRepo {
-			t.Errorf("got %d, want viewRepo (%d)", m.activeView, viewRepo)
+		if m.activeView != viewProjects {
+			t.Errorf("got %d, want viewProjects (%d)", m.activeView, viewProjects)
 		}
 	})
 }
 
-func TestRenderRepoList(t *testing.T) {
-	t.Run("all repos visible", func(t *testing.T) {
+func TestRenderProjectList(t *testing.T) {
+	t.Run("shows display names", func(t *testing.T) {
 		m := model{
-			height:    40,
-			repoPaths: []string{"/home/user/repo1", "/home/user/repo2", "/home/user/repo3"},
-			cursor:    0,
+			height:       40,
+			width:        100,
+			repoPaths:    []string{"/home/user/repo1", "/home/user/repo2"},
+			displayNames: []string{"repo1", "repo2"},
+			cursor:       0,
 		}
-		got := m.renderRepoList(80)
-		for _, repo := range m.repoPaths {
-			if !strings.Contains(got, repo) {
-				t.Errorf("output missing repo %q", repo)
-			}
+		got := m.renderProjectList(30, 20)
+		if !strings.Contains(got, "repo1") {
+			t.Error("output missing repo1")
+		}
+		if !strings.Contains(got, "repo2") {
+			t.Error("output missing repo2")
+		}
+		// Should NOT contain the full path
+		if strings.Contains(got, "/home/user/") {
+			t.Error("output should show basenames, not full paths")
 		}
 	})
 
-	t.Run("cursor repo present", func(t *testing.T) {
+	t.Run("empty project list", func(t *testing.T) {
 		m := model{
-			height:    40,
-			repoPaths: []string{"/home/user/repo1", "/home/user/repo2", "/home/user/repo3"},
-			cursor:    1,
+			height:       40,
+			width:        100,
+			repoPaths:    []string{},
+			displayNames: []string{},
 		}
-		got := m.renderRepoList(80)
-		if !strings.Contains(got, "/home/user/repo2") {
-			t.Error("output missing cursor repo /home/user/repo2")
-		}
-	})
-
-	t.Run("empty repo list", func(t *testing.T) {
-		m := model{
-			height:    40,
-			repoPaths: []string{},
-		}
-		got := m.renderRepoList(80)
+		got := m.renderProjectList(30, 20)
 		if !strings.Contains(got, "No OpenSpec projects found") {
-			t.Errorf("expected 'No OpenSpec projects found', got %q", got)
+			t.Errorf("expected empty message, got %q", got)
+		}
+	})
+}
+
+func TestRenderTabHeader(t *testing.T) {
+	t.Run("overview tab active", func(t *testing.T) {
+		m := model{detailTab: tabOverview}
+		got := m.renderTabHeader(80)
+		if !strings.Contains(got, "overview") {
+			t.Error("output missing 'overview'")
+		}
+		if !strings.Contains(got, "specs") {
+			t.Error("output missing 'specs'")
+		}
+	})
+
+	t.Run("all tab names present", func(t *testing.T) {
+		m := model{detailTab: tabChanges}
+		got := m.renderTabHeader(80)
+		for _, name := range tabNames {
+			if !strings.Contains(got, name) {
+				t.Errorf("output missing tab %q", name)
+			}
 		}
 	})
 }

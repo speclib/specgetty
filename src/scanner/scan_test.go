@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -75,6 +76,58 @@ scandirs:
 		_, err = ParseConfigFile(f.Name(), defaultConfig)
 		if err == nil {
 			t.Error("expected error for invalid YAML, got nil")
+		}
+	})
+}
+
+func TestParseProjectInfo(t *testing.T) {
+	t.Run("project with specs and changes", func(t *testing.T) {
+		dir := t.TempDir()
+		openspec := filepath.Join(dir, "openspec")
+		os.MkdirAll(filepath.Join(openspec, "specs", "cap-a"), 0755)
+		os.MkdirAll(filepath.Join(openspec, "specs", "cap-b"), 0755)
+		os.MkdirAll(filepath.Join(openspec, "specs", "cap-c"), 0755)
+		os.MkdirAll(filepath.Join(openspec, "changes", "change-1"), 0755)
+		os.MkdirAll(filepath.Join(openspec, "changes", "change-2"), 0755)
+		os.MkdirAll(filepath.Join(openspec, "archive", "old-change"), 0755)
+
+		info := ParseProjectInfo(dir)
+		if info.SpecCount != 3 {
+			t.Errorf("SpecCount = %d, want 3", info.SpecCount)
+		}
+		if len(info.ActiveChanges) != 2 {
+			t.Errorf("ActiveChanges = %d, want 2", len(info.ActiveChanges))
+		}
+		if len(info.ArchivedChanges) != 1 {
+			t.Errorf("ArchivedChanges = %d, want 1", len(info.ArchivedChanges))
+		}
+		if info.ArchivedChanges[0].Name != "old-change" {
+			t.Errorf("ArchivedChanges[0].Name = %q, want old-change", info.ArchivedChanges[0].Name)
+		}
+	})
+
+	t.Run("empty openspec directory", func(t *testing.T) {
+		dir := t.TempDir()
+		os.MkdirAll(filepath.Join(dir, "openspec"), 0755)
+
+		info := ParseProjectInfo(dir)
+		if info.SpecCount != 0 {
+			t.Errorf("SpecCount = %d, want 0", info.SpecCount)
+		}
+		if len(info.ActiveChanges) != 0 {
+			t.Errorf("ActiveChanges = %d, want 0", len(info.ActiveChanges))
+		}
+		if len(info.ArchivedChanges) != 0 {
+			t.Errorf("ArchivedChanges = %d, want 0", len(info.ArchivedChanges))
+		}
+	})
+
+	t.Run("no openspec directory", func(t *testing.T) {
+		dir := t.TempDir()
+
+		info := ParseProjectInfo(dir)
+		if info.SpecCount != 0 {
+			t.Errorf("SpecCount = %d, want 0", info.SpecCount)
 		}
 	})
 }
