@@ -25,9 +25,11 @@ type ArchivedChange struct {
 }
 
 type ProjectInfo struct {
-	SpecCount      int
-	ActiveChanges  []string
+	SpecCount       int
+	ActiveChanges   []string
 	ArchivedChanges []ArchivedChange
+	ConfigFile      string // "project.md", "config.yaml", or ""
+	ConfigContent   string
 }
 
 type ProjectStatus struct {
@@ -145,6 +147,17 @@ func ParseProjectInfo(dir string) ProjectInfo {
 				})
 			}
 		}
+	}
+
+	// Config file: project.md takes priority over config.yaml
+	projectMd := filepath.Join(openspecDir, "project.md")
+	configYaml := filepath.Join(openspecDir, "config.yaml")
+	if b, err := os.ReadFile(projectMd); err == nil {
+		info.ConfigFile = "project.md"
+		info.ConfigContent = string(b)
+	} else if b, err := os.ReadFile(configYaml); err == nil {
+		info.ConfigFile = "config.yaml"
+		info.ConfigContent = string(b)
 	}
 
 	return info

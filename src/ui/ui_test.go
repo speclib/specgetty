@@ -191,3 +191,63 @@ func TestRenderTabHeader(t *testing.T) {
 		}
 	})
 }
+
+func TestRenderMarkdown(t *testing.T) {
+	t.Run("headers are present", func(t *testing.T) {
+		content := "# Title\n\nSome text\n\n## Subtitle"
+		got := renderMarkdown(content, 80)
+		if !strings.Contains(got, "Title") {
+			t.Error("output missing 'Title'")
+		}
+		if !strings.Contains(got, "Subtitle") {
+			t.Error("output missing 'Subtitle'")
+		}
+	})
+
+	t.Run("list items are present", func(t *testing.T) {
+		content := "- item one\n- item two"
+		got := renderMarkdown(content, 80)
+		if !strings.Contains(got, "item one") {
+			t.Error("output missing 'item one'")
+		}
+		if !strings.Contains(got, "item two") {
+			t.Error("output missing 'item two'")
+		}
+	})
+
+	t.Run("bold text is present", func(t *testing.T) {
+		content := "This is **bold** text"
+		got := renderMarkdown(content, 80)
+		if !strings.Contains(got, "bold") {
+			t.Error("output missing 'bold'")
+		}
+		// Should not contain the ** markers in plain form
+		if strings.Contains(got, "**bold**") {
+			t.Error("output still contains raw ** markers")
+		}
+	})
+}
+
+func TestRenderYAML(t *testing.T) {
+	t.Run("keys and values present", func(t *testing.T) {
+		content := "schema: spec-driven\nname: my-project"
+		got := renderYAML(content, 80)
+		if !strings.Contains(got, "schema") {
+			t.Error("output missing 'schema'")
+		}
+		if !strings.Contains(got, "spec-driven") {
+			t.Error("output missing 'spec-driven'")
+		}
+	})
+
+	t.Run("comments present", func(t *testing.T) {
+		content := "# This is a comment\nkey: value"
+		got := renderYAML(content, 80)
+		if !strings.Contains(got, "This is a comment") {
+			t.Error("output missing comment text")
+		}
+		if !strings.Contains(got, "key") {
+			t.Error("output missing 'key'")
+		}
+	})
+}

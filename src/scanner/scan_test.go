@@ -130,4 +130,46 @@ func TestParseProjectInfo(t *testing.T) {
 			t.Errorf("SpecCount = %d, want 0", info.SpecCount)
 		}
 	})
+
+	t.Run("project.md takes priority over config.yaml", func(t *testing.T) {
+		dir := t.TempDir()
+		openspec := filepath.Join(dir, "openspec")
+		os.MkdirAll(openspec, 0755)
+		os.WriteFile(filepath.Join(openspec, "project.md"), []byte("# My Project"), 0644)
+		os.WriteFile(filepath.Join(openspec, "config.yaml"), []byte("schema: spec-driven"), 0644)
+
+		info := ParseProjectInfo(dir)
+		if info.ConfigFile != "project.md" {
+			t.Errorf("ConfigFile = %q, want project.md", info.ConfigFile)
+		}
+		if info.ConfigContent != "# My Project" {
+			t.Errorf("ConfigContent = %q, want '# My Project'", info.ConfigContent)
+		}
+	})
+
+	t.Run("config.yaml when no project.md", func(t *testing.T) {
+		dir := t.TempDir()
+		openspec := filepath.Join(dir, "openspec")
+		os.MkdirAll(openspec, 0755)
+		os.WriteFile(filepath.Join(openspec, "config.yaml"), []byte("schema: spec-driven"), 0644)
+
+		info := ParseProjectInfo(dir)
+		if info.ConfigFile != "config.yaml" {
+			t.Errorf("ConfigFile = %q, want config.yaml", info.ConfigFile)
+		}
+		if info.ConfigContent != "schema: spec-driven" {
+			t.Errorf("ConfigContent = %q, want 'schema: spec-driven'", info.ConfigContent)
+		}
+	})
+
+	t.Run("no config file", func(t *testing.T) {
+		dir := t.TempDir()
+		openspec := filepath.Join(dir, "openspec")
+		os.MkdirAll(openspec, 0755)
+
+		info := ParseProjectInfo(dir)
+		if info.ConfigFile != "" {
+			t.Errorf("ConfigFile = %q, want empty", info.ConfigFile)
+		}
+	})
 }

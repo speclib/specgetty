@@ -19,9 +19,8 @@
         in
         {
           specgetty = pkgs.callPackage ./package.nix { inherit version; };
+          default = pkgs.callPackage ./package.nix { inherit version; };
         });
-
-      defaultPackage = forAllSystems (system: self.packages.${system}.specgetty);
 
       devShells = forAllSystems (system:
         let

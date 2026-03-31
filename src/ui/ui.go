@@ -512,7 +512,7 @@ func (m model) View() string {
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 
-	return view
+	return padToHeight(view, m.height)
 }
 
 func (m model) renderProjectList(width int, height int) string {
@@ -580,6 +580,8 @@ func (m model) renderDetailPanel(width int, height int) string {
 	switch m.detailTab {
 	case tabOverview:
 		b.WriteString(m.renderOverview(width, contentHeight))
+	case tabConfig:
+		b.WriteString(m.renderConfigTab(width, contentHeight))
 	default:
 		b.WriteString(m.renderNotImplemented(width, contentHeight))
 	}
@@ -632,11 +634,194 @@ func (m model) renderOverview(width int, height int) string {
 	return b.String()
 }
 
+func (m model) renderConfigTab(width int, height int) string {
+	if len(m.repoPaths) == 0 {
+		return "No project selected."
+	}
+
+	currentProject := m.repoPaths[m.cursor]
+	info := m.projects[currentProject].Info
+
+	if info.ConfigFile == "" {
+		return dimStyle.Render("No project configuration found")
+	}
+
+	var b strings.Builder
+
+	// File source indicator
+	b.WriteString(dimStyle.Render("openspec/" + info.ConfigFile))
+	b.WriteString("\n\n")
+
+	// Render based on file type
+	if strings.HasSuffix(info.ConfigFile, ".md") {
+		b.WriteString(renderMarkdown(info.ConfigContent, width))
+	} else {
+		b.WriteString(renderYAML(info.ConfigContent, width))
+	}
+
+	return b.String()
+}
+
+var (
+	mdHeaderStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("6")) // cyan
+
+	mdBoldStyle = lipgloss.NewStyle().Bold(true)
+
+	mdItalicStyle = lipgloss.NewStyle().Italic(true)
+
+	yamlKeyStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("6")) // cyan
+
+	yamlCommentStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("250")) // light gray
+
+	yamlValueStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("2")) // green
+)
+
+func renderMarkdown(content string, width int) string {
+	lines := strings.Split(content, "\n")
+	var b strings.Builder
+
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+
+		trimmed := strings.TrimSpace(line)
+
+		// Headers
+		if strings.HasPrefix(trimmed, "#") {
+			b.WriteString(mdHeaderStyle.Render(trimmed))
+			continue
+		}
+
+		// List items
+		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
+			b.WriteString("  " + renderInlineMarkdown(trimmed))
+			continue
+		}
+
+		// Regular text with inline formatting
+		b.WriteString(renderInlineMarkdown(line))
+	}
+
+	return b.String()
+}
+
+func renderInlineMarkdown(line string) string {
+	result := line
+
+	// Bold: **text**
+	for {
+		start := strings.Index(result, "**")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start+2:], "**")
+		if end == -1 {
+			break
+		}
+		end += start + 2
+		bold := result[start+2 : end]
+		result = result[:start] + mdBoldStyle.Render(bold) + result[end+2:]
+	}
+
+	// Italic: _text_
+	for {
+		start := strings.Index(result, "_")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start+1:], "_")
+		if end == -1 {
+			break
+		}
+		end += start + 1
+		italic := result[start+1 : end]
+		result = result[:start] + mdItalicStyle.Render(italic) + result[end+1:]
+	}
+
+	return result
+}
+
+func renderYAML(content string, width int) string {
+	lines := strings.Split(content, "\n")
+	var b strings.Builder
+
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+
+		trimmed := strings.TrimSpace(line)
+
+		// Comment lines
+		if strings.HasPrefix(trimmed, "#") {
+			b.WriteString(yamlCommentStyle.Render(line))
+			continue
+		}
+
+		// Key: value lines
+		colonIdx := strings.Index(line, ":")
+		if colonIdx > 0 {
+			// Check for inline comment
+			key := line[:colonIdx]
+			rest := line[colonIdx:]
+
+			commentIdx := strings.Index(rest, " #")
+			if commentIdx > 0 {
+				value := rest[:commentIdx]
+				comment := rest[commentIdx:]
+				b.WriteString(yamlKeyStyle.Render(key))
+				b.WriteString(yamlValueStyle.Render(value))
+				b.WriteString(yamlCommentStyle.Render(comment))
+			} else {
+				b.WriteString(yamlKeyStyle.Render(key))
+				b.WriteString(yamlValueStyle.Render(rest))
+			}
+			continue
+		}
+
+		// Plain lines (list items, etc)
+		b.WriteString(line)
+	}
+
+	return b.String()
+}
+
 func (m model) renderNotImplemented(width int, height int) string {
 	return "\n\n" + dimStyle.Render("  Not yet implemented")
 }
 
+// truncateContent ensures content is exactly maxLines tall — truncates or pads.
+func truncateContent(content string, maxLines int) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+	for len(lines) < maxLines {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// padToHeight ensures the final rendered view is exactly the given height.
+func padToHeight(view string, height int) string {
+	lines := strings.Split(view, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m model) renderPanel(view int, width int, height int, content string) string {
+	content = truncateContent(content, height)
 	var title string
 	switch view {
 	case viewProjects:
@@ -665,9 +850,12 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 		BorderTop(false).
 		BorderForeground(borderColor).
 		Width(width).
-		Height(height)
+		Height(height).
+		MaxHeight(height + 2) // +2 for border lines
 
-	return topBorder + "\n" + boxStyle.Render(content)
+	rendered := topBorder + "\n" + boxStyle.Render(content)
+	// Ensure the panel is exactly height+2 lines (title + border top + content area + border bottom)
+	return padToHeight(rendered, height+2)
 }
 
 func (m model) renderNavBar() string {
