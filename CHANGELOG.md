@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- feat: auto-rescan in zoom mode — filesystem watcher (fsnotify) monitors the openspec directory and triggers rescan on changes
+- feat: config tab renders `project.md` as markdown or `config.yaml` with syntax highlighting
+- feat: specs tab with split view — spec list on left, rendered markdown on right
+- feat: changes tab with artifact sub-navigation — browse proposal, design, tasks, and specs per change
+- feat: task progress display in changes list (e.g. `18/20`)
+- feat: archive tab reuses changes layout for browsing archived changes with date display
+- feat: zoom mode — press enter to give detail panel full terminal width, escape to return
+- feat: `--zoom` / `-z` and `--path` / `-p` CLI flags for starting in zoom mode
+- feat: persistent project header (path + stats) visible across all tabs, replacing overview tab
+- feat: single-project rescan with `s` key in zoom mode
+- feat: show aggregate task progress (done/total) in persistent project header
+- feat: archive changes from TUI — press `a` on changes tab, with confirmation and incomplete task warnings
+- refactor: replace `ArchivedChange` struct with unified `ChangeInfo` for active and archived changes
+- refactor: shared `renderChangeList` function used by both changes and archive tabs
+
 ## [0.1.5] - 2026-03-31
+
+- fix: nix flake
 
 ## [0.1.4] - 2026-03-31
 - 

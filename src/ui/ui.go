@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"log"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/mipmip/specgetty/src/scanner"
+	"github.com/mipmip/specgetty/src/watcher"
 )
 
 const (
@@ -22,14 +24,20 @@ const (
 )
 
 const (
-	tabOverview = 0
-	tabSpecs    = 1
-	tabChanges  = 2
-	tabConfig   = 3
-	tabSearch   = 4
+	tabSpecs   = 0
+	tabChanges = 1
+	tabArchive = 2
+	tabConfig  = 3
 )
 
-var tabNames = []string{"overview", "specs", "changes", "config", "search"}
+const (
+	archiveIdle       = 0
+	archiveConfirming = 1
+	archiveRunning    = 2
+	archiveResult     = 3
+)
+
+var tabNames = []string{"specs", "changes", "archive", "config"}
 
 // Message types
 
@@ -39,6 +47,9 @@ type scanMsg struct {
 }
 
 type logMsg string
+
+// fsChangeMsg is sent when the filesystem watcher detects changes in the openspec directory.
+type fsChangeMsg struct{}
 
 // logWriter sends log output as tea messages to the program.
 type logWriter struct {
@@ -112,16 +123,29 @@ type model struct {
 	detailViewport  viewport.Model
 	logViewport     viewport.Model
 	logContent      string
-	detailTab       int
+	detailTab        int
+	specCursor       int
+	changeCursor      int
+	changeArtifactTab int
+	archiveCursor     int
+	archiveArtifactTab int
 	fileCursor      int
 	filePaths       []string
-	logVisible      bool
-	logShownOnce    bool
-	pendingKey      string
+	zoomed          bool
+	initialZoomPath string // set via CLI --zoom, triggers single-project scan
+	fullScanDone    bool   // tracks whether a full scan has been run
+	logVisible        bool
+	logShownOnce      bool
+	pendingKey        string
+	archiveState      int
+	archiveChangeName string
+	archiveResultMsg  string
+	archiveResultOk   bool
 	width           int
 	height          int
 	program         *tea.Program
 	version         string
+	watcher         *watcher.Watcher
 }
 
 func newModel(config *scanner.Config, ignoreDirErrors bool, version string) model {
@@ -140,6 +164,12 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 }
 
 func (m model) Init() tea.Cmd {
+	if m.initialZoomPath != "" {
+		return tea.Batch(
+			m.spinner.Tick,
+			m.doScanSingle(m.initialZoomPath),
+		)
+	}
 	return tea.Batch(
 		m.spinner.Tick,
 		m.doScan(),
@@ -169,6 +199,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Archive modal intercepts all keys
+		if m.archiveState == archiveConfirming {
+			switch msg.String() {
+			case "y":
+				m.archiveState = archiveRunning
+				projectPath := m.repoPaths[m.cursor]
+				cmds = append(cmds, doArchiveChange(projectPath, m.archiveChangeName))
+			case "n", "esc":
+				m.archiveState = archiveIdle
+			}
+			return m, tea.Batch(cmds...)
+		}
+		if m.archiveState == archiveResult {
+			m.archiveState = archiveIdle
+			return m, nil
+		}
+		if m.archiveState == archiveRunning {
+			return m, nil
+		}
+
 		key := msg.String()
 		if m.pendingKey == "g" {
 			m.pendingKey = ""
@@ -188,10 +238,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch key {
 		case "q", "ctrl+c":
+			m.stopWatcher()
 			return m, tea.Quit
+		case "enter":
+			if m.zoomed {
+				// Exit zoom
+				m.stopWatcher()
+				m.zoomed = false
+				m.activeView = viewProjects
+				if !m.fullScanDone {
+					m.scanning = true
+					cmds = append(cmds, m.doScan())
+				}
+			} else if m.activeView == viewProjects && len(m.repoPaths) > 0 {
+				// Enter zoom
+				m.zoomed = true
+				m.activeView = viewDetail
+				if cmd := m.startWatcher(m.repoPaths[m.cursor]); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		case "esc":
+			if m.zoomed {
+				m.stopWatcher()
+				m.zoomed = false
+				m.activeView = viewProjects
+				if !m.fullScanDone {
+					m.scanning = true
+					cmds = append(cmds, m.doScan())
+				}
+			}
 		case "s":
 			m.scanning = true
-			cmds = append(cmds, m.doScan())
+			if m.zoomed && len(m.repoPaths) > 0 {
+				cmds = append(cmds, m.doScanSingle(m.repoPaths[m.cursor]))
+			} else {
+				cmds = append(cmds, m.doScan())
+			}
 		case "l":
 			m.logVisible = !m.logVisible
 			if m.logVisible {
@@ -207,7 +290,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.recalcLayout()
 			}
 		case "tab":
-			if m.logVisible {
+			if m.zoomed {
+				// No panel switching in zoom mode
+			} else if m.logVisible {
 				m.activeView = (m.activeView + 1) % 3
 			} else {
 				if m.activeView == viewProjects {
@@ -260,35 +345,53 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "left":
 			if m.activeView == viewDetail {
-				if m.detailTab > 0 {
+				if m.detailTab == tabChanges && len(m.currentChanges()) > 0 && m.changeArtifactTab > 0 {
+					m.changeArtifactTab--
+				} else if m.detailTab == tabArchive && len(m.currentArchivedChanges()) > 0 && m.archiveArtifactTab > 0 {
+					m.archiveArtifactTab--
+				} else if m.detailTab > 0 {
 					m.detailTab--
+					m.changeArtifactTab = 0
+					m.archiveArtifactTab = 0
 				}
 			}
 		case "right":
 			if m.activeView == viewDetail {
-				if m.detailTab < len(tabNames)-1 {
+				if m.detailTab == tabChanges && len(m.currentChanges()) > 0 {
+					maxTab := m.changeArtifactTabCount() - 1
+					if m.changeArtifactTab < maxTab {
+						m.changeArtifactTab++
+					} else if m.detailTab < len(tabNames)-1 {
+						m.detailTab++
+						m.changeArtifactTab = 0
+					}
+				} else if m.detailTab == tabArchive && len(m.currentArchivedChanges()) > 0 {
+					maxTab := m.archiveArtifactTabCount() - 1
+					if m.archiveArtifactTab < maxTab {
+						m.archiveArtifactTab++
+					} else if m.detailTab < len(tabNames)-1 {
+						m.detailTab++
+						m.archiveArtifactTab = 0
+					}
+				} else if m.detailTab < len(tabNames)-1 {
 					m.detailTab++
 				}
 			}
 		case "1":
 			if m.activeView == viewDetail {
-				m.detailTab = tabOverview
+				m.detailTab = tabSpecs
 			}
 		case "2":
 			if m.activeView == viewDetail {
-				m.detailTab = tabSpecs
+				m.detailTab = tabChanges
 			}
 		case "3":
 			if m.activeView == viewDetail {
-				m.detailTab = tabChanges
+				m.detailTab = tabArchive
 			}
 		case "4":
 			if m.activeView == viewDetail {
 				m.detailTab = tabConfig
-			}
-		case "5":
-			if m.activeView == viewDetail {
-				m.detailTab = tabSearch
 			}
 		case "up", "k":
 			if m.activeView == viewProjects {
@@ -297,7 +400,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.updateFileList()
 				}
 			} else if m.activeView == viewDetail {
-				if len(m.filePaths) > 0 && m.fileCursor > 0 {
+				if m.detailTab == tabSpecs {
+					if m.specCursor > 0 {
+						m.specCursor--
+					}
+				} else if m.detailTab == tabChanges {
+					if m.changeCursor > 0 {
+						m.changeCursor--
+						m.changeArtifactTab = 0
+					}
+				} else if m.detailTab == tabArchive {
+					if m.archiveCursor > 0 {
+						m.archiveCursor--
+						m.archiveArtifactTab = 0
+					}
+				} else if len(m.filePaths) > 0 && m.fileCursor > 0 {
 					m.fileCursor--
 				}
 			} else if m.activeView == viewLog {
@@ -310,11 +427,53 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.updateFileList()
 				}
 			} else if m.activeView == viewDetail {
-				if len(m.filePaths) > 0 && m.fileCursor < len(m.filePaths)-1 {
+				if m.detailTab == tabSpecs {
+					specNames := m.currentSpecNames()
+					if m.specCursor < len(specNames)-1 {
+						m.specCursor++
+					}
+				} else if m.detailTab == tabChanges {
+					changes := m.currentChanges()
+					if m.changeCursor < len(changes)-1 {
+						m.changeCursor++
+						m.changeArtifactTab = 0
+					}
+				} else if m.detailTab == tabArchive {
+					archived := m.currentArchivedChanges()
+					if m.archiveCursor < len(archived)-1 {
+						m.archiveCursor++
+						m.archiveArtifactTab = 0
+					}
+				} else if len(m.filePaths) > 0 && m.fileCursor < len(m.filePaths)-1 {
 					m.fileCursor++
 				}
 			} else if m.activeView == viewLog {
 				m.logViewport.LineDown(1)
+			}
+		case "a":
+			if m.detailTab == tabChanges {
+				changes := m.currentChanges()
+				if len(changes) > 0 && m.changeCursor < len(changes) {
+					m.archiveChangeName = changes[m.changeCursor].Name
+					m.archiveState = archiveConfirming
+				}
+			}
+		}
+
+	case archiveMsg:
+		m.archiveResultOk = msg.ok
+		m.archiveResultMsg = msg.output
+		m.archiveState = archiveResult
+		if msg.ok && len(m.repoPaths) > 0 {
+			cmds = append(cmds, m.doScanSingle(m.repoPaths[m.cursor]))
+		}
+
+	case fsChangeMsg:
+		if m.zoomed && len(m.repoPaths) > 0 {
+			m.scanning = true
+			cmds = append(cmds, m.doScanSingle(m.repoPaths[m.cursor]))
+			if m.watcher != nil {
+				cmds = append(cmds, waitForFsChange(m.watcher))
 			}
 		}
 
@@ -323,6 +482,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
+			// Track if this was a full scan (more than 1 project or not zoomed)
+			if !m.zoomed || len(msg.projects) > 1 {
+				m.fullScanDone = true
+			}
 			m.projects = msg.projects
 			m.repoPaths = make([]string, 0, len(m.projects))
 			for r := range m.projects {
@@ -335,6 +498,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.recalcLayout()
 			m.updateFileList()
+
+			// Start watcher after initial scan if zoomed via CLI
+			if m.zoomed && m.watcher == nil && len(m.repoPaths) > 0 {
+				if cmd := m.startWatcher(m.repoPaths[m.cursor]); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
 		}
 
 	case logMsg:
@@ -437,7 +607,75 @@ func (m model) halfPage() int {
 	}
 }
 
+func (m model) currentSpecNames() []string {
+	if len(m.repoPaths) == 0 {
+		return nil
+	}
+	return m.projects[m.repoPaths[m.cursor]].Info.SpecNames
+}
+
+func (m model) currentChanges() []scanner.ChangeInfo {
+	if len(m.repoPaths) == 0 {
+		return nil
+	}
+	return m.projects[m.repoPaths[m.cursor]].Info.Changes
+}
+
+func (m model) changeArtifactTabCount() int {
+	changes := m.currentChanges()
+	if m.changeCursor >= len(changes) {
+		return 0
+	}
+	ci := changes[m.changeCursor]
+	count := len(ci.ArtifactFiles) // .md files
+	if len(ci.SpecNames) > 0 {
+		count++ // specs sub-tab
+	}
+	return count
+}
+
+func (m model) changeArtifactTabNames() []string {
+	changes := m.currentChanges()
+	if m.changeCursor >= len(changes) {
+		return nil
+	}
+	ci := changes[m.changeCursor]
+	var names []string
+	for _, f := range ci.ArtifactFiles {
+		names = append(names, strings.TrimSuffix(f, ".md"))
+	}
+	if len(ci.SpecNames) > 0 {
+		names = append(names, "specs")
+	}
+	return names
+}
+
+func (m model) currentArchivedChanges() []scanner.ChangeInfo {
+	if len(m.repoPaths) == 0 {
+		return nil
+	}
+	return m.projects[m.repoPaths[m.cursor]].Info.ArchivedChanges
+}
+
+func (m model) archiveArtifactTabCount() int {
+	archived := m.currentArchivedChanges()
+	if m.archiveCursor >= len(archived) {
+		return 0
+	}
+	ci := archived[m.archiveCursor]
+	count := len(ci.ArtifactFiles)
+	if len(ci.SpecNames) > 0 {
+		count++
+	}
+	return count
+}
+
 func (m *model) updateFileList() {
+	m.specCursor = 0
+	m.changeCursor = 0
+	m.changeArtifactTab = 0
+	m.archiveCursor = 0
+	m.archiveArtifactTab = 0
 	if len(m.repoPaths) == 0 {
 		m.filePaths = nil
 		m.fileCursor = 0
@@ -467,6 +705,71 @@ func (m model) doScan() tea.Cmd {
 	}
 }
 
+func (m model) doScanSingle(projectPath string) tea.Cmd {
+	return func() tea.Msg {
+		files, err := scanner.ListOpenSpecContents(projectPath)
+		if err != nil {
+			return scanMsg{err: err}
+		}
+		info := scanner.ParseProjectInfo(projectPath)
+		projects := scanner.ProjectMap{
+			projectPath: scanner.ProjectStatus{
+				Files: files,
+				Info:  info,
+			},
+		}
+		return scanMsg{projects: projects}
+	}
+}
+
+func waitForFsChange(w *watcher.Watcher) tea.Cmd {
+	return func() tea.Msg {
+		_, ok := <-w.Events()
+		if !ok {
+			return nil // watcher closed
+		}
+		return fsChangeMsg{}
+	}
+}
+
+func (m *model) startWatcher(projectPath string) tea.Cmd {
+	openspecDir := filepath.Join(projectPath, "openspec")
+	w, err := watcher.New(openspecDir)
+	if err != nil {
+		log.Printf("watcher: failed to start: %v", err)
+		return nil
+	}
+	m.watcher = w
+	return waitForFsChange(w)
+}
+
+func (m *model) stopWatcher() {
+	if m.watcher != nil {
+		m.watcher.Close()
+		m.watcher = nil
+	}
+}
+
+type archiveMsg struct {
+	ok     bool
+	output string
+}
+
+func doArchiveChange(projectPath string, changeName string) tea.Cmd {
+	return func() tea.Msg {
+		if _, err := exec.LookPath("openspec"); err != nil {
+			return archiveMsg{ok: false, output: "openspec CLI not found. Install it to enable archiving."}
+		}
+		cmd := exec.Command("openspec", "archive", changeName, "-y")
+		cmd.Dir = projectPath
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return archiveMsg{ok: false, output: strings.TrimSpace(string(out))}
+		}
+		return archiveMsg{ok: true, output: strings.TrimSpace(string(out))}
+	}
+}
+
 func (m model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
@@ -475,20 +778,26 @@ func (m model) View() string {
 		return "Terminal too small. Need at least 60x20."
 	}
 
-	leftW := m.leftPanelWidth() - 2 // inner width (minus border)
-	rightW := m.rightPanelWidth() - 2
 	panelH := m.mainPanelHeight()
 
-	// Left panel: project list
-	projectContent := m.renderProjectList(leftW, panelH)
-	leftPanel := m.renderPanel(viewProjects, m.leftPanelWidth()-2, panelH, projectContent)
+	var mainRow string
+	if m.zoomed {
+		// Full-width detail panel
+		fullW := m.width - 2
+		detailContent := m.renderDetailPanel(fullW, panelH)
+		mainRow = m.renderPanel(viewDetail, fullW, panelH, detailContent)
+	} else {
+		leftW := m.leftPanelWidth() - 2
+		rightW := m.rightPanelWidth() - 2
 
-	// Right panel: detail
-	detailContent := m.renderDetailPanel(rightW, panelH)
-	rightPanel := m.renderPanel(viewDetail, m.rightPanelWidth()-2, panelH, detailContent)
+		projectContent := m.renderProjectList(leftW, panelH)
+		leftPanel := m.renderPanel(viewProjects, m.leftPanelWidth()-2, panelH, projectContent)
 
-	// Join panels horizontally
-	mainRow := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+		detailContent := m.renderDetailPanel(rightW, panelH)
+		rightPanel := m.renderPanel(viewDetail, m.rightPanelWidth()-2, panelH, detailContent)
+
+		mainRow = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+	}
 
 	// Nav bar
 	navBar := m.renderNavBar()
@@ -509,6 +818,37 @@ func (m model) View() string {
 	if m.err != nil {
 		errText := fmt.Sprintf("Error: %v", m.err)
 		modal := modalStyle.Width(m.width * 3 / 4).Render(errText)
+		view = placeOverlay(m.width, m.height, modal, view)
+	}
+
+	// Archive modals
+	switch m.archiveState {
+	case archiveConfirming:
+		var content string
+		changes := m.currentChanges()
+		if m.changeCursor < len(changes) {
+			ci := changes[m.changeCursor]
+			if ci.TasksTotal > 0 && ci.TasksDone < ci.TasksTotal {
+				incomplete := ci.TasksTotal - ci.TasksDone
+				content = fmt.Sprintf("⚠ %d incomplete task(s) in \"%s\"\n\nArchive anyway? (y/n)", incomplete, m.archiveChangeName)
+			} else {
+				content = fmt.Sprintf("Archive \"%s\"? (y/n)", m.archiveChangeName)
+			}
+		}
+		modal := modalStyle.Width(50).Render(content)
+		view = placeOverlay(m.width, m.height, modal, view)
+	case archiveRunning:
+		modal := modalStyle.Width(40).Render(m.spinner.View() + " Archiving...")
+		view = placeOverlay(m.width, m.height, modal, view)
+	case archiveResult:
+		var prefix string
+		if m.archiveResultOk {
+			prefix = "✓ "
+		} else {
+			prefix = "✗ "
+		}
+		content := prefix + m.archiveResultMsg + "\n\nPress any key to dismiss."
+		modal := modalStyle.Width(m.width * 3 / 4).Render(content)
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 
@@ -565,21 +905,38 @@ func (m model) renderDetailPanel(width int, height int) string {
 		return "No project selected."
 	}
 
+	currentProject := m.repoPaths[m.cursor]
+	info := m.projects[currentProject].Info
+
 	var b strings.Builder
+
+	// Persistent header: project path + stats (1 char padding all sides)
+	statsLine := fmt.Sprintf("Specs: %d  Changes: %d active  Archived: %d",
+		info.SpecCount, len(info.ActiveChanges), len(info.ArchivedChanges))
+	if info.TasksTotal > 0 {
+		statsLine += fmt.Sprintf("  Tasks: %d/%d", info.TasksDone, info.TasksTotal)
+	}
+	headerContent := headerStyle.Render(currentProject) + "\n" + dimStyle.Render(statsLine)
+	b.WriteString(lipgloss.NewStyle().Padding(1, 1).Render(headerContent))
+	b.WriteString("\n")
 
 	// Tab header
 	b.WriteString(m.renderTabHeader(width))
 	b.WriteString("\n")
 
-	// Tab content (height minus tab header line)
-	contentHeight := height - 1
+	// Tab content (height minus header 4 lines (2 content + 2 padding) and tab header 1 line)
+	contentHeight := height - 5
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
 
 	switch m.detailTab {
-	case tabOverview:
-		b.WriteString(m.renderOverview(width, contentHeight))
+	case tabSpecs:
+		b.WriteString(m.renderSpecsTab(width, contentHeight))
+	case tabChanges:
+		b.WriteString(m.renderChangesTab(width, contentHeight))
+	case tabArchive:
+		b.WriteString(m.renderArchiveTab(width, contentHeight))
 	case tabConfig:
 		b.WriteString(m.renderConfigTab(width, contentHeight))
 	default:
@@ -589,49 +946,181 @@ func (m model) renderDetailPanel(width int, height int) string {
 	return b.String()
 }
 
-func (m model) renderOverview(width int, height int) string {
-	currentProject := m.repoPaths[m.cursor]
-	st := m.projects[currentProject]
-	info := st.Info
+// renderChangeList is the shared renderer for both changes and archive tabs.
+func renderChangeList(changes []scanner.ChangeInfo, cursor int, artifactTab int, isActive bool, showDate bool, width int, height int) string {
+	if len(changes) == 0 {
+		if showDate {
+			return dimStyle.Render("No archived changes")
+		}
+		return dimStyle.Render("No active changes")
+	}
 
-	var b strings.Builder
+	listWidth := width * 3 / 10
+	if listWidth < 20 {
+		listWidth = 20
+	}
+	contentWidth := width - listWidth - 1
 
-	// Project path
-	b.WriteString(headerStyle.Render(currentProject))
-	b.WriteString("\n")
+	// Render change list
+	var listB strings.Builder
+	offset := 0
+	if cursor >= height {
+		offset = cursor - height + 1
+	}
+	end := offset + height
+	if end > len(changes) {
+		end = len(changes)
+	}
 
-	// Stats line
-	statsLine := fmt.Sprintf("Specs: %d  Changes: %d active  Archived: %d",
-		info.SpecCount, len(info.ActiveChanges), len(info.ArchivedChanges))
-	b.WriteString(dimStyle.Render(statsLine))
-	b.WriteString("\n")
-
-	// Active changes
-	b.WriteString("\n")
-	b.WriteString(sectionHeaderStyle.Render("Active Changes"))
-	b.WriteString("\n")
-	if len(info.ActiveChanges) == 0 {
-		b.WriteString(dimStyle.Render("  None"))
-	} else {
-		for _, c := range info.ActiveChanges {
-			b.WriteString("  - " + c + "\n")
+	for i := offset; i < end; i++ {
+		if i > offset {
+			listB.WriteString("\n")
+		}
+		ci := changes[i]
+		label := ci.Name
+		if showDate && !ci.ArchiveDate.IsZero() {
+			label = ci.ArchiveDate.Format("2006-01-02") + "  " + label
+		} else if ci.TasksTotal > 0 {
+			label += fmt.Sprintf(" (%d/%d)", ci.TasksDone, ci.TasksTotal)
+		}
+		if isActive && i == cursor {
+			listB.WriteString(selectedStyle.Width(listWidth).Render(label))
+		} else {
+			listB.WriteString(normalStyle.Render(label))
 		}
 	}
 
-	// Recently archived
-	b.WriteString("\n")
-	b.WriteString(sectionHeaderStyle.Render("Recently Archived"))
-	b.WriteString("\n")
-	if len(info.ArchivedChanges) == 0 {
-		b.WriteString(dimStyle.Render("  None"))
-	} else {
-		for _, a := range info.ArchivedChanges {
-			date := a.Date.Format("2006-01-02")
-			b.WriteString(fmt.Sprintf("  - %s (%s)\n", a.Name, date))
+	// Render right side: sub-tab header + content
+	var rightB strings.Builder
+	ci := changes[cursor]
+
+	// Build sub-tab names
+	var subTabNames []string
+	for _, f := range ci.ArtifactFiles {
+		subTabNames = append(subTabNames, strings.TrimSuffix(f, ".md"))
+	}
+	if len(ci.SpecNames) > 0 {
+		subTabNames = append(subTabNames, "specs")
+	}
+
+	// Sub-tab header
+	for i, name := range subTabNames {
+		if i > 0 {
+			rightB.WriteString(" ")
+		}
+		if i == artifactTab {
+			rightB.WriteString(activeTabStyle.Render(name))
+		} else {
+			rightB.WriteString(inactiveTabStyle.Render(name))
+		}
+	}
+	rightB.WriteString("\n")
+
+	if artifactTab < len(ci.ArtifactFiles) {
+		filename := ci.ArtifactFiles[artifactTab]
+		content := ci.ArtifactContents[filename]
+
+		if filename == "tasks.md" && ci.TasksTotal > 0 {
+			statsLine := fmt.Sprintf("Tasks: %d/%d complete\n\n", ci.TasksDone, ci.TasksTotal)
+			rightB.WriteString(sectionHeaderStyle.Render(statsLine))
+		}
+
+		rightB.WriteString(renderMarkdown(content, contentWidth))
+	} else if len(ci.SpecNames) > 0 {
+		for i, name := range ci.SpecNames {
+			if i > 0 {
+				rightB.WriteString("\n")
+			}
+			rightB.WriteString(sectionHeaderStyle.Render(name))
+			rightB.WriteString("\n")
+			if content, ok := ci.SpecContents[name]; ok {
+				rightB.WriteString(renderMarkdown(content, contentWidth))
+			} else {
+				rightB.WriteString(dimStyle.Render("  No spec.md found"))
+			}
+			rightB.WriteString("\n")
 		}
 	}
 
-	return b.String()
+	changeList := truncateContent(listB.String(), height)
+	changeContent := truncateContent(rightB.String(), height)
+
+	leftBox := lipgloss.NewStyle().Width(listWidth).Height(height).MaxHeight(height).Render(changeList)
+	rightBox := lipgloss.NewStyle().Width(contentWidth).Height(height).MaxHeight(height).Render(changeContent)
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, " ", rightBox)
+}
+
+func (m model) renderChangesTab(width int, height int) string {
+	isActive := m.activeView == viewDetail && m.detailTab == tabChanges
+	return renderChangeList(m.currentChanges(), m.changeCursor, m.changeArtifactTab, isActive, false, width, height)
+}
+
+func (m model) renderArchiveTab(width int, height int) string {
+	isActive := m.activeView == viewDetail && m.detailTab == tabArchive
+	return renderChangeList(m.currentArchivedChanges(), m.archiveCursor, m.archiveArtifactTab, isActive, true, width, height)
+}
+
+func (m model) renderSpecsTab(width int, height int) string {
+	if len(m.repoPaths) == 0 {
+		return "No project selected."
+	}
+
+	info := m.projects[m.repoPaths[m.cursor]].Info
+
+	if len(info.SpecNames) == 0 {
+		return dimStyle.Render("No specs found")
+	}
+
+	// Split: ~30% for spec list, ~70% for content
+	listWidth := width * 3 / 10
+	if listWidth < 15 {
+		listWidth = 15
+	}
+	contentWidth := width - listWidth - 1 // 1 for gap
+
+	// Render spec list
+	var listB strings.Builder
+	offset := 0
+	if m.specCursor >= height {
+		offset = m.specCursor - height + 1
+	}
+	end := offset + height
+	if end > len(info.SpecNames) {
+		end = len(info.SpecNames)
+	}
+
+	isActive := m.activeView == viewDetail && m.detailTab == tabSpecs
+	for i := offset; i < end; i++ {
+		if i > offset {
+			listB.WriteString("\n")
+		}
+		name := info.SpecNames[i]
+		if isActive && i == m.specCursor {
+			listB.WriteString(selectedStyle.Width(listWidth).Render(name))
+		} else {
+			listB.WriteString(normalStyle.Render(name))
+		}
+	}
+
+	// Render spec content
+	var contentB strings.Builder
+	selectedSpec := info.SpecNames[m.specCursor]
+	specContent, ok := info.SpecContents[selectedSpec]
+	if !ok || specContent == "" {
+		contentB.WriteString(dimStyle.Render("No spec.md found"))
+	} else {
+		contentB.WriteString(renderMarkdown(specContent, contentWidth))
+	}
+
+	specList := truncateContent(listB.String(), height)
+	specContentStr := truncateContent(contentB.String(), height)
+
+	// Force fixed dimensions on both sides to prevent wrapping/flickering
+	leftBox := lipgloss.NewStyle().Width(listWidth).Height(height).MaxHeight(height).Render(specList)
+	rightBox := lipgloss.NewStyle().Width(contentWidth).Height(height).MaxHeight(height).Render(specContentStr)
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, " ", rightBox)
 }
 
 func (m model) renderConfigTab(width int, height int) string {
@@ -827,7 +1316,11 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 	case viewProjects:
 		title = " Projects "
 	case viewDetail:
-		title = " Detail "
+		if m.zoomed && len(m.displayNames) > 0 && m.cursor < len(m.displayNames) {
+			title = " Detail (" + m.displayNames[m.cursor] + ") "
+		} else {
+			title = " Detail "
+		}
 	case viewLog:
 		title = " Log "
 	}
@@ -859,14 +1352,31 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 }
 
 func (m model) renderNavBar() string {
-	keys := []struct{ key, action string }{
-		{"q", "quit"},
-		{"s", "scan"},
-		{"tab", "switch"},
-		{"jk/\u2191\u2193", "navigate"},
-		{"\u2190\u2192/1-5", "tabs"},
-		{"l", "log"},
-		{"gg/G", "jump"},
+	var keys []struct{ key, action string }
+	if m.zoomed {
+		keys = []struct{ key, action string }{
+			{"q", "quit"},
+			{"esc", "back"},
+			{"s", "scan"},
+			{"jk/\u2191\u2193", "navigate"},
+			{"\u2190\u2192/1-4", "tabs"},
+			{"l", "log"},
+			{"gg/G", "jump"},
+		}
+	} else {
+		keys = []struct{ key, action string }{
+			{"q", "quit"},
+			{"enter", "zoom"},
+			{"s", "scan"},
+			{"tab", "switch"},
+			{"jk/\u2191\u2193", "navigate"},
+			{"\u2190\u2192/1-4", "tabs"},
+			{"l", "log"},
+			{"gg/G", "jump"},
+		}
+	}
+	if m.detailTab == tabChanges && len(m.currentChanges()) > 0 {
+		keys = append(keys, struct{ key, action string }{"a", "archive"})
 	}
 
 	var left strings.Builder
@@ -899,8 +1409,13 @@ func placeOverlay(width, height int, modal, background string) string {
 	)
 }
 
-func Run(config *scanner.Config, ignoreDirErrors bool, version string) error {
+func Run(config *scanner.Config, ignoreDirErrors bool, version string, initialZoomPath string) error {
 	m := newModel(config, ignoreDirErrors, version)
+	if initialZoomPath != "" {
+		m.initialZoomPath = initialZoomPath
+		m.zoomed = true
+		m.activeView = viewDetail
+	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	m.program = p

@@ -21,6 +21,25 @@ func getDefaultConfigPath() string {
 	return filepath.Join(configDir, "specgetty", "config.yml")
 }
 
+// findOpenSpecProject walks up from startDir looking for a directory containing openspec/.
+func findOpenSpecProject(startDir string) string {
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return ""
+	}
+	for {
+		candidate := filepath.Join(dir, "openspec")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "" // reached root
+		}
+		dir = parent
+	}
+}
+
 //go:embed config.yml
 var defaultConfig string
 
@@ -49,14 +68,24 @@ func main() {
 		},
 
 		&cli.BoolFlag{
-			Name:  "ignore_dir_errors",
+			Name:    "ignore_dir_errors",
 			Aliases: []string{"i"},
-			Value: true,
-			Usage: "Don't halt on errors while finding dirs",
+			Value:   true,
+			Usage:   "Don't halt on errors while finding dirs",
 		},
 		&cli.BoolFlag{
 			Name:  "debug",
 			Usage: "show debug output instead of UI",
+		},
+		&cli.BoolFlag{
+			Name:    "zoom",
+			Aliases: []string{"z"},
+			Usage:   "Start zoomed into a project (current dir or --path)",
+		},
+		&cli.StringFlag{
+			Name:    "path",
+			Aliases: []string{"p"},
+			Usage:   "OpenSpec project path to zoom into (used with --zoom)",
 		},
 	}
 	app.Action = func(c *cli.Context) error {
@@ -92,7 +121,21 @@ func main() {
 			return nil
 		}
 
-		err = ui.Run(config, c.Bool("ignore_dir_errors"), version)
+		// Resolve zoom path
+		var initialZoomPath string
+		if c.Bool("zoom") {
+			if c.String("path") != "" {
+				initialZoomPath, _ = filepath.Abs(c.String("path"))
+			} else {
+				cwd, _ := os.Getwd()
+				initialZoomPath = findOpenSpecProject(cwd)
+			}
+			if initialZoomPath == "" {
+				fmt.Println("No OpenSpec project found, starting in normal mode")
+			}
+		}
+
+		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, initialZoomPath)
 		if err != nil {
 			return err
 		}

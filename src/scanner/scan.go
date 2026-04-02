@@ -8,28 +8,55 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 )
 
+var (
+	taskDoneRe   = regexp.MustCompile(`(?m)^- \[x\] `)
+	taskUndoneRe = regexp.MustCompile(`(?m)^- \[ \] `)
+)
+
+// ParseTaskStats counts done and total checkbox tasks in markdown content.
+func ParseTaskStats(content string) (total, done int) {
+	done = len(taskDoneRe.FindAllString(content, -1))
+	undone := len(taskUndoneRe.FindAllString(content, -1))
+	total = done + undone
+	return
+}
+
 type FileEntry struct {
 	Path  string
 	IsDir bool
 }
 
-type ArchivedChange struct {
-	Name string
-	Date time.Time
+type ChangeInfo struct {
+	Name             string
+	ArtifactFiles    []string          // sorted .md filenames
+	ArtifactContents map[string]string // filename → content
+	TasksTotal       int
+	TasksDone        int
+	SpecNames        []string
+	SpecContents     map[string]string
+	ArchiveDate      time.Time // zero for active changes, mtime for archived
 }
 
 type ProjectInfo struct {
 	SpecCount       int
+	SpecNames       []string
+	SpecContents    map[string]string
 	ActiveChanges   []string
-	ArchivedChanges []ArchivedChange
+	Changes         []ChangeInfo
+	ArchivedChanges []ChangeInfo
 	ConfigFile      string // "project.md", "config.yaml", or ""
 	ConfigContent   string
+	TasksTotal      int // aggregate across all active changes
+	TasksDone       int
 }
 
 type ProjectStatus struct {
@@ -107,44 +134,113 @@ func ListOpenSpecContents(dir string) ([]FileEntry, error) {
 	return entries, nil
 }
 
+// parseChangeDir reads a change directory and returns a ChangeInfo.
+func parseChangeDir(dir string, name string) ChangeInfo {
+	ci := ChangeInfo{
+		Name:             name,
+		ArtifactContents: make(map[string]string),
+		SpecContents:     make(map[string]string),
+	}
+
+	// Discover .md files
+	if files, err := os.ReadDir(dir); err == nil {
+		for _, f := range files {
+			if f.IsDir() || !strings.HasSuffix(f.Name(), ".md") {
+				continue
+			}
+			ci.ArtifactFiles = append(ci.ArtifactFiles, f.Name())
+			if b, err := os.ReadFile(filepath.Join(dir, f.Name())); err == nil {
+				ci.ArtifactContents[f.Name()] = string(b)
+			}
+		}
+	}
+	sort.Strings(ci.ArtifactFiles)
+
+	// Parse task stats from tasks.md if present
+	if tasksContent, ok := ci.ArtifactContents["tasks.md"]; ok {
+		ci.TasksTotal, ci.TasksDone = ParseTaskStats(tasksContent)
+	}
+
+	// Read specs within the change
+	specsDir := filepath.Join(dir, "specs")
+	if specEntries, err := os.ReadDir(specsDir); err == nil {
+		for _, se := range specEntries {
+			if se.IsDir() {
+				ci.SpecNames = append(ci.SpecNames, se.Name())
+				specFile := filepath.Join(specsDir, se.Name(), "spec.md")
+				if b, err := os.ReadFile(specFile); err == nil {
+					ci.SpecContents[se.Name()] = string(b)
+				}
+			}
+		}
+	}
+	sort.Strings(ci.SpecNames)
+
+	return ci
+}
+
 // ParseProjectInfo reads the openspec/ directory structure to extract stats.
 func ParseProjectInfo(dir string) ProjectInfo {
 	info := ProjectInfo{}
 	openspecDir := filepath.Join(dir, "openspec")
 
-	// Count specs: subdirectories in openspec/specs/
+	// Specs: subdirectories in openspec/specs/, read spec.md contents
 	specsDir := filepath.Join(openspecDir, "specs")
+	info.SpecContents = make(map[string]string)
 	if entries, err := os.ReadDir(specsDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
 				info.SpecCount++
+				info.SpecNames = append(info.SpecNames, e.Name())
+				specFile := filepath.Join(specsDir, e.Name(), "spec.md")
+				if b, err := os.ReadFile(specFile); err == nil {
+					info.SpecContents[e.Name()] = string(b)
+				}
 			}
 		}
 	}
+	sort.Strings(info.SpecNames)
 
 	// Active changes: subdirectories in openspec/changes/
 	changesDir := filepath.Join(openspecDir, "changes")
 	if entries, err := os.ReadDir(changesDir); err == nil {
 		for _, e := range entries {
-			if e.IsDir() {
-				info.ActiveChanges = append(info.ActiveChanges, e.Name())
+			if !e.IsDir() || e.Name() == "archive" {
+				continue
 			}
+			info.ActiveChanges = append(info.ActiveChanges, e.Name())
+			ci := parseChangeDir(filepath.Join(changesDir, e.Name()), e.Name())
+			info.Changes = append(info.Changes, ci)
 		}
+	}
+	sort.Slice(info.Changes, func(i, j int) bool {
+		return info.Changes[i].Name < info.Changes[j].Name
+	})
+
+	// Aggregate task stats across active changes
+	for _, ci := range info.Changes {
+		info.TasksTotal += ci.TasksTotal
+		info.TasksDone += ci.TasksDone
 	}
 
 	// Archived changes: subdirectories in openspec/archive/
-	archiveDir := filepath.Join(openspecDir, "archive")
+	archiveDir := filepath.Join(openspecDir, "changes", "archive")
 	if entries, err := os.ReadDir(archiveDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
-				var modTime time.Time
-				if fi, err := e.Info(); err == nil {
-					modTime = fi.ModTime()
+				dirName := e.Name()
+				displayName := dirName
+				var archiveDate time.Time
+				// Parse YYYY-MM-DD- prefix from directory name
+				if len(dirName) >= 11 && dirName[4] == '-' && dirName[7] == '-' && dirName[10] == '-' {
+					if t, err := time.Parse("2006-01-02", dirName[:10]); err == nil {
+						archiveDate = t
+						displayName = dirName[11:]
+					}
 				}
-				info.ArchivedChanges = append(info.ArchivedChanges, ArchivedChange{
-					Name: e.Name(),
-					Date: modTime,
-				})
+				ci := parseChangeDir(filepath.Join(archiveDir, dirName), displayName)
+				ci.ArchiveDate = archiveDate
+				info.ArchivedChanges = append(info.ArchivedChanges, ci)
 			}
 		}
 	}

@@ -85,7 +85,7 @@ func walkone(ctx context.Context, dir string, config *Config, results chan strin
 }
 
 // isValidOpenSpecDir checks whether an openspec/ directory contains the required
-// markers: (config.yaml OR project.md) AND (specs/ OR archive/).
+// markers: (config.yaml OR project.md) AND (specs/ OR changes/).
 func isValidOpenSpecDir(path string) bool {
 	hasConfig := false
 	if _, err := os.Stat(filepath.Join(path, "config.yaml")); err == nil {
@@ -105,7 +105,7 @@ func isValidOpenSpecDir(path string) bool {
 		hasStructure = true
 	}
 	if !hasStructure {
-		if info, err := os.Stat(filepath.Join(path, "archive")); err == nil && info.IsDir() {
+		if info, err := os.Stat(filepath.Join(path, "changes")); err == nil && info.IsDir() {
 			hasStructure = true
 		}
 	}

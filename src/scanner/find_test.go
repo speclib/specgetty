@@ -54,10 +54,10 @@ func TestIsValidOpenSpecDir(t *testing.T) {
 		}
 	})
 
-	t.Run("valid with project.md and archive/", func(t *testing.T) {
+	t.Run("valid with project.md and changes/", func(t *testing.T) {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "project.md"), []byte(""), 0644)
-		os.Mkdir(filepath.Join(dir, "archive"), 0755)
+		os.Mkdir(filepath.Join(dir, "changes"), 0755)
 
 		if !isValidOpenSpecDir(dir) {
 			t.Error("expected valid, got invalid")
@@ -72,7 +72,7 @@ func TestIsValidOpenSpecDir(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid with config.yaml but no specs/ or archive/", func(t *testing.T) {
+	t.Run("invalid with config.yaml but no specs/ or changes/", func(t *testing.T) {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(""), 0644)
 

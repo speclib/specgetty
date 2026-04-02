@@ -3,6 +3,9 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mipmip/specgetty/src/scanner"
 )
 
 func TestMainPanelHeight(t *testing.T) {
@@ -170,14 +173,17 @@ func TestRenderProjectList(t *testing.T) {
 }
 
 func TestRenderTabHeader(t *testing.T) {
-	t.Run("overview tab active", func(t *testing.T) {
-		m := model{detailTab: tabOverview}
+	t.Run("specs tab active", func(t *testing.T) {
+		m := model{detailTab: tabSpecs}
 		got := m.renderTabHeader(80)
-		if !strings.Contains(got, "overview") {
-			t.Error("output missing 'overview'")
-		}
 		if !strings.Contains(got, "specs") {
 			t.Error("output missing 'specs'")
+		}
+		if !strings.Contains(got, "changes") {
+			t.Error("output missing 'changes'")
+		}
+		if strings.Contains(got, "overview") {
+			t.Error("output should not contain 'overview'")
 		}
 	})
 
@@ -188,6 +194,56 @@ func TestRenderTabHeader(t *testing.T) {
 			if !strings.Contains(got, name) {
 				t.Errorf("output missing tab %q", name)
 			}
+		}
+	})
+}
+
+func TestStatsLineIncludesTasks(t *testing.T) {
+	t.Run("shows tasks when present", func(t *testing.T) {
+		m := model{
+			width:        100,
+			height:       40,
+			repoPaths:    []string{"/test/project"},
+			displayNames: []string{"project"},
+			cursor:       0,
+			projects: scanner.ProjectMap{
+				"/test/project": scanner.ProjectStatus{
+					Info: scanner.ProjectInfo{
+						SpecCount:     2,
+						ActiveChanges: []string{"ch1"},
+						TasksTotal:    10,
+						TasksDone:     4,
+					},
+				},
+			},
+		}
+		got := m.renderDetailPanel(80, 30)
+		if !strings.Contains(got, "Tasks: 4/10") {
+			t.Errorf("expected 'Tasks: 4/10' in output, got:\n%s", got)
+		}
+	})
+
+	t.Run("omits tasks when none", func(t *testing.T) {
+		m := model{
+			width:        100,
+			height:       40,
+			repoPaths:    []string{"/test/project"},
+			displayNames: []string{"project"},
+			cursor:       0,
+			projects: scanner.ProjectMap{
+				"/test/project": scanner.ProjectStatus{
+					Info: scanner.ProjectInfo{
+						SpecCount:     2,
+						ActiveChanges: []string{"ch1"},
+						TasksTotal:    0,
+						TasksDone:     0,
+					},
+				},
+			},
+		}
+		got := m.renderDetailPanel(80, 30)
+		if strings.Contains(got, "Tasks:") {
+			t.Errorf("expected no 'Tasks:' in output, got:\n%s", got)
 		}
 	})
 }
@@ -226,6 +282,64 @@ func TestRenderMarkdown(t *testing.T) {
 			t.Error("output still contains raw ** markers")
 		}
 	})
+}
+
+func makeArchiveTestModel() model {
+	return model{
+		width:     100,
+		height:    40,
+		repoPaths: []string{"/test/project"},
+		cursor:    0,
+		detailTab: tabChanges,
+		projects: scanner.ProjectMap{
+			"/test/project": scanner.ProjectStatus{
+				Info: scanner.ProjectInfo{
+					ActiveChanges: []string{"my-change"},
+					Changes: []scanner.ChangeInfo{
+						{Name: "my-change", TasksTotal: 5, TasksDone: 3},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestArchiveKeyStartsConfirming(t *testing.T) {
+	m := makeArchiveTestModel()
+	m.activeView = viewDetail
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	um := updated.(model)
+	if um.archiveState != archiveConfirming {
+		t.Errorf("archiveState = %d, want %d (archiveConfirming)", um.archiveState, archiveConfirming)
+	}
+	if um.archiveChangeName != "my-change" {
+		t.Errorf("archiveChangeName = %q, want my-change", um.archiveChangeName)
+	}
+}
+
+func TestArchiveConfirmY(t *testing.T) {
+	m := makeArchiveTestModel()
+	m.archiveState = archiveConfirming
+	m.archiveChangeName = "my-change"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	um := updated.(model)
+	if um.archiveState != archiveRunning {
+		t.Errorf("archiveState = %d, want %d (archiveRunning)", um.archiveState, archiveRunning)
+	}
+}
+
+func TestArchiveConfirmN(t *testing.T) {
+	m := makeArchiveTestModel()
+	m.archiveState = archiveConfirming
+	m.archiveChangeName = "my-change"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	um := updated.(model)
+	if um.archiveState != archiveIdle {
+		t.Errorf("archiveState = %d, want %d (archiveIdle)", um.archiveState, archiveIdle)
+	}
 }
 
 func TestRenderYAML(t *testing.T) {
