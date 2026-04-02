@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-02
+
 - feat: auto-rescan in zoom mode — filesystem watcher (fsnotify) monitors the openspec directory and triggers rescan on changes
 - feat: config tab renders `project.md` as markdown or `config.yaml` with syntax highlighting
 - feat: specs tab with split view — spec list on left, rendered markdown on right
