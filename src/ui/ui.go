@@ -190,14 +190,19 @@ type model struct {
 	askOpenPicker bool
 
 	// Change list state.
-	listMode          int // modeOpen, modeArchived, modeBoth
-	fields            []string
-	searchInput       textinput.Model
-	searchFocused     bool
-	selectedKey       string // identifies the selected change across re-filter and rescan
-	logVisible        bool
-	logShownOnce      bool
-	pendingKey        string
+	listMode      int // modeOpen, modeArchived, modeBoth
+	fields        []string
+	searchInput   textinput.Model
+	searchFocused bool
+	selectedKey   string // identifies the selected change across re-filter and rescan
+	logVisible    bool
+	logShownOnce  bool
+	pendingKey    string
+
+	// statusMsg is a transient one-line report shown in place of the nav bar.
+	// Every other result in specgetty is a modal that must be dismissed, which
+	// is the wrong weight for something instant and harmless.
+	statusMsg         string
 	archiveState      int
 	archiveChangeName string
 	archiveResultMsg  string
@@ -279,6 +284,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recalcLayout()
 
 	case tea.KeyMsg:
+		// The status line is cleared by the next keystroke rather than by a
+		// timer: no tea.Tick, no re-render loop, and it stays exactly as long
+		// as the user is still looking at it. Handlers below may set it again.
+		m.statusMsg = ""
+
 		if m.scanning {
 			switch msg.String() {
 			case "q", "ctrl+c":
@@ -702,6 +712,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if r, ok := m.selectedRow(); ok && m.detailTab == tabChanges && !r.archived {
 				m.discardChangeName = r.ci.Name
 				m.discardState = discardConfirming
+			}
+
+		case "y":
+			if r, ok := m.selectedRow(); ok && m.detailTab == tabChanges {
+				m.statusMsg = copyToClipboard("name", r.ci.Name)
+			}
+
+		case "Y":
+			if r, ok := m.selectedRow(); ok && m.detailTab == tabChanges {
+				m.statusMsg = copyToClipboard("path",
+					changeDirPath(m.repoPaths[m.cursor], r))
 			}
 
 		case "e":
@@ -1735,6 +1756,17 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 }
 
 func (m model) renderNavBar() string {
+	// A status message takes the nav bar's row. The keys it would have listed
+	// are all still bound; the message is gone on the next keystroke.
+	if m.statusMsg != "" {
+		return lipgloss.PlaceHorizontal(
+			m.width,
+			lipgloss.Left,
+			navBarStyle.Render(" "+m.statusMsg+" "),
+			lipgloss.WithWhitespaceBackground(lipgloss.Color("236")),
+		)
+	}
+
 	var keys []struct{ key, action string }
 
 	// While an overlay has the keyboard the ordinary keys are unavailable, so
@@ -1811,7 +1843,9 @@ func (m model) renderNavBar() string {
 							struct{ key, action string }{"a", "archive"},
 							struct{ key, action string }{"d", "discard"})
 					}
-					keys = append(keys, struct{ key, action string }{"e", "export"})
+					keys = append(keys,
+						struct{ key, action string }{"e", "export"},
+						struct{ key, action string }{"y/Y", "copy name/path"})
 				}
 			}
 			keys = append(keys,

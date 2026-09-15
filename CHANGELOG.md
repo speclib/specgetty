@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Copy a reference to the selected change: `y` puts its name on the clipboard,
+  `Y` puts the absolute path of its directory. A one-line message reports what
+  was copied, and says so plainly if no clipboard tool is available rather than
+  looking like it worked.
 - Export a change as a zip with `e`, from the change list or on an archived
   change. Writes `~/<change-name>-<date>.zip` with the change directory intact,
   so the full proposal, design, tasks and specs can be attached to a pull
