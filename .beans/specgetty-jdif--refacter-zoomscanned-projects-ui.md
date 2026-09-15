@@ -1,11 +1,11 @@
 ---
 # specgetty-jdif
 title: refacter zoom/scanned projects UI
-status: in-progress
+status: completed
 type: epic
 priority: normal
 created_at: 2026-09-15T14:28:51Z
-updated_at: 2026-09-15T16:34:57Z
+updated_at: 2026-09-15T16:48:01Z
 ---
 
 The current UI works like this:
@@ -77,4 +77,56 @@ is misleading.
   Stale, unrelated to this change, left for its own cleanup.
 - A store root contains `openspec/`, so the scanner already finds registered
   stores as ordinary projects. Registry lives at
+  `~/.local/share/openspec/stores/registry.yaml`.
+
+## Summary of Changes
+
+Shipped as openspec change `project-picker`, archived to
+`openspec/changes/archive/2026-09-15-project-picker/`. Commit e908867.
+
+### What landed
+
+`spg` opens the project at the working directory immediately. Startup never
+walks the disk: that only happens when the picker asks for it.
+
+The project list panel is gone. `p` opens a picker overlay from either level,
+`enter` switches project and lands on that project's change list, `esc` closes
+it. The split layout, `renderProjectList`, both panel-width helpers and the
+vestigial `filePaths`/`fileCursor` are deleted.
+
+The picker caches discovered paths in `~/.cache/specgetty/projects.yaml` and
+`r` refreshes. The cache holds paths only, so every count shown is read fresh
+from disk; only the list of projects can be stale. Editing `scandirs`
+invalidates it, and deleted projects drop out without a rescan.
+
+`--zoom` is gone, replaced by `--view=single|all` with `--path` retained.
+
+### The table and filter are now generic
+
+`filterRows`, `indexOfKey`, `layoutFields` and `renderTable` are generic over a
+`tableRow` interface (stable key, searchable name, named bodies). The picker is
+the second consumer, which is what justified the extraction.
+
+Match reasons moved off the row: `filterRows` returns `filtered[T]{row, matched}`
+rather than writing hints back onto the row, so a name match cannot inherit
+hints from an earlier body search.
+
+### Worth remembering
+
+- `isValidOpenSpecDir` needs a `config.yaml` or `project.md` marker alongside
+  `specs/` or `changes/`. A bare specs tree is not detected, which cost me a
+  test fixture before I read the guard.
+- The project picker box sizes to the project count, not the filtered count, so
+  it does not jump about while a filter is typed.
+
+### Measured
+
+Startup went from a 0.7s-3.9s walk to about a millisecond. Coverage rose from
+50.9% to 55.8% overall and the ratchet floors were raised to match.
+
+### Still open
+
+- `openspec/specs/overview-tab/spec.md` describes a tab replaced by the
+  persistent header in April. Stale, unrelated, left for its own cleanup.
+- Stores: `--view=store` deliberately not built. Registry is at
   `~/.local/share/openspec/stores/registry.yaml`.
