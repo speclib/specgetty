@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Search the change list with `/`: fuzzy on change names, `'` for a literal name
+  match, and `:` to search the text inside proposal, design, tasks and spec
+  files. A row matched on file contents names the files that matched.
+- Cycle the change list between open, archived and both with `f`.
+- Choose which columns the change list shows through `change_fields` in the
+  config file or `--change-fields` on the command line.
+
+### Changed
+
+- The change list now fills the panel as a table, and a change opens one level
+  deeper with `enter`. Its artifact sub-tabs no longer share left/right with the
+  project tab bar, so pressing right on the last sub-tab stays put instead of
+  jumping to another tab.
+- The archive tab is gone. Archived changes live in the one change list behind
+  the `f` filter.
+- Tabs are now changes, specs, config, reachable with `1`, `2` and `3`.
+- `esc` is the only way back up a level; `enter` no longer doubles as unzoom.
+
 ## [0.2.0] - 2026-04-02
 
 - feat: auto-rescan in zoom mode — filesystem watcher (fsnotify) monitors the openspec directory and triggers rescan on changes

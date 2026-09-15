@@ -1,9 +1,4 @@
-# changes-tab Specification
-
-## Purpose
-TBD - created by archiving change changes-tab-with-artifacts. Update Purpose after archive.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Changes tab lists active changes with task progress
 The changes tab SHALL display the change list across the full panel width as a
@@ -39,31 +34,6 @@ sub-tabs for each discovered artifact file plus a specs sub-tab.
 - **WHEN** a change is open and the user presses left/right arrows
 - **THEN** the artifact sub-tab SHALL change and the content SHALL update,
   without affecting the project tab bar
-
-### Requirement: Artifact content rendered as markdown
-Selected artifact content SHALL be rendered with markdown styling.
-
-#### Scenario: Viewing proposal.md
-- **WHEN** the proposal sub-tab is selected
-- **THEN** the content of proposal.md SHALL be rendered with headers, lists, bold, and italic styled
-
-### Requirement: Tasks artifact shows checkbox stats
-The tasks sub-tab SHALL display task completion statistics prominently.
-
-#### Scenario: Tasks with checkboxes
-- **WHEN** tasks.md contains `- [x]` and `- [ ]` lines
-- **THEN** the header SHALL show "Tasks: N/M complete" and the content SHALL render the full markdown
-
-### Requirement: Specs sub-tab shows change specs
-The specs sub-tab SHALL show specs within the change's `specs/` subdirectory.
-
-#### Scenario: Change with specs
-- **WHEN** the specs sub-tab is selected for a change that has `specs/` with subdirectories
-- **THEN** the spec names SHALL be listed and the first spec's content SHALL be displayed
-
-#### Scenario: Change without specs
-- **WHEN** the specs sub-tab is selected for a change with no `specs/` directory
-- **THEN** the content SHALL display "No specs in this change"
 
 ### Requirement: Change list navigation
 The user SHALL be able to navigate the change list with j/k keys when the

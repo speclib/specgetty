@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-09-15
+
+# The archive tab is folded into the change list's open/archived/both filter,
+# which removes every requirement archive-tab had. Retiring the capability is
+# the intent, not an accident of the delta.
+retire_capabilities: true

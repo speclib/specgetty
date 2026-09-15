@@ -74,6 +74,7 @@ type Config struct {
 	} `yaml:"scandirs"`
 	FollowSymlinks bool   `yaml:"followsymlinks"`
 	EditCommand    string `yaml:"edit_command"`
+	ChangeFields   string `yaml:"change_fields"`
 }
 
 func DumpConfig(config *Config) error {

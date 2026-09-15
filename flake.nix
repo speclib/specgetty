@@ -35,7 +35,7 @@
             pname = "specgetty-tests";
             inherit version;
             src = ./.;
-            vendorHash = "sha256-DWWzfif21IDuYdwa6PwiBQFa0gAi4NZ6YDKbE9/C4eE=";
+            vendorHash = "sha256-Lxik5/egn7vtWHcMPOBiFO/ZP5847TTEKfDXmLHHqS4=";
 
             nativeBuildInputs = [ pkgs.bash ];
 

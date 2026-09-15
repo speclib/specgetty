@@ -87,6 +87,10 @@ func main() {
 			Aliases: []string{"p"},
 			Usage:   "OpenSpec project path to zoom into (used with --zoom)",
 		},
+		&cli.StringFlag{
+			Name:  "change-fields",
+			Usage: "Comma-separated columns for the change list (overrides change_fields in the config)",
+		},
 	}
 	app.Action = func(c *cli.Context) error {
 
@@ -135,7 +139,12 @@ func main() {
 			}
 		}
 
-		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, initialZoomPath)
+		fields, err := ui.ResolveFields(c.String("change-fields"), config.ChangeFields)
+		if err != nil {
+			return err
+		}
+
+		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, initialZoomPath, fields)
 		if err != nil {
 			return err
 		}

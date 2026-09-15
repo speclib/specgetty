@@ -21,3 +21,11 @@ scandirs:
 followsymlinks: true
 
 edit_command: code %WORKING_DIRECTORY
+
+# which columns should the change list show, in order?
+#
+# valid fields: archived, date, name, specs, tasks
+# default: name,tasks,specs
+#
+# overridden by --change-fields on the command line
+#change_fields: name,tasks,specs,archived
