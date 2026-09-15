@@ -20,10 +20,18 @@ func (m model) docRegion() (width, height int) {
 	width = m.width - 2 // the panel content width that View passes down
 	panelH := m.mainPanelHeight()
 
-	if m.level == levelChange {
+	switch {
+	case m.level == levelChange:
 		// The change name line and the sub-tab row stay put above the document.
 		height = panelH - 2
-	} else {
+
+	case m.detailTab == tabSpecs:
+		// The specs tab splits its width; the document is the content half.
+		_, contentWidth := specsSplit(width)
+		width = contentWidth
+		height = panelH - 5
+
+	default:
 		// The project header takes four rows and the tab bar one, then the
 		// config pane's own source line and the blank line under it.
 		height = panelH - 5 - 2
@@ -56,8 +64,21 @@ func (m model) docActive() bool {
 	if m.level == levelChange {
 		return true
 	}
-	return m.level == levelProject && m.detailTab == tabConfig &&
-		m.projects[m.repoPaths[m.cursor]].Info.ConfigFile != ""
+	if m.level != levelProject {
+		return false
+	}
+
+	info := m.projects[m.repoPaths[m.cursor]].Info
+	switch m.detailTab {
+	case tabConfig:
+		return info.ConfigFile != ""
+	case tabSpecs:
+		// The specs tab has two halves. The vertical keys belong to the content
+		// only while the content holds the keyboard.
+		return m.specsFocus == specsFocusContent &&
+			m.specCursor < len(info.SpecNames)
+	}
+	return false
 }
 
 // renderChangeArtifact renders the scrolling part of an open change: the
@@ -120,6 +141,21 @@ func (m model) currentDocument() (key, content string, ok bool) {
 		}
 		key = strings.Join([]string{project, "change", r.key(), names[tab]}, docKeySep)
 		return key, renderChangeArtifact(r, tab, width), true
+
+	case m.level == levelProject && m.detailTab == tabSpecs:
+		info := m.projects[project].Info
+		if m.specCursor >= len(info.SpecNames) {
+			return "", "", false
+		}
+		name := info.SpecNames[m.specCursor]
+		// Keyed by spec name, so moving the cursor is moving to a different
+		// document and starts at the top, by the same rule as artifact sub-tabs.
+		key = strings.Join([]string{project, "spec", name}, docKeySep)
+		content, found := info.SpecContents[name]
+		if !found || content == "" {
+			return key, dimStyle.Render("No spec.md found"), true
+		}
+		return key, renderMarkdown(content, width), true
 
 	case m.level == levelProject && m.detailTab == tabConfig:
 		info := m.projects[project].Info

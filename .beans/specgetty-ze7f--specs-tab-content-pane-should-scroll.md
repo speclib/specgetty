@@ -1,11 +1,11 @@
 ---
 # specgetty-ze7f
 title: specs tab content pane should scroll
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-09-15T16:32:06Z
-updated_at: 2026-09-15T16:32:27Z
+updated_at: 2026-09-15T18:45:37Z
 blocked_by:
     - specgetty-5k45
 ---

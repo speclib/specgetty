@@ -77,6 +77,21 @@ shows, so there is no separate archive tab.
 | `1` / `2` / `3`    | changes / specs / config                         |
 | `<tab>`            | Switch focus between the panels (top level only) |
 
+### Keys in the specs tab
+
+The specs tab has two halves and `tab` moves the keyboard between them, and on
+through the log panel when it is open.
+
+| Key     | Action                                             |
+| ------- | -------------------------------------------------- |
+| `tab`   | Move the keyboard between the list and the content |
+| `j`/`k` | Change spec, or scroll it, depending on the focus  |
+
+The selected spec is highlighted while the list has the keys and dimmed while
+the content has them, and the title shows a reading position only in the second
+case. When the content has the keys it takes the same scroll keys as an open
+change.
+
 ### Keys in the change list
 
 | Key   | Action                                                |

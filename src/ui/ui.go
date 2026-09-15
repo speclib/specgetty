@@ -38,6 +38,12 @@ const (
 	levelChange  = 1 // one change, with its artifact sub-tabs
 )
 
+// Which half of the specs tab holds the keyboard.
+const (
+	specsFocusList = iota
+	specsFocusContent
+)
+
 // Changes lead, because that is what the tool is usually opened to look at.
 const (
 	tabChanges = 0
@@ -136,6 +142,11 @@ var (
 
 	dimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("250"))
+
+	// The selected row of a list that no longer holds the keyboard.
+	dimSelectedStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("238")).
+				Foreground(lipgloss.Color("252"))
 )
 
 type model struct {
@@ -155,6 +166,7 @@ type model struct {
 	logContent        string
 	detailTab         int
 	specCursor        int
+	specsFocus        int // specsFocusList or specsFocusContent
 	changeCursor      int
 	changeArtifactTab int
 	level             int    // navigation depth: levelProject, levelChange
@@ -549,14 +561,24 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "tab":
-			// One main panel, so tab only has somewhere to go when the log
-			// panel is open.
-			if m.logVisible {
-				if m.activeView == viewDetail {
-					m.activeView = viewLog
-				} else {
-					m.activeView = viewDetail
-				}
+			// The specs tab has two halves, so tab moves the keyboard between
+			// them there, and on through the log panel when it is open.
+			// Elsewhere there is one main panel and tab only reaches the log.
+			onSpecs := m.level == levelProject && m.detailTab == tabSpecs &&
+				len(m.currentSpecNames()) > 0
+			switch {
+			case m.activeView == viewLog:
+				m.activeView = viewDetail
+				m.specsFocus = specsFocusList
+			case onSpecs && m.specsFocus == specsFocusList:
+				m.specsFocus = specsFocusContent
+			case onSpecs && m.logVisible:
+				m.activeView = viewLog
+				m.specsFocus = specsFocusList
+			case onSpecs:
+				m.specsFocus = specsFocusList
+			case m.logVisible:
+				m.activeView = viewLog
 			}
 
 		case "g":
@@ -608,6 +630,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else if m.activeView == viewDetail && m.detailTab > 0 {
 				m.detailTab--
+				m.specsFocus = specsFocusList
 			}
 
 		case "right":
@@ -617,6 +640,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else if m.activeView == viewDetail && m.detailTab < len(tabNames)-1 {
 				m.detailTab++
+				m.specsFocus = specsFocusList
 			}
 
 		case "1", "2", "3":
@@ -624,6 +648,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// a change is open.
 			if m.level != levelChange && m.activeView == viewDetail {
 				m.detailTab = int(key[0] - '1')
+				m.specsFocus = specsFocusList
 			}
 
 		case "up", "k":
@@ -1353,6 +1378,19 @@ func (m model) renderChangesTab(width int, height int) string {
 		renderSearchPrompt(m.searchInput.Value(), m.searchFocused, len(rows), total)
 }
 
+// specsSplit divides the specs tab into its list half and its content half.
+//
+// renderSpecsTab and docRegion both need this, and they must agree: if the
+// document is wrapped to a different width than the pane it is drawn in, the
+// box re-wraps the rows and the reported position stops matching the screen.
+func specsSplit(width int) (listWidth, contentWidth int) {
+	listWidth = width * 3 / 10
+	if listWidth < 15 {
+		listWidth = 15
+	}
+	return listWidth, width - listWidth - 1 // 1 for the gap
+}
+
 func (m model) renderSpecsTab(width int, height int) string {
 	if len(m.repoPaths) == 0 {
 		return "No project selected."
@@ -1364,12 +1402,7 @@ func (m model) renderSpecsTab(width int, height int) string {
 		return dimStyle.Render("No specs found")
 	}
 
-	// Split: ~30% for spec list, ~70% for content
-	listWidth := width * 3 / 10
-	if listWidth < 15 {
-		listWidth = 15
-	}
-	contentWidth := width - listWidth - 1 // 1 for gap
+	listWidth, contentWidth := specsSplit(width)
 
 	// Render spec list
 	var listB strings.Builder
@@ -1388,25 +1421,19 @@ func (m model) renderSpecsTab(width int, height int) string {
 			listB.WriteString("\n")
 		}
 		name := info.SpecNames[i]
-		if isActive && i == m.specCursor {
+		switch {
+		case isActive && i == m.specCursor && m.specsFocus == specsFocusList:
 			listB.WriteString(selectedStyle.Width(listWidth).Render(name))
-		} else {
+		case isActive && i == m.specCursor:
+			// Still the selected spec, but the keys belong to the content now.
+			listB.WriteString(dimSelectedStyle.Width(listWidth).Render(name))
+		default:
 			listB.WriteString(normalStyle.Render(name))
 		}
 	}
 
-	// Render spec content
-	var contentB strings.Builder
-	selectedSpec := info.SpecNames[m.specCursor]
-	specContent, ok := info.SpecContents[selectedSpec]
-	if !ok || specContent == "" {
-		contentB.WriteString(dimStyle.Render("No spec.md found"))
-	} else {
-		contentB.WriteString(renderMarkdown(specContent, contentWidth))
-	}
-
 	specList := truncateContent(listB.String(), height)
-	specContentStr := truncateContent(contentB.String(), height)
+	specContentStr := truncateContent(m.docViewport.View(), height)
 
 	// Force fixed dimensions on both sides to prevent wrapping/flickering
 	leftBox := lipgloss.NewStyle().Width(listWidth).Height(height).MaxHeight(height).Render(specList)
@@ -1763,6 +1790,18 @@ func (m model) renderNavBar() string {
 				{"q", "quit"},
 				{"jk/\u2191\u2193", "navigate"},
 				{"\u2190\u2192/1-3", "tabs"},
+			}
+			if m.detailTab == tabSpecs && len(m.currentSpecNames()) > 0 {
+				if m.specsFocus == specsFocusContent {
+					keys = append(keys,
+						struct{ key, action string }{"tab", "focus list"},
+						struct{ key, action string }{"^f^b", "page"},
+						struct{ key, action string }{"^d^u", "half"},
+						struct{ key, action string }{"gg/G", "ends"})
+				} else {
+					keys = append(keys,
+						struct{ key, action string }{"tab", "focus content"})
+				}
 			}
 			if m.detailTab == tabChanges {
 				keys = append(keys,

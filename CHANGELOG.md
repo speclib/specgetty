@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously lost inside the visible height as well as below it, in every
   markdown pane including the specs tab.
 - The config tab scrolls the same way, keeping the file name fixed above it.
+- The specs tab scrolls too. `tab` moves the keyboard between the spec list and
+  the spec content: with the list focused `j`/`k` change spec as before, with the
+  content focused they scroll it. The selected spec dims while the content has
+  the keys, and the title reports the reading position.
 
 ### Changed
 
