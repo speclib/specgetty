@@ -89,9 +89,18 @@ shows, so there is no separate archive tab.
 
 ### Keys in an open change
 
-| Key                | Action                  |
-| ------------------ | ----------------------- |
-| `<left>`/`<right>` | Switch artifact sub-tab |
+| Key                     | Action                       |
+| ----------------------- | ---------------------------- |
+| `<left>`/`<right>`      | Switch artifact sub-tab      |
+| `j`/`k` or arrows       | Scroll the document one row  |
+| `<pgdn>`/`<pgup>`       | Scroll a full page           |
+| `ctrl-f`/`ctrl-b`       | Scroll a full page           |
+| `ctrl-d`/`ctrl-u`       | Scroll half a page           |
+| `gg` / `G`              | Jump to the start or the end |
+
+The panel title shows how far down the document you are. No percentage means
+the whole thing fits, so there is nothing below. The config tab scrolls with the
+same keys.
 
 Sub-tabs stay inside the change: pressing `<right>` on the last one does not
 spill over into the project tab bar.

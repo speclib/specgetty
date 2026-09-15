@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mipmip/specgetty/src/scanner"
 	"github.com/mipmip/specgetty/src/watcher"
@@ -148,7 +149,8 @@ type model struct {
 	scanning          bool
 	err               error
 	spinner           spinner.Model
-	detailViewport    viewport.Model
+	docViewport       viewport.Model
+	docKey            string
 	logViewport       viewport.Model
 	logContent        string
 	detailTab         int
@@ -222,7 +224,7 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		ignoreDirErrors: ignoreDirErrors,
 		version:         version,
 		spinner:         s,
-		detailViewport:  viewport.New(0, 0),
+		docViewport:     viewport.New(0, 0),
 		logViewport:     viewport.New(0, 0),
 		listMode:        modeOpen,
 		fields:          append([]string(nil), defaultFields...),
@@ -244,7 +246,18 @@ func (m model) Init() tea.Cmd {
 	return m.spinner.Tick
 }
 
+// Update wraps the message handling so that the document viewer is
+// resynchronised on every path, including the early returns taken by the
+// overlays. Re-rendering costs a wrap of one document and keeps the viewport
+// from ever holding stale rows.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updated, cmd := m.update(msg)
+	next := updated.(model)
+	next.syncDocument()
+	return next, cmd
+}
+
+func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -462,8 +475,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pendingKey == "g" {
 			m.pendingKey = ""
 			if key == "g" {
-				if m.activeView == viewLog {
+				switch {
+				case m.activeView == viewLog:
 					m.logViewport.GotoTop()
+				case m.docActive():
+					m.docViewport.GotoTop()
 				}
 				return m, nil
 			}
@@ -547,19 +563,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingKey = "g"
 
 		case "G":
-			switch m.activeView {
-			case viewLog:
+			switch {
+			case m.activeView == viewLog:
 				m.logViewport.GotoBottom()
+			case m.docActive():
+				m.docViewport.GotoBottom()
 			}
 
 		case "pgdown", "ctrl+f":
-			if m.activeView == viewLog {
+			// A full page in a document, vim style. Lists keep halfPage(),
+			// which is how they have always moved.
+			switch {
+			case m.activeView == viewLog:
 				m.logViewport.LineDown(m.halfPage())
+			case m.docActive():
+				m.docViewport.ViewDown()
 			}
 
 		case "pgup", "ctrl+b":
-			if m.activeView == viewLog {
+			switch {
+			case m.activeView == viewLog:
 				m.logViewport.LineUp(m.halfPage())
+			case m.docActive():
+				m.docViewport.ViewUp()
+			}
+
+		// 5.3: half page, in a document only.
+		case "ctrl+d":
+			if m.docActive() {
+				m.docViewport.HalfPageDown()
+			}
+
+		case "ctrl+u":
+			if m.docActive() {
+				m.docViewport.HalfPageUp()
 			}
 
 		case "left":
@@ -592,6 +629,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.activeView == viewLog {
 				m.logViewport.LineUp(1)
+			} else if m.docActive() {
+				m.docViewport.LineUp(1)
 			} else if m.level != levelChange {
 				switch m.detailTab {
 				case tabSpecs:
@@ -610,6 +649,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			if m.activeView == viewLog {
 				m.logViewport.LineDown(1)
+			} else if m.docActive() {
+				m.docViewport.LineDown(1)
 			} else if m.level != levelChange {
 				switch m.detailTab {
 				case tabSpecs:
@@ -757,10 +798,9 @@ func (m *model) recalcLayout() {
 		return
 	}
 
-	panelH := m.mainPanelHeight()
-
-	m.detailViewport.Width = m.width - 2
-	m.detailViewport.Height = panelH
+	docW, docH := m.docRegion()
+	m.docViewport.Width = docW
+	m.docViewport.Height = docH
 
 	logHeight := m.logPanelHeight()
 	if logHeight > 0 {
@@ -1239,7 +1279,7 @@ func (m model) renderDetailPanel(width int, height int) string {
 	// so its artifact sub-tabs own the full width and their own key axis.
 	if m.level == levelChange {
 		if r, ok := m.selectedRow(); ok {
-			return renderChangeDetail(r, m.changeArtifactTab, width, height)
+			return m.renderChangeDetail(r, m.changeArtifactTab)
 		}
 	}
 
@@ -1380,26 +1420,16 @@ func (m model) renderConfigTab(width int, height int) string {
 		return "No project selected."
 	}
 
-	currentProject := m.repoPaths[m.cursor]
-	info := m.projects[currentProject].Info
-
+	info := m.projects[m.repoPaths[m.cursor]].Info
 	if info.ConfigFile == "" {
 		return dimStyle.Render("No project configuration found")
 	}
 
+	// The source line stays put above the scrolling region.
 	var b strings.Builder
-
-	// File source indicator
 	b.WriteString(dimStyle.Render("openspec/" + info.ConfigFile))
 	b.WriteString("\n\n")
-
-	// Render based on file type
-	if strings.HasSuffix(info.ConfigFile, ".md") {
-		b.WriteString(renderMarkdown(info.ConfigContent, width))
-	} else {
-		b.WriteString(renderYAML(info.ConfigContent, width))
-	}
-
+	b.WriteString(m.docViewport.View())
 	return b.String()
 }
 
@@ -1422,34 +1452,109 @@ var (
 			Foreground(lipgloss.Color("2")) // green
 )
 
-func renderMarkdown(content string, width int) string {
-	lines := strings.Split(content, "\n")
-	var b strings.Builder
+// wrapBreakpoints are the characters wrapping may break on, besides spaces and
+// the hyphen that ansi always treats as one. Slashes matter here: file paths
+// and store paths are common in these documents and are otherwise unbreakable.
+const wrapBreakpoints = "/,;:"
 
-	for i, line := range lines {
-		if i > 0 {
-			b.WriteString("\n")
+// activeSGRAfter returns the SGR sequence still in effect at the end of row,
+// starting from the sequence that was active before it. A reset clears it, any
+// other sequence replaces it.
+//
+// This renderer emits simple open/close pairs, one style at a time, so tracking
+// the most recent sequence is enough. It is not a general SGR state machine.
+func activeSGRAfter(active, row string) string {
+	for i := 0; i < len(row); {
+		j := strings.Index(row[i:], "\x1b[")
+		if j < 0 {
+			break
 		}
-
-		trimmed := strings.TrimSpace(line)
-
-		// Headers
-		if strings.HasPrefix(trimmed, "#") {
-			b.WriteString(mdHeaderStyle.Render(trimmed))
-			continue
+		start := i + j
+		end := strings.Index(row[start:], "m")
+		if end < 0 {
+			break
 		}
-
-		// List items
-		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
-			b.WriteString("  " + renderInlineMarkdown(trimmed))
-			continue
+		seq := row[start : start+end+1]
+		if seq == "\x1b[0m" || seq == "\x1b[m" {
+			active = ""
+		} else {
+			active = seq
 		}
+		i = start + end + 1
+	}
+	return active
+}
 
-		// Regular text with inline formatting
-		b.WriteString(renderInlineMarkdown(line))
+// reopenStyles makes every row independently styled.
+//
+// Wrapping a styled span leaves the opening sequence on the first row only, so
+// the continuation rows rely on terminal state carrying across the newline.
+// That holds when the rows are printed together and breaks the moment a
+// viewport slices them: scroll until a continuation row is at the top and it
+// renders unstyled.
+//
+// Re-opening costs no display width, because escape sequences are not counted
+// as cells.
+func reopenStyles(rows []string) []string {
+	var active string
+	out := make([]string, len(rows))
+	for i, row := range rows {
+		prefixed := active + row
+		active = activeSGRAfter(active, row)
+		if active != "" {
+			prefixed += "\x1b[0m"
+		}
+		out[i] = prefixed
+	}
+	return out
+}
+
+// wrapStyled breaks one already-styled line to the given width.
+//
+// ansi.Wrap is used rather than ansi.Wordwrap because it breaks a word that is
+// longer than the limit instead of letting it overflow. An overflowing row
+// would be re-wrapped by the lipgloss box afterwards, and the viewport's row
+// count, and therefore its reported position, would no longer match the screen.
+//
+// It counts display cells and preserves escape sequences, so a bold span that
+// straddles a boundary keeps its styling on both rows.
+func wrapStyled(styled string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	return reopenStyles(strings.Split(ansi.Wrap(styled, width, wrapBreakpoints), "\n"))
+}
+
+// styleMarkdownLine applies the styling for a single source line.
+func styleMarkdownLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+
+	// Headers
+	if strings.HasPrefix(trimmed, "#") {
+		return mdHeaderStyle.Render(trimmed)
 	}
 
-	return b.String()
+	// List items
+	if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
+		return "  " + renderInlineMarkdown(trimmed)
+	}
+
+	// Regular text with inline formatting
+	return renderInlineMarkdown(line)
+}
+
+// renderMarkdown renders content as styled rows, each no wider than width.
+//
+// It returns the rows the terminal will actually show. That is the whole point:
+// a viewport slicing rows that are already final can report a position that
+// matches the screen. The previous version ignored width entirely, so the
+// lipgloss box wrapped afterwards and rows were lost inside the visible height.
+func renderMarkdown(content string, width int) string {
+	var rows []string
+	for _, line := range strings.Split(content, "\n") {
+		rows = append(rows, wrapStyled(styleMarkdownLine(line), width)...)
+	}
+	return strings.Join(rows, "\n")
 }
 
 func renderInlineMarkdown(line string) string {
@@ -1488,49 +1593,40 @@ func renderInlineMarkdown(line string) string {
 	return result
 }
 
-func renderYAML(content string, width int) string {
-	lines := strings.Split(content, "\n")
-	var b strings.Builder
+// styleYAMLLine applies the styling for a single line of YAML.
+func styleYAMLLine(line string) string {
+	trimmed := strings.TrimSpace(line)
 
-	for i, line := range lines {
-		if i > 0 {
-			b.WriteString("\n")
-		}
-
-		trimmed := strings.TrimSpace(line)
-
-		// Comment lines
-		if strings.HasPrefix(trimmed, "#") {
-			b.WriteString(yamlCommentStyle.Render(line))
-			continue
-		}
-
-		// Key: value lines
-		colonIdx := strings.Index(line, ":")
-		if colonIdx > 0 {
-			// Check for inline comment
-			key := line[:colonIdx]
-			rest := line[colonIdx:]
-
-			commentIdx := strings.Index(rest, " #")
-			if commentIdx > 0 {
-				value := rest[:commentIdx]
-				comment := rest[commentIdx:]
-				b.WriteString(yamlKeyStyle.Render(key))
-				b.WriteString(yamlValueStyle.Render(value))
-				b.WriteString(yamlCommentStyle.Render(comment))
-			} else {
-				b.WriteString(yamlKeyStyle.Render(key))
-				b.WriteString(yamlValueStyle.Render(rest))
-			}
-			continue
-		}
-
-		// Plain lines (list items, etc)
-		b.WriteString(line)
+	// Comment lines
+	if strings.HasPrefix(trimmed, "#") {
+		return yamlCommentStyle.Render(line)
 	}
 
-	return b.String()
+	// Key: value lines
+	if colonIdx := strings.Index(line, ":"); colonIdx > 0 {
+		key := line[:colonIdx]
+		rest := line[colonIdx:]
+
+		// Inline comment
+		if commentIdx := strings.Index(rest, " #"); commentIdx > 0 {
+			return yamlKeyStyle.Render(key) +
+				yamlValueStyle.Render(rest[:commentIdx]) +
+				yamlCommentStyle.Render(rest[commentIdx:])
+		}
+		return yamlKeyStyle.Render(key) + yamlValueStyle.Render(rest)
+	}
+
+	// Plain lines (list items, etc)
+	return line
+}
+
+// renderYAML renders content as styled rows, each no wider than width.
+func renderYAML(content string, width int) string {
+	var rows []string
+	for _, line := range strings.Split(content, "\n") {
+		rows = append(rows, wrapStyled(styleYAMLLine(line), width)...)
+	}
+	return strings.Join(rows, "\n")
 }
 
 func (m model) renderNotImplemented(width int, height int) string {
@@ -1570,6 +1666,16 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 			title = " " + m.displayNames[m.cursor] + " "
 		} else {
 			title = " specgetty "
+		}
+		// Absence of a percentage is itself the signal that nothing is below.
+		if pct := m.docScrollPercent(); pct >= 0 {
+			indicator := fmt.Sprintf("%d%% ", pct)
+			// A title plus indicator wider than the box would make the border
+			// run negative, so the name gives way to the position.
+			if lipgloss.Width(title)+lipgloss.Width(indicator)+3 > width {
+				title = " "
+			}
+			title += indicator
 		}
 	case viewLog:
 		title = " Log "
@@ -1644,6 +1750,10 @@ func (m model) renderNavBar() string {
 				{"q", "quit"},
 				{"esc", "back to list"},
 				{"\u2190\u2192", "artifact"},
+				{"jk/\u2191\u2193", "scroll"},
+				{"^f^b", "page"},
+				{"^d^u", "half"},
+				{"gg/G", "ends"},
 				{"p", "projects"},
 				{"s", "scan"},
 				{"l", "log"},

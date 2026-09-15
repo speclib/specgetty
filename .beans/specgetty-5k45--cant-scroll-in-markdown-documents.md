@@ -1,11 +1,11 @@
 ---
 # specgetty-5k45
 title: can't scroll in markdown documents
-status: todo
+status: in-progress
 type: bug
 priority: normal
 created_at: 2026-09-15T15:54:19Z
-updated_at: 2026-09-15T16:32:15Z
+updated_at: 2026-09-15T17:55:18Z
 ---
 
 cursors and vim keys should work and page down / up

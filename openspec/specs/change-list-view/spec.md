@@ -47,6 +47,11 @@ change's artifact sub-tabs, and SHALL NOT change the project tab bar.
 - **WHEN** the change list is displayed and the user presses left or right
 - **THEN** the active project tab SHALL change
 
+#### Scenario: A new sub-tab starts at the top
+- **WHEN** a change is open, its artifact has been scrolled, and the user moves
+  to a different artifact sub-tab
+- **THEN** the new artifact SHALL be shown from its first row
+
 ### Requirement: Change list occupies the full panel width
 The change list SHALL be rendered as a table across the full width of the
 detail panel, not beside an artifact viewer.
@@ -123,3 +128,24 @@ the cursor in the change list, whatever filter is applied.
 #### Scenario: Archive action on an archived change
 - **WHEN** the change under the cursor is archived and the user triggers archive
 - **THEN** the system SHALL do nothing
+
+### Requirement: The artifact pane of an open change is a document viewer
+The content shown under an artifact sub-tab of an open change SHALL be a
+document viewer, with the wrapping, scrolling, position reporting and position
+retention that capability describes.
+
+#### Scenario: Long artifact
+- **WHEN** a change is open on an artifact longer than the panel
+- **THEN** the user SHALL be able to reach the end of that artifact with the
+  keyboard, and the panel title SHALL report the reading position
+
+#### Scenario: Vertical keys at the change level
+- **WHEN** a change is open and the user presses down, `j`, up, `k`, a page key
+  or `gg` or `G`
+- **THEN** the artifact content SHALL scroll, and no cursor belonging to a list
+  above this level SHALL move
+
+#### Scenario: Specs sub-tab
+- **WHEN** a change is open on its specs sub-tab, showing several spec deltas in
+  one pane
+- **THEN** that pane SHALL scroll as a single document

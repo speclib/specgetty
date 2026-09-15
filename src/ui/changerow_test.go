@@ -450,13 +450,25 @@ func TestRenderChangeTableShowsMatchHint(t *testing.T) {
 }
 
 func TestRenderChangeDetailShowsNameAndTabs(t *testing.T) {
-	r := changeRow{ci: scanner.ChangeInfo{
-		Name:             "alpha",
-		ArtifactFiles:    []string{"proposal.md", "tasks.md"},
-		ArtifactContents: map[string]string{"proposal.md": "why this", "tasks.md": "- [ ] a"},
-		TasksTotal:       1,
-	}}
-	got := renderChangeDetail(r, 0, 80, 20)
+	m := makeListModel()
+	m.width, m.height = 100, 30
+	m.projects = scanner.ProjectMap{"/p": scanner.ProjectStatus{Info: scanner.ProjectInfo{
+		Changes: []scanner.ChangeInfo{{
+			Name:             "alpha",
+			ArtifactFiles:    []string{"proposal.md", "tasks.md"},
+			ArtifactContents: map[string]string{"proposal.md": "why this", "tasks.md": "- [ ] a"},
+			TasksTotal:       1,
+		}},
+	}}}
+	m.level = levelChange
+	m.syncDocument()
+
+	r, ok := m.selectedRow()
+	if !ok {
+		t.Fatal("no change selected")
+	}
+
+	got := m.renderChangeDetail(r, 0)
 	for _, want := range []string{"alpha", "open", "proposal", "tasks", "why this"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("detail missing %q, got:\n%s", want, got)
@@ -464,7 +476,7 @@ func TestRenderChangeDetailShowsNameAndTabs(t *testing.T) {
 	}
 
 	r.archived = true
-	if got := renderChangeDetail(r, 0, 80, 20); !strings.Contains(got, "archived") {
+	if got := m.renderChangeDetail(r, 0); !strings.Contains(got, "archived") {
 		t.Errorf("archived change should say so, got:\n%s", got)
 	}
 }

@@ -6,8 +6,12 @@ import (
 )
 
 // renderChangeDetail draws a single open change at full panel width: its name,
-// its artifact sub-tabs, and the selected artifact's content.
-func renderChangeDetail(r changeRow, artifactTab int, width, height int) string {
+// its artifact sub-tabs, and the artifact itself as a scrolling document.
+//
+// The name line and the sub-tab row stay put; only the document scrolls. The
+// content comes from the viewport rather than being truncated, which is what
+// makes the rows below the fold reachable at all.
+func (m model) renderChangeDetail(r changeRow, artifactTab int) string {
 	var b strings.Builder
 
 	state := "open"
@@ -33,38 +37,7 @@ func renderChangeDetail(r changeRow, artifactTab int, width, height int) string 
 		}
 	}
 	b.WriteString("\n")
+	b.WriteString(m.docViewport.View())
 
-	contentHeight := height - 2
-	if contentHeight < 1 {
-		contentHeight = 1
-	}
-
-	var content strings.Builder
-	if artifactTab < len(r.ci.ArtifactFiles) {
-		filename := r.ci.ArtifactFiles[artifactTab]
-		if filename == "tasks.md" && r.ci.TasksTotal > 0 {
-			content.WriteString(sectionHeaderStyle.Render(
-				fmt.Sprintf("Tasks: %d/%d complete\n\n", r.ci.TasksDone, r.ci.TasksTotal)))
-		}
-		content.WriteString(renderMarkdown(r.ci.ArtifactContents[filename], width))
-	} else if len(r.ci.SpecNames) > 0 {
-		for i, name := range r.ci.SpecNames {
-			if i > 0 {
-				content.WriteString("\n")
-			}
-			content.WriteString(sectionHeaderStyle.Render(name))
-			content.WriteString("\n")
-			if c, ok := r.ci.SpecContents[name]; ok {
-				content.WriteString(renderMarkdown(c, width))
-			} else {
-				content.WriteString(dimStyle.Render("  No spec.md found"))
-			}
-			content.WriteString("\n")
-		}
-	} else {
-		content.WriteString(dimStyle.Render("No specs in this change"))
-	}
-
-	b.WriteString(truncateContent(content.String(), contentHeight))
 	return b.String()
 }

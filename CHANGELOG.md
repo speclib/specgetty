@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Choose which columns the change list shows through `change_fields` in the
   config file or `--change-fields` on the command line.
 
+### Fixed
+
+- Markdown documents can be scrolled. Opening a change whose proposal was longer
+  than the panel used to put the rest of it out of reach; `j`/`k`, the page keys,
+  `ctrl-d`/`ctrl-u` and `gg`/`G` now move through it, and the panel title reports
+  how far down you are.
+- Long lines are wrapped to the pane instead of being cut. Content was
+  previously lost inside the visible height as well as below it, in every
+  markdown pane including the specs tab.
+- The config tab scrolls the same way, keeping the file name fixed above it.
+
 ### Changed
 
 - **Breaking**: `spg` now opens the project you are standing in, immediately,
