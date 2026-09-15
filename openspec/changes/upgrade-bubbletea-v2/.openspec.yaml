@@ -1,0 +1,9 @@
+schema: spec-driven
+created: 2026-09-15
+
+# A framework upgrade that preserves behaviour. Every observable thing the
+# application does is unchanged, so there is no requirement to add, modify or
+# remove. Inventing one would restate existing specs rather than record a
+# change. The risk this carries is implementation risk, which tasks.md and the
+# test suite address, not spec risk.
+skip_specs: true

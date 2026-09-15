@@ -5,7 +5,7 @@ status: draft
 type: task
 priority: normal
 created_at: 2026-09-15T17:49:32Z
-updated_at: 2026-09-15T19:13:01Z
+updated_at: 2026-09-15T20:57:35Z
 blocked_by:
     - specgetty-sreo
     - specgetty-17c3
@@ -80,3 +80,39 @@ on a vanity domain.
 
 Versions available at time of writing: bubbletea v2.0.9, bubbles v2.2.1,
 lipgloss v2.0.6.
+
+## Proposal written (2026-09-15)
+
+`openspec/changes/upgrade-bubbletea-v2/` holds proposal, design and tasks
+(spec-driven, `skip_specs: true` because behaviour is preserved). 31 tasks.
+
+## What the second exploration changed
+
+The first pass measured 82 key literals and treated the migration as large. The
+second pass checked what production code actually uses, and the surface is much
+smaller than the count implies:
+
+- No binding for the space key, so v2's `String()` change for space is moot
+- Production code never reads `msg.Type`, `msg.Runes` or `msg.Alt`, only
+  `msg.String()`, so the struct-to-interface change touches one type switch
+- No mouse or focus reporting, so the removed program options do not apply
+- All 83 key literals are in tests
+
+`View()` went from 0% to 100% coverage in `specgetty-2pub`, which removes the
+single largest blind spot: it is the function whose signature changes.
+
+## Blocking status
+
+The bean was blocked on 70% overall and 80% core. Overall is met at 78.8% and
+scanner at 91.9%. `ui` at 78.8% is 1.2 points short, roughly 15 statements, and
+what remains is untested `update` branches plus `Run` and `Init`, which need a
+TTY and cannot be covered here.
+
+Whether that 1.2 points is worth waiting for is a judgement call. The risk it
+was standing in for, `View` being untested, is gone.
+
+## The thing to carry forward
+
+Do not switch `copy-change-name-and-path` to `tea.SetClipboard` afterwards. It
+is OSC 52 and fire-and-forget, so a refused write reports success, which that
+feature's requirements forbid. Recorded in the change's design and as task 7.1.
