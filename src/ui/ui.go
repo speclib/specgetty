@@ -23,18 +23,18 @@ import (
 	"github.com/mipmip/specgetty/src/watcher"
 )
 
+// Focus. There is one main panel, so the only question is whether the optional
+// log panel has the keyboard.
 const (
-	viewProjects = 0
-	viewDetail   = 1
-	viewLog      = 2
+	viewDetail = 0
+	viewLog    = 1
 )
 
-// Navigation depth. enter descends, esc ascends. What sits above levelProjects
-// is deliberately not modelled here: specgetty-jdif redefines that end.
+// Navigation depth. enter descends, esc ascends. levelProject is the floor:
+// the project list is an overlay now, not a level above it.
 const (
-	levelProjects = 0 // the project list beside a detail panel
-	levelProject  = 1 // one project, with its tab bar
-	levelChange   = 2 // one change, with its artifact sub-tabs
+	levelProject = 0 // one project, with its tab bar
+	levelChange  = 1 // one change, with its artifact sub-tabs
 )
 
 // Changes lead, because that is what the tool is usually opened to look at.
@@ -155,11 +155,26 @@ type model struct {
 	specCursor        int
 	changeCursor      int
 	changeArtifactTab int
-	fileCursor        int
-	filePaths         []string
-	level             int    // navigation depth: levelProjects, levelProject, levelChange
-	initialZoomPath   string // set via CLI --zoom, triggers single-project scan
-	fullScanDone      bool   // tracks whether a full scan has been run
+	level             int    // navigation depth: levelProject, levelChange
+	startupPath       string // project resolved at startup, scanned on its own
+
+	// Project picker state. The picker is an overlay, not a level: it opens
+	// from anywhere and always returns to the project view.
+	pickerOpen    bool
+	pickerAll     []projectRow
+	pickerCursor  int
+	pickerKey     string
+	pickerInput   textinput.Model
+	pickerFocused bool
+	pickerLoading bool
+	pickerLoaded  bool
+	pickerErr     string
+
+	startView string // "single" or "all"
+
+	// Set when startup found no project, so the user is asked whether to pick
+	// one rather than being dropped into an empty view with no explanation.
+	askOpenPicker bool
 
 	// Change list state.
 	listMode          int // modeOpen, modeArchived, modeBoth
@@ -198,10 +213,13 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 	ti.Prompt = ""
 	ti.Placeholder = ""
 
+	pi := textinput.New()
+	pi.Prompt = ""
+	pi.Placeholder = ""
+
 	return model{
 		config:          config,
 		ignoreDirErrors: ignoreDirErrors,
-		scanning:        true,
 		version:         version,
 		spinner:         s,
 		detailViewport:  viewport.New(0, 0),
@@ -209,20 +227,21 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		listMode:        modeOpen,
 		fields:          append([]string(nil), defaultFields...),
 		searchInput:     ti,
+		pickerInput:     pi,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	if m.initialZoomPath != "" {
-		return tea.Batch(
-			m.spinner.Tick,
-			m.doScanSingle(m.initialZoomPath),
-		)
+	// Startup never walks the configured directories. Either a project was
+	// resolved from the working directory, which costs about a millisecond, or
+	// the picker is asked for explicitly and pays for discovery itself.
+	if m.startupPath != "" {
+		return tea.Batch(m.spinner.Tick, m.doScanSingle(m.startupPath))
 	}
-	return tea.Batch(
-		m.spinner.Tick,
-		m.doScan(),
-	)
+	if m.pickerOpen {
+		return tea.Batch(m.spinner.Tick, loadProjects(m.config, m.ignoreDirErrors, false))
+	}
+	return m.spinner.Tick
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -310,6 +329,97 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		key := msg.String()
 
+		// The startup prompt is a question that must be answered before
+		// anything else makes sense.
+		if m.askOpenPicker {
+			switch key {
+			case "y", "Y", "enter":
+				m.askOpenPicker = false
+				m.pickerOpen = true
+				if !m.pickerLoaded {
+					m.pickerLoading = true
+					cmds = append(cmds, loadProjects(m.config, m.ignoreDirErrors, false))
+				}
+			case "n", "N", "esc":
+				m.askOpenPicker = false
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			}
+			return m, tea.Batch(cmds...)
+		}
+
+		// The picker is an overlay drawn over the current view, so its keys
+		// outrank the view beneath it. A confirmation modal still outranks the
+		// picker, which is why those checks come first.
+		if m.pickerOpen {
+			if m.pickerFocused {
+				switch key {
+				case "esc":
+					m.pickerFocused = false
+					m.pickerInput.SetValue("")
+					m.pickerInput.Blur()
+					m.pickerSync()
+					return m, nil
+				case "enter":
+					return m.choosePickerProject()
+				case "up", "ctrl+p":
+					if m.pickerCursor > 0 {
+						m.pickerCursor--
+						m.pickerRemember()
+					}
+					return m, nil
+				case "down", "ctrl+n":
+					if m.pickerCursor < len(m.pickerVisibleRows())-1 {
+						m.pickerCursor++
+						m.pickerRemember()
+					}
+					return m, nil
+				case "ctrl+c":
+					m.stopWatcher()
+					return m, tea.Quit
+				}
+				var cmd tea.Cmd
+				m.pickerInput, cmd = m.pickerInput.Update(msg)
+				m.pickerSync()
+				return m, cmd
+			}
+
+			switch key {
+			case "esc", "p":
+				m.pickerOpen = false
+			case "q", "ctrl+c":
+				m.stopWatcher()
+				return m, tea.Quit
+			case "enter":
+				return m.choosePickerProject()
+			case "/":
+				m.pickerFocused = true
+				m.pickerInput.Focus()
+			case "r":
+				m.pickerLoading = true
+				cmds = append(cmds, loadProjects(m.config, m.ignoreDirErrors, true))
+			case "up", "k", "ctrl+p":
+				if m.pickerCursor > 0 {
+					m.pickerCursor--
+					m.pickerRemember()
+				}
+			case "down", "j", "ctrl+n":
+				if m.pickerCursor < len(m.pickerVisibleRows())-1 {
+					m.pickerCursor++
+					m.pickerRemember()
+				}
+			case "g":
+				m.pickerCursor = 0
+				m.pickerRemember()
+			case "G":
+				if n := len(m.pickerVisibleRows()); n > 0 {
+					m.pickerCursor = n - 1
+					m.pickerRemember()
+				}
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		// While the search prompt has focus every rune belongs to it, because
 		// a, d, e, s, l and q are all actions. Only the keys below escape it.
 		if m.searchFocused {
@@ -352,13 +462,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pendingKey == "g" {
 			m.pendingKey = ""
 			if key == "g" {
-				switch m.activeView {
-				case viewProjects:
-					m.cursor = 0
-					m.resetProjectState()
-				case viewDetail:
-					m.fileCursor = 0
-				case viewLog:
+				if m.activeView == viewLog {
 					m.logViewport.GotoTop()
 				}
 				return m, nil
@@ -371,38 +475,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
-			switch m.level {
-			case levelProjects:
-				if len(m.repoPaths) > 0 {
-					m.level = levelProject
-					m.activeView = viewDetail
-					if cmd := m.startWatcher(m.repoPaths[m.cursor]); cmd != nil {
-						cmds = append(cmds, cmd)
-					}
-				}
-			case levelProject:
-				if m.detailTab == tabChanges {
-					if _, ok := m.selectedRow(); ok {
-						m.rememberSelection()
-						m.level = levelChange
-						m.changeArtifactTab = 0
-					}
+			if m.level == levelProject && m.detailTab == tabChanges {
+				if _, ok := m.selectedRow(); ok {
+					m.rememberSelection()
+					m.level = levelChange
+					m.changeArtifactTab = 0
 				}
 			}
 
 		case "esc":
-			switch m.level {
-			case levelChange:
+			// levelProject is the floor. The project list is an overlay now,
+			// so there is nothing above it to escape to.
+			if m.level == levelChange {
 				m.level = levelProject
 				m.syncCursor()
-			case levelProject:
-				m.stopWatcher()
-				m.level = levelProjects
-				m.activeView = viewProjects
-				if !m.fullScanDone {
-					m.scanning = true
-					cmds = append(cmds, m.doScan())
-				}
+			}
+
+		case "p":
+			m.pickerOpen = true
+			m.pickerSync()
+			if !m.pickerLoaded && !m.pickerLoading {
+				m.pickerLoading = true
+				cmds = append(cmds, loadProjects(m.config, m.ignoreDirErrors, false))
 			}
 
 		case "/":
@@ -418,11 +512,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "s":
-			m.scanning = true
-			if m.level >= levelProject && len(m.repoPaths) > 0 {
+			if len(m.repoPaths) > 0 {
+				m.scanning = true
 				cmds = append(cmds, m.doScanSingle(m.repoPaths[m.cursor]))
-			} else {
-				cmds = append(cmds, m.doScan())
 			}
 
 		case "l":
@@ -435,21 +527,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				if m.activeView == viewLog {
-					m.activeView = viewProjects
+					m.activeView = viewDetail
 				}
 				m.recalcLayout()
 			}
 
 		case "tab":
-			if m.level >= levelProject {
-				// No panel switching once inside a project.
-			} else if m.logVisible {
-				m.activeView = (m.activeView + 1) % 3
-			} else {
-				if m.activeView == viewProjects {
-					m.activeView = viewDetail
+			// One main panel, so tab only has somewhere to go when the log
+			// panel is open.
+			if m.logVisible {
+				if m.activeView == viewDetail {
+					m.activeView = viewLog
 				} else {
-					m.activeView = viewProjects
+					m.activeView = viewDetail
 				}
 			}
 
@@ -458,45 +548,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "G":
 			switch m.activeView {
-			case viewProjects:
-				if len(m.repoPaths) > 0 {
-					m.cursor = len(m.repoPaths) - 1
-					m.resetProjectState()
-				}
-			case viewDetail:
-				if len(m.filePaths) > 0 {
-					m.fileCursor = len(m.filePaths) - 1
-				}
 			case viewLog:
 				m.logViewport.GotoBottom()
 			}
 
 		case "pgdown", "ctrl+f":
-			half := m.halfPage()
-			switch m.activeView {
-			case viewProjects:
-				m.cursor = min(m.cursor+half, len(m.repoPaths)-1)
-				m.resetProjectState()
-			case viewDetail:
-				if len(m.filePaths) > 0 {
-					m.fileCursor = min(m.fileCursor+half, len(m.filePaths)-1)
-				}
-			case viewLog:
-				m.logViewport.LineDown(half)
+			if m.activeView == viewLog {
+				m.logViewport.LineDown(m.halfPage())
 			}
 
 		case "pgup", "ctrl+b":
-			half := m.halfPage()
-			switch m.activeView {
-			case viewProjects:
-				m.cursor = max(m.cursor-half, 0)
-				m.resetProjectState()
-			case viewDetail:
-				if len(m.filePaths) > 0 {
-					m.fileCursor = max(m.fileCursor-half, 0)
-				}
-			case viewLog:
-				m.logViewport.LineUp(half)
+			if m.activeView == viewLog {
+				m.logViewport.LineUp(m.halfPage())
 			}
 
 		case "left":
@@ -527,12 +590,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "up", "k":
-			if m.activeView == viewProjects && m.level == levelProjects {
-				if m.cursor > 0 {
-					m.cursor--
-					m.resetProjectState()
-				}
-			} else if m.activeView == viewDetail && m.level != levelChange {
+			if m.activeView == viewLog {
+				m.logViewport.LineUp(1)
+			} else if m.level != levelChange {
 				switch m.detailTab {
 				case tabSpecs:
 					if m.specCursor > 0 {
@@ -544,22 +604,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.changeArtifactTab = 0
 						m.rememberSelection()
 					}
-				default:
-					if len(m.filePaths) > 0 && m.fileCursor > 0 {
-						m.fileCursor--
-					}
 				}
-			} else if m.activeView == viewLog {
-				m.logViewport.LineUp(1)
 			}
 
 		case "down", "j":
-			if m.activeView == viewProjects && m.level == levelProjects {
-				if m.cursor < len(m.repoPaths)-1 {
-					m.cursor++
-					m.resetProjectState()
-				}
-			} else if m.activeView == viewDetail && m.level != levelChange {
+			if m.activeView == viewLog {
+				m.logViewport.LineDown(1)
+			} else if m.level != levelChange {
 				switch m.detailTab {
 				case tabSpecs:
 					if m.specCursor < len(m.currentSpecNames())-1 {
@@ -571,13 +622,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.changeArtifactTab = 0
 						m.rememberSelection()
 					}
-				default:
-					if len(m.filePaths) > 0 && m.fileCursor < len(m.filePaths)-1 {
-						m.fileCursor++
-					}
 				}
-			} else if m.activeView == viewLog {
-				m.logViewport.LineDown(1)
 			}
 
 		case "a":
@@ -636,11 +681,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
-			// Track if this was a full scan (more than 1 project, or not
-			// scoped to a single one)
-			if m.level == levelProjects || len(msg.projects) > 1 {
-				m.fullScanDone = true
-			}
 			m.projects = msg.projects
 			m.repoPaths = make([]string, 0, len(m.projects))
 			for r := range m.projects {
@@ -652,17 +692,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = max(0, len(m.repoPaths)-1)
 			}
 			m.recalcLayout()
-			m.updateFileList()
 			// A rescan fires on every file save while watching, so the filter
 			// and the selection are preserved across it rather than reset.
 			m.syncCursor()
 
-			// Start watcher after the initial scan when launched into a project
-			if m.level >= levelProject && m.watcher == nil && len(m.repoPaths) > 0 {
+			// Start watching the open project after its first scan.
+			if m.watcher == nil && len(m.repoPaths) > 0 {
 				if cmd := m.startWatcher(m.repoPaths[m.cursor]); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 			}
+		}
+
+	case pickerLoadedMsg:
+		m.pickerLoading = false
+		if msg.err != nil {
+			m.pickerErr = msg.err.Error()
+		} else {
+			m.pickerErr = ""
+			m.pickerAll = msg.rows
+			m.pickerLoaded = true
+			m.pickerSync()
 		}
 
 	case logMsg:
@@ -702,30 +752,14 @@ func projectDisplayNames(paths []string) []string {
 	return names
 }
 
-func (m model) leftPanelWidth() int {
-	w := m.width * 3 / 10
-	if w < 20 {
-		w = 20
-	}
-	if w > 40 {
-		w = 40
-	}
-	return w
-}
-
-func (m model) rightPanelWidth() int {
-	return m.width - m.leftPanelWidth() - 1 // 1 for gap between panels
-}
-
 func (m *model) recalcLayout() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
 
-	rightInner := m.rightPanelWidth() - 2 // border
 	panelH := m.mainPanelHeight()
 
-	m.detailViewport.Width = rightInner
+	m.detailViewport.Width = m.width - 2
 	m.detailViewport.Height = panelH
 
 	logHeight := m.logPanelHeight()
@@ -785,7 +819,7 @@ func (m model) allRows() []changeRow {
 // through: the renderer, the actions, the confirm modals and the nav bar. The
 // active/archived merge, the mode filter and the search filter all apply here,
 // so nothing downstream has to know a filter exists.
-func (m model) currentRows() []changeRow {
+func (m model) currentRows() []filtered[changeRow] {
 	return filterRows(m.allRows(), parseQuery(m.searchInput.Value()))
 }
 
@@ -795,14 +829,14 @@ func (m model) selectedRow() (changeRow, bool) {
 	if m.changeCursor < 0 || m.changeCursor >= len(rows) {
 		return changeRow{}, false
 	}
-	return rows[m.changeCursor], true
+	return rows[m.changeCursor].row, true
 }
 
 // rememberSelection records which change the cursor is on, by key.
 func (m *model) rememberSelection() {
 	rows := m.currentRows()
 	if m.changeCursor >= 0 && m.changeCursor < len(rows) {
-		m.selectedKey = rows[m.changeCursor].key()
+		m.selectedKey = rows[m.changeCursor].row.key()
 	}
 }
 
@@ -829,7 +863,7 @@ func (m *model) syncCursor() {
 	if m.changeCursor < 0 {
 		m.changeCursor = 0
 	}
-	m.selectedKey = rows[m.changeCursor].key()
+	m.selectedKey = rows[m.changeCursor].row.key()
 }
 
 func (m model) changeArtifactTabCount() int {
@@ -855,29 +889,6 @@ func (m *model) resetProjectState() {
 	m.searchFocused = false
 	m.searchInput.SetValue("")
 	m.searchInput.Blur()
-	m.updateFileList()
-}
-
-// updateFileList rebuilds the flat file list for the current project.
-func (m *model) updateFileList() {
-	if len(m.repoPaths) == 0 {
-		m.filePaths = nil
-		m.fileCursor = 0
-		return
-	}
-	currentProject := m.repoPaths[m.cursor]
-	st, ok := m.projects[currentProject]
-	if !ok || len(st.Files) == 0 {
-		m.filePaths = nil
-		m.fileCursor = 0
-		return
-	}
-
-	m.filePaths = make([]string, 0, len(st.Files))
-	for _, f := range st.Files {
-		m.filePaths = append(m.filePaths, f.Path)
-	}
-	m.fileCursor = 0
 }
 
 func (m model) doScan() tea.Cmd {
@@ -1082,24 +1093,9 @@ func (m model) View() string {
 
 	panelH := m.mainPanelHeight()
 
-	var mainRow string
-	if m.level >= levelProject {
-		// Full-width detail panel
-		fullW := m.width - 2
-		detailContent := m.renderDetailPanel(fullW, panelH)
-		mainRow = m.renderPanel(viewDetail, fullW, panelH, detailContent)
-	} else {
-		leftW := m.leftPanelWidth() - 2
-		rightW := m.rightPanelWidth() - 2
-
-		projectContent := m.renderProjectList(leftW, panelH)
-		leftPanel := m.renderPanel(viewProjects, m.leftPanelWidth()-2, panelH, projectContent)
-
-		detailContent := m.renderDetailPanel(rightW, panelH)
-		rightPanel := m.renderPanel(viewDetail, m.rightPanelWidth()-2, panelH, detailContent)
-
-		mainRow = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
-	}
+	fullW := m.width - 2
+	detailContent := m.renderDetailPanel(fullW, panelH)
+	mainRow := m.renderPanel(viewDetail, fullW, panelH, detailContent)
 
 	// Nav bar
 	navBar := m.renderNavBar()
@@ -1110,6 +1106,18 @@ func (m model) View() string {
 		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, logPanel, navBar)
 	} else {
 		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, navBar)
+	}
+
+	// The picker is an overlay over the current view. Confirmation modals are
+	// drawn after it, so they sit on top.
+	if m.pickerOpen {
+		view = placeOverlay(m.width, m.height, m.renderPicker(), view)
+	}
+
+	if m.askOpenPicker {
+		modal := modalStyle.Width(56).Render(
+			"No OpenSpec project here.\n\nOpen the project picker? (y/n)")
+		view = placeOverlay(m.width, m.height, modal, view)
 	}
 
 	// Modal overlays
@@ -1207,36 +1215,6 @@ func (m model) View() string {
 	return padToHeight(view, m.height)
 }
 
-func (m model) renderProjectList(width int, height int) string {
-	if len(m.repoPaths) == 0 {
-		return "No OpenSpec projects found."
-	}
-
-	var b strings.Builder
-	offset := 0
-	if m.cursor >= height {
-		offset = m.cursor - height + 1
-	}
-
-	end := offset + height
-	if end > len(m.repoPaths) {
-		end = len(m.repoPaths)
-	}
-
-	for i := offset; i < end; i++ {
-		if i > offset {
-			b.WriteString("\n")
-		}
-		name := m.displayNames[i]
-		if i == m.cursor {
-			b.WriteString(selectedStyle.Width(width).Render(name))
-		} else {
-			b.WriteString(normalStyle.Render(name))
-		}
-	}
-	return b.String()
-}
-
 func (m model) renderTabHeader(width int) string {
 	var b strings.Builder
 	for i, name := range tabNames {
@@ -1254,7 +1232,7 @@ func (m model) renderTabHeader(width int) string {
 
 func (m model) renderDetailPanel(width int, height int) string {
 	if len(m.repoPaths) == 0 {
-		return "No project selected."
+		return "\n  " + dimStyle.Render("No project selected. Press p to pick one.")
 	}
 
 	// An open change fills the panel on its own: no project header, no tab bar,
@@ -1325,7 +1303,7 @@ func (m model) renderChangesTab(width int, height int) string {
 	case len(rows) == 0:
 		body = dimStyle.Render(fmt.Sprintf("No changes match %q", m.searchInput.Value()))
 	default:
-		body = renderChangeTable(rows, m.fields, m.changeCursor, width, tableHeight)
+		body = renderTable(rows, changeFieldDefs(m.fields), m.changeCursor, width, tableHeight)
 	}
 
 	if !showPrompt {
@@ -1587,13 +1565,11 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 	content = truncateContent(content, height)
 	var title string
 	switch view {
-	case viewProjects:
-		title = " Projects "
 	case viewDetail:
-		if m.level >= levelProject && len(m.displayNames) > 0 && m.cursor < len(m.displayNames) {
-			title = " Detail (" + m.displayNames[m.cursor] + ") "
+		if len(m.displayNames) > 0 && m.cursor < len(m.displayNames) {
+			title = " " + m.displayNames[m.cursor] + " "
 		} else {
-			title = " Detail "
+			title = " specgetty "
 		}
 	case viewLog:
 		title = " Log "
@@ -1628,9 +1604,30 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 func (m model) renderNavBar() string {
 	var keys []struct{ key, action string }
 
-	// While the prompt has focus the ordinary keys are unavailable, so showing
-	// them would be a lie. Show what the prompt itself accepts instead.
-	if m.searchFocused {
+	// While an overlay has the keyboard the ordinary keys are unavailable, so
+	// showing them would be a lie. Show what the overlay itself accepts.
+	if m.askOpenPicker {
+		keys = []struct{ key, action string }{
+			{"y", "open picker"},
+			{"n", "not now"},
+			{"q", "quit"},
+		}
+	} else if m.pickerOpen && m.pickerFocused {
+		keys = []struct{ key, action string }{
+			{"esc", "clear filter"},
+			{"\u2191\u2193/^p^n", "navigate"},
+			{"\u23ce", "open project"},
+		}
+	} else if m.pickerOpen {
+		keys = []struct{ key, action string }{
+			{"esc", "close"},
+			{"\u23ce", "open project"},
+			{"/", "search"},
+			{"r", "refresh"},
+			{"jk/\u2191\u2193", "navigate"},
+			{"q", "quit"},
+		}
+	} else if m.searchFocused {
 		keys = []struct{ key, action string }{
 			{"esc", "clear filter"},
 			{"\u2191\u2193/^p^n", "navigate"},
@@ -1643,13 +1640,13 @@ func (m model) renderNavBar() string {
 				{"q", "quit"},
 				{"esc", "back to list"},
 				{"\u2190\u2192", "artifact"},
+				{"p", "projects"},
 				{"s", "scan"},
 				{"l", "log"},
 			}
 		case levelProject:
 			keys = []struct{ key, action string }{
 				{"q", "quit"},
-				{"esc", "back"},
 				{"jk/\u2191\u2193", "navigate"},
 				{"\u2190\u2192/1-3", "tabs"},
 			}
@@ -1669,21 +1666,11 @@ func (m model) renderNavBar() string {
 				}
 			}
 			keys = append(keys,
+				struct{ key, action string }{"p", "projects"},
 				struct{ key, action string }{"s", "scan"},
 				struct{ key, action string }{"l", "log"},
 				struct{ key, action string }{"gg/G", "jump"},
 			)
-		default:
-			keys = []struct{ key, action string }{
-				{"q", "quit"},
-				{"enter", "open project"},
-				{"s", "scan"},
-				{"tab", "switch"},
-				{"jk/\u2191\u2193", "navigate"},
-				{"\u2190\u2192/1-3", "tabs"},
-				{"l", "log"},
-				{"gg/G", "jump"},
-			}
 		}
 	}
 
@@ -1731,15 +1718,24 @@ func placeOverlay(width, height int, modal, background string) string {
 	)
 }
 
-func Run(config *scanner.Config, ignoreDirErrors bool, version string, initialZoomPath string, fields []string) error {
+func Run(config *scanner.Config, ignoreDirErrors bool, version string, startupPath string, startView string, fields []string) error {
 	m := newModel(config, ignoreDirErrors, version)
 	if len(fields) > 0 {
 		m.fields = fields
 	}
-	if initialZoomPath != "" {
-		m.initialZoomPath = initialZoomPath
-		m.level = levelProject
-		m.activeView = viewDetail
+	m.startupPath = startupPath
+	m.startView = startView
+
+	switch {
+	case startView == "all":
+		m.pickerOpen = true
+		m.pickerLoading = true
+	case startupPath != "":
+		m.scanning = true
+	default:
+		// Nothing to show and nothing asked for. Offer the picker rather than
+		// opening an empty view with no explanation.
+		m.askOpenPicker = true
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
 

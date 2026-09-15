@@ -54,7 +54,16 @@ func rowsFor(names ...string) []changeRow {
 	return rows
 }
 
-func names(rows []changeRow) []string {
+func names(rows []filtered[changeRow]) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = r.row.ci.Name
+	}
+	return out
+}
+
+// plainNames reads names off unwrapped rows.
+func plainNames(rows []changeRow) []string {
 	out := make([]string, len(rows))
 	for i, r := range rows {
 		out[i] = r.ci.Name
@@ -149,12 +158,12 @@ func TestFilterRowsBodyNamesMatchedFiles(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %d rows, want 1: %v", len(got), names(got))
 	}
-	if got[0].ci.Name != "alpha" {
-		t.Errorf("matched %q, want alpha", got[0].ci.Name)
+	if got[0].row.ci.Name != "alpha" {
+		t.Errorf("matched %q, want alpha", got[0].row.ci.Name)
 	}
 	want := []string{"export-change", "proposal"}
-	if !reflect.DeepEqual(got[0].matchedFiles, want) {
-		t.Errorf("matchedFiles = %v, want %v", got[0].matchedFiles, want)
+	if !reflect.DeepEqual(got[0].matched, want) {
+		t.Errorf("matched labels = %v, want %v", got[0].matched, want)
 	}
 }
 
@@ -169,8 +178,8 @@ func TestFilterRowsBodyMatchesNameWithoutFileHint(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %d rows, want 1", len(got))
 	}
-	if len(got[0].matchedFiles) != 0 {
-		t.Errorf("matchedFiles = %v, want none for a name-only match", got[0].matchedFiles)
+	if len(got[0].matched) != 0 {
+		t.Errorf("matched labels = %v, want none for a name-only match", got[0].matched)
 	}
 }
 
@@ -182,17 +191,14 @@ func TestFilterRowsEmptyQueryReturnsEverything(t *testing.T) {
 }
 
 func TestFilterRowsClearsStaleMatchedFiles(t *testing.T) {
-	// A row carrying hints from an earlier body search must not keep them once
-	// a name query matches it, or the table would explain a match that is no
-	// longer the reason the row is shown.
-	rows := []changeRow{
-		{ci: scanner.ChangeInfo{Name: "alpha"}, matchedFiles: []string{"proposal"}},
-	}
+	// Match reasons are returned alongside the row rather than written onto it,
+	// so a name match cannot inherit hints from an earlier body search.
+	rows := []changeRow{{ci: scanner.ChangeInfo{Name: "alpha"}}}
 	got := filterRows(rows, parseQuery("alpha"))
 	if len(got) != 1 {
 		t.Fatalf("got %d rows, want 1", len(got))
 	}
-	if got[0].matchedFiles != nil {
-		t.Errorf("matchedFiles = %v, want nil after a name match", got[0].matchedFiles)
+	if got[0].matched != nil {
+		t.Errorf("matched labels = %v, want nil after a name match", got[0].matched)
 	}
 }

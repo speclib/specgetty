@@ -260,6 +260,25 @@ func ParseProjectInfo(dir string) ProjectInfo {
 	return info
 }
 
+// ScanPaths parses a known list of project paths without walking the
+// filesystem to discover them. It is what the cache enables: discovery is the
+// expensive half of a scan, parsing is the cheap half, so a cached list of
+// paths still gets fully current statistics.
+func ScanPaths(paths []string) ProjectMap {
+	results := make(ProjectMap, len(paths))
+	for _, d := range paths {
+		files, err := ListOpenSpecContents(d)
+		if err != nil {
+			continue
+		}
+		results[d] = ProjectStatus{
+			Files: files,
+			Info:  ParseProjectInfo(d),
+		}
+	}
+	return results
+}
+
 // Scan finds all OpenSpec projects in directories specified by config
 func Scan(config *Config, ignore_dir_errors bool) (ProjectMap, error) {
 	ctx := context.Background()

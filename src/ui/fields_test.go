@@ -79,10 +79,11 @@ func TestResolveFieldsReportsConfigAsSource(t *testing.T) {
 
 func TestLayoutFieldsDropsColumnsFromTheRight(t *testing.T) {
 	fields := []string{"name", "tasks", "specs", "archived"}
+	defs := changeFieldDefs(fields)
 
-	wide, widths := layoutFields(fields, 100)
-	if !reflect.DeepEqual(wide, fields) {
-		t.Errorf("at width 100 kept %v, want all of %v", wide, fields)
+	wide, widths := layoutFields(defs, 100)
+	if len(wide) != len(fields) {
+		t.Errorf("at width 100 kept %d columns, want all %d", len(wide), len(fields))
 	}
 	if widths[0] < minFlexWidth {
 		t.Errorf("flexible name column got %d, want at least %d", widths[0], minFlexWidth)
@@ -90,23 +91,23 @@ func TestLayoutFieldsDropsColumnsFromTheRight(t *testing.T) {
 
 	// At 30 the fixed columns leave the name under minFlexWidth, so the
 	// rightmost column is dropped rather than squeezing the name further.
-	narrow, _ := layoutFields(fields, 30)
+	narrow, _ := layoutFields(defs, 30)
 	if len(narrow) >= len(fields) {
 		t.Errorf("at width 30 kept %v, want fewer than %d columns", narrow, len(fields))
 	}
 	// Whatever survives must be a prefix: columns drop from the right.
-	for i, f := range narrow {
-		if f != fields[i] {
-			t.Errorf("kept %v, want a prefix of %v", narrow, fields)
+	for i, d := range narrow {
+		if d.id != fields[i] {
+			t.Errorf("kept %q at %d, want a prefix of %v", d.id, i, fields)
 			break
 		}
 	}
 }
 
 func TestLayoutFieldsKeepsNameWhenVeryNarrow(t *testing.T) {
-	kept, widths := layoutFields([]string{"name", "tasks", "specs"}, 10)
-	if len(kept) != 1 || kept[0] != "name" {
-		t.Errorf("kept %v, want just [name] at width 10", kept)
+	kept, widths := layoutFields(changeFieldDefs([]string{"name", "tasks", "specs"}), 10)
+	if len(kept) != 1 || kept[0].id != "name" {
+		t.Errorf("kept %d columns, want just [name] at width 10", len(kept))
 	}
 	if widths[0] < 1 {
 		t.Errorf("name width = %d, want at least 1", widths[0])

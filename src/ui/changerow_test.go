@@ -34,7 +34,7 @@ func TestBuildRowsModes(t *testing.T) {
 		{modeBoth, []string{"alpha", "beta", "gamma"}},
 	}
 	for _, tt := range tests {
-		got := names(buildRows(info, tt.mode))
+		got := plainNames(buildRows(info, tt.mode))
 		if !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("mode %d = %v, want %v", tt.mode, got, tt.want)
 		}
@@ -62,7 +62,7 @@ func TestRowKeyDistinguishesArchivedFromActive(t *testing.T) {
 }
 
 func TestIndexOfKey(t *testing.T) {
-	rows := buildRows(testInfo(), modeBoth)
+	rows := wrap(buildRows(testInfo(), modeBoth))
 	if got := indexOfKey(rows, "open/beta"); got != 1 {
 		t.Errorf("indexOfKey(open/beta) = %d, want 1", got)
 	}
@@ -170,8 +170,8 @@ func TestSyncCursorClampsWhenSelectionFilteredOut(t *testing.T) {
 	if m.changeCursor < 0 || m.changeCursor >= len(rows) {
 		t.Fatalf("cursor %d out of range for %d rows", m.changeCursor, len(rows))
 	}
-	if rows[m.changeCursor].ci.Name != "alpha" {
-		t.Errorf("selected %q, want alpha", rows[m.changeCursor].ci.Name)
+	if rows[m.changeCursor].row.ci.Name != "alpha" {
+		t.Errorf("selected %q, want alpha", rows[m.changeCursor].row.ci.Name)
 	}
 }
 
@@ -204,15 +204,18 @@ func TestEnterDescendsAndEscAscends(t *testing.T) {
 	}
 }
 
-func TestEscDoesNotRunPastTheEnds(t *testing.T) {
+func TestEscAtTheProjectViewDoesNothing(t *testing.T) {
+	// levelProject is the floor: the project list is an overlay now, so there
+	// is nothing above it to escape to, and esc must not exit the application.
 	m := makeListModel()
-	m.level = levelProjects
-	m.activeView = viewProjects
-	m.fullScanDone = true
+	m.level = levelProject
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if um := updated.(model); um.level != levelProjects {
-		t.Errorf("esc at the top level moved to %d, want to stay at levelProjects", um.level)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if um := updated.(model); um.level != levelProject {
+		t.Errorf("esc moved to level %d, want to stay at levelProject", um.level)
+	}
+	if cmd != nil {
+		t.Error("esc at the floor should issue no command, least of all a quit")
 	}
 }
 
@@ -386,27 +389,6 @@ func TestArrowsNavigateWhileTyping(t *testing.T) {
 	}
 }
 
-func TestProjectSwitchClearsTheFilter(t *testing.T) {
-	m := makeListModel()
-	m.level = levelProjects
-	m.activeView = viewProjects
-	m.repoPaths = []string{"/p", "/q"}
-	m.displayNames = []string{"p", "q"}
-	m.projects["/q"] = scanner.ProjectStatus{Info: testInfo()}
-	m.searchInput.SetValue("alpha")
-	m.listMode = modeBoth
-
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	um := updated.(model)
-
-	if um.searchInput.Value() != "" {
-		t.Errorf("query = %q, want cleared on project switch", um.searchInput.Value())
-	}
-	if um.listMode != modeOpen {
-		t.Errorf("listMode = %d, want modeOpen on project switch", um.listMode)
-	}
-}
-
 func TestRescanPreservesTheFilter(t *testing.T) {
 	// The watcher fires a rescan on every file save. Losing the filter there
 	// would be maddening, so scanMsg must not reset it.
@@ -448,7 +430,7 @@ func TestRenderChangesTabShowsModeSpecificEmptyMessage(t *testing.T) {
 
 func TestRenderChangeTableShowsHeadersAndRows(t *testing.T) {
 	rows := buildRows(testInfo(), modeOpen)
-	got := renderChangeTable(rows, defaultFields, 0, 80, 10)
+	got := renderTable(wrap(rows), changeFieldDefs(defaultFields), 0, 80, 10)
 	for _, want := range []string{"name", "tasks", "specs", "alpha", "beta", "1/4"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("table missing %q, got:\n%s", want, got)
@@ -457,11 +439,11 @@ func TestRenderChangeTableShowsHeadersAndRows(t *testing.T) {
 }
 
 func TestRenderChangeTableShowsMatchHint(t *testing.T) {
-	rows := []changeRow{{
-		ci:           scanner.ChangeInfo{Name: "alpha"},
-		matchedFiles: []string{"proposal", "tasks"},
+	rows := []filtered[changeRow]{{
+		row:     changeRow{ci: scanner.ChangeInfo{Name: "alpha"}},
+		matched: []string{"proposal", "tasks"},
 	}}
-	got := renderChangeTable(rows, defaultFields, -1, 80, 10)
+	got := renderTable(rows, changeFieldDefs(defaultFields), -1, 80, 10)
 	if !strings.Contains(got, "proposal, tasks") {
 		t.Errorf("table should explain a body match, got:\n%s", got)
 	}

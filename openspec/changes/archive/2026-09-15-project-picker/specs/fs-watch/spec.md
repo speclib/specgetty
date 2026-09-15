@@ -1,34 +1,4 @@
-# fs-watch Specification
-
-## Purpose
-TBD - created by archiving change inotify-auto-rescan. Update Purpose after archive.
-
-## Requirements
-
-### Requirement: Debounce rapid filesystem changes
-The system SHALL debounce rapid filesystem events so that multiple changes within a short window (200ms) result in a single rescan.
-
-#### Scenario: Burst of file writes
-- **WHEN** multiple files are written within 200ms (e.g., editor save operation)
-- **THEN** the system SHALL perform exactly one rescan after the burst settles
-
-### Requirement: Watch new subdirectories dynamically
-The system SHALL detect newly created subdirectories within the watched `openspec/` tree and add them to the watch set.
-
-#### Scenario: New change directory created
-- **WHEN** a new subdirectory is created under `openspec/changes/` while watching
-- **THEN** the system SHALL add the new subdirectory to the watch set so that files within it are also monitored
-
-### Requirement: Cross-platform filesystem watching
-The system SHALL support filesystem watching on both Linux (via inotify) and macOS (via kqueue) using the fsnotify library.
-
-#### Scenario: Running on Linux
-- **WHEN** the application runs on Linux
-- **THEN** filesystem watching SHALL use inotify and function correctly
-
-#### Scenario: Running on macOS
-- **WHEN** the application runs on macOS
-- **THEN** filesystem watching SHALL use kqueue and function correctly
+## ADDED Requirements
 
 ### Requirement: Auto-rescan on filesystem changes in the open project
 The system SHALL automatically rescan the open project when any file or
@@ -70,3 +40,16 @@ watch exactly one project at a time.
 #### Scenario: Application exit
 - **WHEN** the application exits
 - **THEN** the watcher SHALL be closed
+
+## REMOVED Requirements
+
+### Requirement: Auto-rescan on filesystem changes in zoom mode
+**Reason**: Rephrased without the zoom vocabulary, and extended with the filter
+survival that `change-search` relies on. Replaced by "Auto-rescan on filesystem
+changes in the open project".
+
+### Requirement: Watcher lifecycle tied to zoom mode
+**Reason**: There is no zoom mode to enter or leave. The lifecycle now follows
+which project is open, including switching through the picker, which is a path
+that did not previously exist. Replaced by "Watcher lifecycle follows the open
+project".

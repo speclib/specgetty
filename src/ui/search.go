@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -64,44 +63,43 @@ func (q query) contains(haystack string) bool {
 	return strings.Contains(strings.ToLower(haystack), strings.ToLower(q.term))
 }
 
-// filterRows narrows the list to the rows matching the query. Fuzzy results
-// come back ranked strongest first; literal results keep the order they came
-// in with, since there is no score to rank them by.
-func filterRows(rows []changeRow, q query) []changeRow {
+// filterRows narrows the list to the rows matching the query, reporting for
+// each survivor which of its bodies matched. Fuzzy results come back ranked
+// strongest first; literal results keep the order they came in with, since
+// there is no score to rank them by.
+func filterRows[T tableRow](rows []T, q query) []filtered[T] {
 	if q.empty() {
-		return rows
+		return wrap(rows)
 	}
 
 	switch q.kind {
 	case matchLiteralName:
-		out := make([]changeRow, 0, len(rows))
+		out := make([]filtered[T], 0, len(rows))
 		for _, r := range rows {
-			if q.contains(r.ci.Name) {
-				r.matchedFiles = nil
-				out = append(out, r)
+			if q.contains(r.searchName()) {
+				out = append(out, filtered[T]{row: r})
 			}
 		}
 		return out
 
 	case matchBody:
-		out := make([]changeRow, 0, len(rows))
+		out := make([]filtered[T], 0, len(rows))
 		for _, r := range rows {
-			files, ok := q.bodyMatch(r)
+			labels, ok := q.bodyMatch(r)
 			if !ok {
 				continue
 			}
-			r.matchedFiles = files
-			out = append(out, r)
+			out = append(out, filtered[T]{row: r, matched: labels})
 		}
 		return out
 
 	default:
 		names := make([]string, len(rows))
 		for i, r := range rows {
-			names[i] = r.ci.Name
+			names[i] = r.searchName()
 		}
 		matches := fuzzy.Find(q.term, names)
-		out := make([]changeRow, 0, len(matches))
+		out := make([]filtered[T], 0, len(matches))
 		for _, m := range matches {
 			// fuzzy.Find compares with equalFold and has no case-sensitive
 			// mode, so smart case is enforced here by checking that every
@@ -109,9 +107,7 @@ func filterRows(rows []changeRow, q query) []changeRow {
 			if q.caseSensitive && !exactCaseMatch(m, q.term) {
 				continue
 			}
-			r := rows[m.Index]
-			r.matchedFiles = nil
-			out = append(out, r)
+			out = append(out, filtered[T]{row: rows[m.Index]})
 		}
 		return out
 	}
@@ -136,31 +132,22 @@ func exactCaseMatch(m fuzzy.Match, pattern string) bool {
 	return true
 }
 
-// bodyMatch searches the change name and the text of every artifact and spec
-// file. It reports which files hit so the row can explain itself: a change that
-// matched only on the text of proposal.md shows a name the user will not
-// recognise otherwise.
-func (q query) bodyMatch(r changeRow) ([]string, bool) {
-	matched := false
-	var files []string
+// bodyMatch searches the row's name and every named body of text it exposes.
+// It reports which labels hit so the row can explain itself: a row that matched
+// only on the text of proposal.md shows a name the user will not recognise
+// otherwise.
+func (q query) bodyMatch(r tableRow) ([]string, bool) {
+	matched := q.contains(r.searchName())
 
-	if q.contains(r.ci.Name) {
-		matched = true
-	}
-	for name, content := range r.ci.ArtifactContents {
-		if q.contains(content) {
-			files = append(files, trimMarkdownSuffix(name))
+	bodies := r.searchBodies()
+	var labels []string
+	for _, label := range sortedLabels(bodies) {
+		if q.contains(bodies[label]) {
+			labels = append(labels, label)
 			matched = true
 		}
 	}
-	for name, content := range r.ci.SpecContents {
-		if q.contains(content) {
-			files = append(files, name)
-			matched = true
-		}
-	}
-	sort.Strings(files)
-	return files, matched
+	return labels, matched
 }
 
 func trimMarkdownSuffix(name string) string {

@@ -26,16 +26,16 @@ set -euo pipefail
 
 floor_for() {
   case "$1" in
-    github.com/mipmip/specgetty/src)         echo "23.0" ;;
-    github.com/mipmip/specgetty/src/scanner) echo "49.3" ;;
-    github.com/mipmip/specgetty/src/ui)      echo "51.8" ;;
+    github.com/mipmip/specgetty/src)         echo "29.4" ;;
+    github.com/mipmip/specgetty/src/scanner) echo "53.3" ;;
+    github.com/mipmip/specgetty/src/ui)      echo "57.4" ;;
     # watcher measures 84.6% or 87.2% depending on how its inotify paths fall,
     # so its floor tracks the lower reading.
     github.com/mipmip/specgetty/src/watcher) echo "84.6" ;;
     # Measured at 48.8. Held a fraction lower because watcher's flutter moves
     # the total by about 0.15 points and a zero-margin total would fail at
     # random rather than for a real regression.
-    TOTAL)                                   echo "50.7" ;;
+    TOTAL)                                   echo "55.6" ;;
     *)                                       echo "" ;;
   esac
 }

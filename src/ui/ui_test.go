@@ -61,28 +61,6 @@ func TestLogPanelHeight(t *testing.T) {
 	})
 }
 
-func TestLeftPanelWidth(t *testing.T) {
-	tests := []struct {
-		name     string
-		width    int
-		expected int
-	}{
-		{"narrow terminal clamps to min 20", 60, 20},
-		{"medium terminal uses 30%", 100, 30},
-		{"wide terminal clamps to max 40", 200, 40},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := model{width: tt.width}
-			got := m.leftPanelWidth()
-			if got != tt.expected {
-				t.Errorf("got %d, want %d", got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestProjectDisplayNames(t *testing.T) {
 	t.Run("unique basenames", func(t *testing.T) {
 		paths := []string{"/home/user/project-a", "/home/user/project-b"}
@@ -114,60 +92,30 @@ func TestProjectDisplayNames(t *testing.T) {
 	})
 }
 
-func TestTabCyclingSkipsHiddenLog(t *testing.T) {
-	t.Run("tab skips log when hidden", func(t *testing.T) {
-		m := model{logVisible: false, activeView: viewProjects}
-		if m.activeView == viewProjects {
-			m.activeView = viewDetail
-		} else {
-			m.activeView = viewProjects
-		}
-		if m.activeView != viewDetail {
-			t.Errorf("got %d, want viewDetail (%d)", m.activeView, viewDetail)
-		}
-		if m.activeView == viewProjects {
-			m.activeView = viewDetail
-		} else {
-			m.activeView = viewProjects
-		}
-		if m.activeView != viewProjects {
-			t.Errorf("got %d, want viewProjects (%d)", m.activeView, viewProjects)
-		}
-	})
-}
+func TestTabOnlyMovesWhenTheLogPanelIsOpen(t *testing.T) {
+	t.Run("nowhere to go with the log hidden", func(t *testing.T) {
+		m := makeListModel()
+		m.logVisible = false
 
-func TestRenderProjectList(t *testing.T) {
-	t.Run("shows display names", func(t *testing.T) {
-		m := model{
-			height:       40,
-			width:        100,
-			repoPaths:    []string{"/home/user/repo1", "/home/user/repo2"},
-			displayNames: []string{"repo1", "repo2"},
-			cursor:       0,
-		}
-		got := m.renderProjectList(30, 20)
-		if !strings.Contains(got, "repo1") {
-			t.Error("output missing repo1")
-		}
-		if !strings.Contains(got, "repo2") {
-			t.Error("output missing repo2")
-		}
-		// Should NOT contain the full path
-		if strings.Contains(got, "/home/user/") {
-			t.Error("output should show basenames, not full paths")
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		if um := updated.(model); um.activeView != viewDetail {
+			t.Errorf("activeView = %d, want it to stay on viewDetail", um.activeView)
 		}
 	})
 
-	t.Run("empty project list", func(t *testing.T) {
-		m := model{
-			height:       40,
-			width:        100,
-			repoPaths:    []string{},
-			displayNames: []string{},
+	t.Run("toggles to the log and back", func(t *testing.T) {
+		m := makeListModel()
+		m.logVisible = true
+
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		m = updated.(model)
+		if m.activeView != viewLog {
+			t.Fatalf("activeView = %d, want viewLog", m.activeView)
 		}
-		got := m.renderProjectList(30, 20)
-		if !strings.Contains(got, "No OpenSpec projects found") {
-			t.Errorf("expected empty message, got %q", got)
+
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		if um := updated.(model); um.activeView != viewDetail {
+			t.Errorf("activeView = %d, want viewDetail", um.activeView)
 		}
 	})
 }

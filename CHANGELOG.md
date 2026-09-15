@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project picker on `p`, available from anywhere. Lists every project with its
+  spec, change and task counts, filters with `/`, and switches project on
+  `enter`.
+- The picker remembers what it found in `~/.cache/specgetty/projects.yaml`, so
+  only the first run pays for scanning your disk. `r` looks again. The counts it
+  shows are always read fresh, so only the list of projects can be stale.
+- `--view=single|all` chooses which view opens first.
 - Search the change list with `/`: fuzzy on change names, `'` for a literal name
   match, and `:` to search the text inside proposal, design, tasks and spec
   files. A row matched on file contents names the files that matched.
@@ -18,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking**: `spg` now opens the project you are standing in, immediately,
+  instead of scanning your disk first. If there is no project there it offers
+  the picker.
+- **Breaking**: the project list panel is gone, replaced by the picker overlay.
+  The window is one panel now.
+- **Breaking**: `--zoom` / `-z` is removed. Use `--view=single`, which is the
+  default, or `--path`. The word "zoom" is gone from the UI: looking at one
+  project is the ordinary way to use the tool, not a mode.
 - The change list now fills the panel as a table, and a change opens one level
   deeper with `enter`. Its artifact sub-tabs no longer share left/right with the
   project tab bar, so pressing right on the last sub-tab stays put instead of
@@ -25,7 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The archive tab is gone. Archived changes live in the one change list behind
   the `f` filter.
 - Tabs are now changes, specs, config, reachable with `1`, `2` and `3`.
-- `esc` is the only way back up a level; `enter` no longer doubles as unzoom.
+- `esc` is the only way back up a level, and it does nothing at the project
+  view, which is the floor.
 
 ## [0.2.0] - 2026-04-02
 

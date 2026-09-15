@@ -40,6 +40,18 @@ func findOpenSpecProject(startDir string) string {
 	}
 }
 
+// resolveStartView validates the --view value and applies the rule that an
+// explicit --path means a single project, whatever --view said.
+func resolveStartView(view, path string) (string, error) {
+	if view != "single" && view != "all" {
+		return "", fmt.Errorf("unknown --view value %q; valid values are: single, all", view)
+	}
+	if path != "" {
+		return "single", nil
+	}
+	return view, nil
+}
+
 //go:embed config.yml
 var defaultConfig string
 
@@ -50,16 +62,11 @@ func init() {
 	version = strings.TrimSpace(version)
 }
 
-func main() {
-	app := cli.NewApp()
-	app.Name = "specgetty"
-	app.Version = version
-	app.Usage = "Finds OpenSpec projects on your local machine"
-	app.EnableBashCompletion = true
-	app.CommandNotFound = func(c *cli.Context, cmd string) {
-		fmt.Printf("ERROR: Unknown command '%s'\n", cmd)
-	}
-	app.Flags = []cli.Flag{
+// appFlags is the command-line surface. It is a function so that tests can
+// assert what it does and does not contain: --zoom is gone, and staying gone is
+// part of the contract.
+func appFlags() []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:    "config",
 			Aliases: []string{"c"},
@@ -77,21 +84,34 @@ func main() {
 			Name:  "debug",
 			Usage: "show debug output instead of UI",
 		},
-		&cli.BoolFlag{
-			Name:    "zoom",
-			Aliases: []string{"z"},
-			Usage:   "Start zoomed into a project (current dir or --path)",
+		&cli.StringFlag{
+			Name:  "view",
+			Value: "single",
+			Usage: "Which view opens first: single (the project at the working directory) or all (the project picker)",
 		},
 		&cli.StringFlag{
 			Name:    "path",
 			Aliases: []string{"p"},
-			Usage:   "OpenSpec project path to zoom into (used with --zoom)",
+			Usage:   "OpenSpec project to open; implies --view=single",
 		},
 		&cli.StringFlag{
 			Name:  "change-fields",
 			Usage: "Comma-separated columns for the change list (overrides change_fields in the config)",
 		},
 	}
+}
+
+func main() {
+	app := cli.NewApp()
+	app.Name = "specgetty"
+	app.Version = version
+	app.Usage = "Finds OpenSpec projects on your local machine"
+	app.EnableBashCompletion = true
+	app.CommandNotFound = func(c *cli.Context, cmd string) {
+		fmt.Printf("ERROR: Unknown command '%s'\n", cmd)
+	}
+	app.Flags = appFlags()
+
 	app.Action = func(c *cli.Context) error {
 
 		config, err := scanner.ParseConfigFile(c.String("config"), defaultConfig)
@@ -125,17 +145,20 @@ func main() {
 			return nil
 		}
 
-		// Resolve zoom path
-		var initialZoomPath string
-		if c.Bool("zoom") {
+		startView, err := resolveStartView(c.String("view"), c.String("path"))
+		if err != nil {
+			return err
+		}
+
+		// Resolve the startup project. This never walks the configured scan
+		// directories: discovery only happens when the picker asks for it.
+		var startupPath string
+		if startView == "single" {
 			if c.String("path") != "" {
-				initialZoomPath, _ = filepath.Abs(c.String("path"))
+				startupPath, _ = filepath.Abs(c.String("path"))
 			} else {
 				cwd, _ := os.Getwd()
-				initialZoomPath = findOpenSpecProject(cwd)
-			}
-			if initialZoomPath == "" {
-				fmt.Println("No OpenSpec project found, starting in normal mode")
+				startupPath = findOpenSpecProject(cwd)
 			}
 		}
 
@@ -144,7 +167,7 @@ func main() {
 			return err
 		}
 
-		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, initialZoomPath, fields)
+		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, startupPath, startView, fields)
 		if err != nil {
 			return err
 		}

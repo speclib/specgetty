@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -93,5 +94,75 @@ func TestGetDefaultConfigPathFallsBackToHome(t *testing.T) {
 	want := filepath.Join("/tmp/specgetty-test-home", ".config", "specgetty", "config.yml")
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveStartView(t *testing.T) {
+	tests := []struct {
+		view, path string
+		want       string
+		wantErr    bool
+	}{
+		{"single", "", "single", false},
+		{"all", "", "all", false},
+		{"bogus", "", "", true},
+		{"", "", "", true},
+		// An explicit path names one project, so it settles the view.
+		{"all", "/some/project", "single", false},
+		{"single", "/some/project", "single", false},
+	}
+	for _, tt := range tests {
+		got, err := resolveStartView(tt.view, tt.path)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("resolveStartView(%q,%q) returned no error, want one", tt.view, tt.path)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("resolveStartView(%q,%q): %v", tt.view, tt.path, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("resolveStartView(%q,%q) = %q, want %q", tt.view, tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestResolveStartViewErrorNamesValidValues(t *testing.T) {
+	_, err := resolveStartView("bogus", "")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{"bogus", "single", "all"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err, want)
+		}
+	}
+}
+
+func TestZoomFlagIsGone(t *testing.T) {
+	// --zoom named a mode that no longer exists. Its absence is part of the
+	// contract, not an oversight, so it is asserted rather than remembered.
+	for _, f := range appFlags() {
+		for _, name := range f.Names() {
+			if name == "zoom" || name == "z" {
+				t.Errorf("flag %q is still defined; --zoom was removed with zoom mode", name)
+			}
+		}
+	}
+}
+
+func TestViewFlagExists(t *testing.T) {
+	found := false
+	for _, f := range appFlags() {
+		for _, name := range f.Names() {
+			if name == "view" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("--view is missing; it replaces --zoom")
 	}
 }

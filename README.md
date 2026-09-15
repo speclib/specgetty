@@ -26,19 +26,32 @@ The config path follows the XDG Base Directory Specification. If `$XDG_CONFIG_HO
 spg [ <directories...> ]
 ```
 
+`spg` opens the OpenSpec project you are standing in. It resolves it from the
+working directory and starts immediately, without scanning your disk. If there
+is no project there, it offers the project picker.
+
+| Flag                    | Effect                                              |
+| ----------------------- | --------------------------------------------------- |
+| `--view=single`         | Open the project at the working directory (default) |
+| `--view=all`            | Open at the project picker                          |
+| `--path <dir>`          | Open that project; implies `--view=single`          |
+| `--change-fields=<a,b>` | Choose the change list columns                      |
+
 If one/more directories are specified as `<directories>`, then this will override the
 `scandirs.include` from your config file.
 
 ## UI
 
-The UI has three levels. `<enter>` goes one level deeper, `<esc>` comes back.
+There are two levels, and the project picker opens over either of them.
 
 ```
-  projects            the project list beside a detail panel
-     | enter
-  project             tab bar: changes | specs | config
-     | enter          the changes tab is a full-width table
-  change              artifact sub-tabs: proposal | design | tasks | specs
+   [ project picker ]   p opens it, esc closes it
+           |            enter switches project
+           v
+   project view         the startup view; esc does nothing here
+       | enter          tabs: changes | specs | config
+       v
+   change view          artifact sub-tabs: proposal | design | tasks | specs
 ```
 
 Active and archived changes share one list. The `f` key cycles which of them it
@@ -46,15 +59,15 @@ shows, so there is no separate archive tab.
 
 ### Keys everywhere
 
-| Key                        | Action                                    |
-| -------------------------- | ----------------------------------------- |
-| `j`/`k` or `<up>`/`<down>` | Move the cursor                           |
-| `<enter>`                  | Go one level deeper                       |
-| `<esc>`                    | Go one level back                         |
-| `s`                        | Rescan                                    |
-| `l`                        | Toggle the log panel                      |
-| `gg` / `G`                 | Jump to first / last                      |
-| `q` / `ctrl-C`             | Quit                                      |
+| Key                        | Action                  |
+| -------------------------- | ----------------------- |
+| `j`/`k` or `<up>`/`<down>` | Move the cursor         |
+| `<enter>`                  | Go one level deeper     |
+| `<esc>`                    | Go one level back       |
+| `p`                        | Open the project picker |
+| `s`                        | Rescan the open project |
+| `l`                        | Toggle the log panel    |
+| `q` / `ctrl-C`             | Quit                    |
 
 ### Keys in a project
 
@@ -82,6 +95,37 @@ shows, so there is no separate archive tab.
 
 Sub-tabs stay inside the change: pressing `<right>` on the last one does not
 spill over into the project tab bar.
+
+## The project picker
+
+Press `p` from anywhere. It lists every OpenSpec project it has found, with its
+spec, change and task counts, and `enter` switches to the highlighted one. You
+land on that project's change list.
+
+| Key       | Action                             |
+| --------- | ---------------------------------- |
+| `<enter>` | Switch to the highlighted project  |
+| `<esc>`   | Close, keeping the current project |
+| `/`       | Filter the list                    |
+| `r`       | Look for projects again            |
+| `j`/`k`   | Move the cursor                    |
+
+The filter uses the same grammar as the change list, with one addition: `:`
+searches file paths as well as file contents, so you can look for a project by
+a filename it contains.
+
+### Why `r` exists
+
+Walking your disk to find projects is the slow part of specgetty, measured at
+about four seconds cold for eighteen projects. So `spg` never does it at
+startup, and the picker remembers what it found in
+`~/.cache/specgetty/projects.yaml`.
+
+That cache holds paths only. Every count you see in the picker is read fresh
+from disk, so the numbers are never stale. What can go stale is the list itself:
+a project you created since the last scan will not appear until you press `r`.
+Editing `scandirs` in your config invalidates the cache on its own, and projects
+you have deleted disappear without a rescan.
 
 ## Searching the change list
 

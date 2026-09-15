@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
@@ -17,13 +16,12 @@ const (
 
 var listModeNames = []string{"open", "archived", "open+archived"}
 
-// changeRow is one line of the change list. It wraps a ChangeInfo with the two
-// things the list needs that the scanner does not record: whether the change
-// came from the archive, and which of its files a body search matched.
+// changeRow is one line of the change list. It wraps a ChangeInfo with the one
+// thing the list needs that the scanner does not record: whether the change came
+// from the archive.
 type changeRow struct {
-	ci           scanner.ChangeInfo
-	archived     bool
-	matchedFiles []string
+	ci       scanner.ChangeInfo
+	archived bool
 }
 
 // key identifies a row across a re-filter or a rescan. The archived flag is
@@ -66,16 +64,6 @@ func emptyListMessage(mode int) string {
 	}
 }
 
-// indexOfKey finds the row carrying the given key, or -1.
-func indexOfKey(rows []changeRow, key string) int {
-	for i, r := range rows {
-		if r.key() == key {
-			return i
-		}
-	}
-	return -1
-}
-
 // artifactTabNames lists the sub-tabs for an open change: one per .md file,
 // plus a specs tab when the change carries spec deltas.
 func (r changeRow) artifactTabNames() []string {
@@ -89,18 +77,20 @@ func (r changeRow) artifactTabNames() []string {
 	return names
 }
 
-// searchableFiles returns every named body of text in the change, keyed by the
-// label a search hint should show for it.
-func (r changeRow) searchableFiles() []string {
-	var names []string
-	for _, f := range r.ci.ArtifactFiles {
-		names = append(names, f)
+// searchName is the fuzzy and literal target for a change: its name.
+func (r changeRow) searchName() string { return r.ci.Name }
+
+// searchBodies exposes every artifact and spec in the change to a ':' query,
+// labelled the way the match hint should show it.
+func (r changeRow) searchBodies() map[string]string {
+	bodies := make(map[string]string, len(r.ci.ArtifactContents)+len(r.ci.SpecContents))
+	for name, content := range r.ci.ArtifactContents {
+		bodies[trimMarkdownSuffix(name)] = content
 	}
-	for _, s := range r.ci.SpecNames {
-		names = append(names, s)
+	for name, content := range r.ci.SpecContents {
+		bodies[name] = content
 	}
-	sort.Strings(names)
-	return names
+	return bodies
 }
 
 // taskLabel renders task progress, or an empty string when the change has no

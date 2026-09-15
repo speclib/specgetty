@@ -11,23 +11,6 @@ func navBarFor(m model) string {
 	return m.renderNavBar()
 }
 
-func TestNavBarAtProjectsLevel(t *testing.T) {
-	m := makeListModel()
-	m.level = levelProjects
-	m.activeView = viewProjects
-
-	got := navBarFor(m)
-	for _, want := range []string{"quit", "open project", "switch"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("projects nav bar missing %q, got:\n%s", want, got)
-		}
-	}
-	// Change actions belong to the change list, not here.
-	if strings.Contains(got, "a archive") {
-		t.Errorf("projects nav bar should not offer archive, got:\n%s", got)
-	}
-}
-
 func TestNavBarAtChangeListOffersActions(t *testing.T) {
 	m := makeListModel()
 	m.width = 200 // wide enough that nothing is dropped

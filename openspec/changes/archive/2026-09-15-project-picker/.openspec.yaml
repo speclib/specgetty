@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-09-15
+
+# zoom-mode names a concept that ceases to exist, and side-panel-layout
+# describes a side panel that is being removed. Both lose every requirement
+# they have, so retiring them is the intent rather than an accident.
+retire_capabilities: true
