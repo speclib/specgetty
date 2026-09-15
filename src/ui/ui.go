@@ -1582,10 +1582,14 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 
 	border := lipgloss.RoundedBorder()
 	titleStyled := lipgloss.NewStyle().Foreground(borderColor).Bold(true).Render(title)
+	// The box below renders as width+2 columns: Width(width) plus a border on
+	// each side. This line has to match it. It spends three columns on the two
+	// corners and the segment before the title, so the trailing run is
+	// width-len(title)-1, not -2.
 	topBorder := border.TopLeft +
 		strings.Repeat(border.Top, 1) +
 		titleStyled +
-		strings.Repeat(border.Top, max(0, width-lipgloss.Width(title)-2)) +
+		strings.Repeat(border.Top, max(0, width-lipgloss.Width(title)-1)) +
 		border.TopRight
 
 	boxStyle := lipgloss.NewStyle().

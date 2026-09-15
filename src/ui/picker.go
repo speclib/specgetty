@@ -188,7 +188,8 @@ func (m *model) pickerSync() {
 	m.pickerKey = rows[m.pickerCursor].row.key()
 }
 
-// pickerBox returns the overlay dimensions.
+// pickerBox returns the overlay dimensions, in total columns and rows
+// including the border.
 func (m model) pickerBox() (width, height int) {
 	width = min(m.width-8, 110)
 	if width < 40 {
@@ -210,7 +211,16 @@ func (m model) pickerBox() (width, height int) {
 // renderPicker draws the overlay: a table of projects with a prompt beneath.
 func (m model) renderPicker() string {
 	width, height := m.pickerBox()
-	inner := width - 4 // modal padding
+
+	// lipgloss Style.Width covers the content plus its horizontal padding, and
+	// the border sits outside that. So a box of `width` total columns needs
+	// Width(width-2), which leaves width-4 for content once the padding either
+	// side is taken. Handing the table the wrong number here does not error: it
+	// silently overflows and lipgloss wraps the row, which shows up as the
+	// highlighted row alone looking misaligned, because only it carries a
+	// background colour into the wrapped remainder.
+	styleWidth := width - 2
+	inner := styleWidth - 2
 
 	var body string
 	switch {
@@ -244,7 +254,7 @@ func (m model) renderPicker() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("2")).
 		Padding(0, 1).
-		Width(inner).
+		Width(styleWidth).
 		Render(content)
 }
 
