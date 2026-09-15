@@ -36,7 +36,12 @@ type FileEntry struct {
 }
 
 type ChangeInfo struct {
-	Name             string
+	Name string
+	// DirName is the directory this change was read from. For an archived
+	// change that still carries its `YYYY-MM-DD-` prefix, while Name has it
+	// stripped for display. Anything that needs to find the change on disk
+	// again must use DirName.
+	DirName          string
 	ArtifactFiles    []string          // sorted .md filenames
 	ArtifactContents map[string]string // filename → content
 	TasksTotal       int
@@ -139,6 +144,7 @@ func ListOpenSpecContents(dir string) ([]FileEntry, error) {
 func parseChangeDir(dir string, name string) ChangeInfo {
 	ci := ChangeInfo{
 		Name:             name,
+		DirName:          filepath.Base(dir),
 		ArtifactContents: make(map[string]string),
 		SpecContents:     make(map[string]string),
 	}

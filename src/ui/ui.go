@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -209,6 +208,7 @@ type model struct {
 	discardResultOk   bool
 	exportState       int
 	exportChangeName  string
+	exportDirName     string
 	exportResultMsg   string
 	exportResultOk    bool
 	exportIsArchived  bool
@@ -318,7 +318,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "y":
 				m.exportState = exportRunning
 				projectPath := m.repoPaths[m.cursor]
-				cmds = append(cmds, doExportChange(projectPath, m.exportChangeName, m.exportIsArchived))
+				cmds = append(cmds, doExportChange(projectPath, m.exportDirName, m.exportChangeName, m.exportIsArchived))
 			case "n", "esc":
 				m.exportState = exportIdle
 			}
@@ -707,6 +707,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "e":
 			if r, ok := m.selectedRow(); ok && m.detailTab == tabChanges {
 				m.exportChangeName = r.ci.Name
+				m.exportDirName = r.ci.DirName
 				m.exportIsArchived = r.archived
 				m.exportState = exportConfirming
 			}
@@ -1060,15 +1061,6 @@ func doDiscardChange(projectPath string, changeName string) tea.Cmd {
 	}
 }
 
-var archiveDatePrefix = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-`)
-
-func exportSemanticName(changeName string, isArchived bool) string {
-	if isArchived {
-		return archiveDatePrefix.ReplaceAllString(changeName, "")
-	}
-	return changeName
-}
-
 func exportDestPath(semanticName string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -1078,20 +1070,25 @@ func exportDestPath(semanticName string) string {
 	return filepath.Join(home, semanticName+"-"+dateStr+".zip")
 }
 
-func doExportChange(projectPath string, changeName string, isArchived bool) tea.Cmd {
+// doExportChange zips a change directory.
+//
+// dirName is the directory on disk, which for an archived change still carries
+// its date prefix. semanticName is the display name, which does not, and which
+// names both the zip's root folder and the zip file itself. Passing the display
+// name as the source path is the defect this signature exists to prevent.
+func doExportChange(projectPath string, dirName string, semanticName string, isArchived bool) tea.Cmd {
 	return func() tea.Msg {
 		var srcDir string
 		if isArchived {
-			srcDir = filepath.Join(projectPath, "openspec", "changes", "archive", changeName)
+			srcDir = filepath.Join(projectPath, "openspec", "changes", "archive", dirName)
 		} else {
-			srcDir = filepath.Join(projectPath, "openspec", "changes", changeName)
+			srcDir = filepath.Join(projectPath, "openspec", "changes", dirName)
 		}
 
 		if _, err := os.Stat(srcDir); err != nil {
 			return exportMsg{ok: false, output: fmt.Sprintf("Source not found: %s", srcDir)}
 		}
 
-		semanticName := exportSemanticName(changeName, isArchived)
 		destPath := exportDestPath(semanticName)
 
 		zipFile, err := os.Create(destPath)
@@ -1257,9 +1254,8 @@ func (m model) View() string {
 	// Export modals
 	switch m.exportState {
 	case exportConfirming:
-		semanticName := exportSemanticName(m.exportChangeName, m.exportIsArchived)
-		destPath := exportDestPath(semanticName)
-		content := fmt.Sprintf("Export \"%s\"?\n\n→ %s\n\n(y/n)", semanticName, destPath)
+		destPath := exportDestPath(m.exportChangeName)
+		content := fmt.Sprintf("Export \"%s\"?\n\n→ %s\n\n(y/n)", m.exportChangeName, destPath)
 		modal := modalStyle.Width(60).Render(content)
 		view = placeOverlay(m.width, m.height, modal, view)
 	case exportRunning:

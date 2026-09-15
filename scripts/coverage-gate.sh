@@ -8,10 +8,9 @@
 # that drops a package below its floor fails the gate, so coverage cannot erode
 # quietly.
 #
-# The eventual target is 70% overall and 80% for the core packages (scanner and
-# ui). These floors are deliberately not that target: setting the target as the
-# gate on day one would block every change behind a large test-writing effort.
-# Raising them is tracked in bean specgetty-4urw.
+# The target is 70% overall and 80% for the core packages (scanner and ui).
+# Overall and scanner now clear it; ui is the one still short, at 72.4% against
+# 80%. These floors track what is actually achieved, so they can only rise.
 #
 # Run it by hand with: bash scripts/coverage-gate.sh
 #
@@ -27,15 +26,15 @@ set -euo pipefail
 floor_for() {
   case "$1" in
     github.com/mipmip/specgetty/src)         echo "29.4" ;;
-    github.com/mipmip/specgetty/src/scanner) echo "53.3" ;;
-    github.com/mipmip/specgetty/src/ui)      echo "68.1" ;;
+    github.com/mipmip/specgetty/src/scanner) echo "91.9" ;;
+    github.com/mipmip/specgetty/src/ui)      echo "72.4" ;;
     # watcher measures 84.6% or 87.2% depending on how its inotify paths fall,
     # so its floor tracks the lower reading.
     github.com/mipmip/specgetty/src/watcher) echo "84.6" ;;
     # Measured at 48.8. Held a fraction lower because watcher's flutter moves
     # the total by about 0.15 points and a zero-margin total would fail at
     # random rather than for a real regression.
-    TOTAL)                                   echo "64.2" ;;
+    TOTAL)                                   echo "73.6" ;;
     *)                                       echo "" ;;
   esac
 }

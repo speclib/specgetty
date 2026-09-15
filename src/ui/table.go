@@ -31,15 +31,6 @@ type filtered[T tableRow] struct {
 	matched []string
 }
 
-// unwrap drops the match reasons, for callers that only want the rows.
-func unwrap[T tableRow](rows []filtered[T]) []T {
-	out := make([]T, len(rows))
-	for i, r := range rows {
-		out[i] = r.row
-	}
-	return out
-}
-
 // wrap lifts plain rows into unmatched entries.
 func wrap[T tableRow](rows []T) []filtered[T] {
 	out := make([]filtered[T], len(rows))
