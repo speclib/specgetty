@@ -11,8 +11,6 @@
       version = builtins.replaceStrings ["\n"] [""] (builtins.readFile ./src/VERSION);
     in
     {
-      nixosModules.default = import ./module.nix self;
-
       packages = forAllSystems (system:
         let
           pkgs = nixpkgsFor.${system};
@@ -20,6 +18,42 @@
         {
           specgetty = pkgs.callPackage ./package.nix { inherit version; };
           default = pkgs.callPackage ./package.nix { inherit version; };
+        });
+
+      checks = forAllSystems (system:
+        let
+          pkgs = nixpkgsFor.${system};
+        in
+        {
+          # The package must build.
+          build = self.packages.${system}.specgetty;
+
+          # go vet, the full test suite, and the coverage ratchet.
+          # scripts/coverage-gate.sh is the single source of truth for the
+          # floors, so `nix flake check` and a local run enforce the same thing.
+          tests = pkgs.buildGoModule {
+            pname = "specgetty-tests";
+            inherit version;
+            src = ./.;
+            vendorHash = "sha256-DWWzfif21IDuYdwa6PwiBQFa0gAi4NZ6YDKbE9/C4eE=";
+
+            nativeBuildInputs = [ pkgs.bash ];
+
+            buildPhase = "true";
+
+            doCheck = true;
+            checkPhase = ''
+              runHook preCheck
+              export HOME="$TMPDIR"
+              bash scripts/coverage-gate.sh
+              runHook postCheck
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+              echo "tests and coverage ratchet passed" > $out/result
+            '';
+          };
         });
 
       devShells = forAllSystems (system:
