@@ -1,0 +1,9 @@
+schema: tinychange
+created: 2026-09-15
+
+# No spec delta. This change adds tests, deletes an unused helper, and fixes a
+# defect where the code does not do what openspec/specs/export-change/spec.md
+# already requires. The requirement is correct as written and is not changing,
+# so inventing a delta here would restate an existing spec rather than record a
+# behavioural change.
+skip_specs: true

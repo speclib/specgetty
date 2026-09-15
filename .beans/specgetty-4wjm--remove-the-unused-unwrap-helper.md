@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: low
 created_at: 2026-09-15T19:12:17Z
-updated_at: 2026-09-15T19:12:17Z
+updated_at: 2026-09-15T19:55:07Z
 ---
 
 `unwrap` in `src/ui/table.go` has zero callers.
@@ -19,3 +19,8 @@ Dead on arrival, and it shows up as a 0% function in the coverage report, which
 is how it was noticed.
 
 Its counterpart `wrap` is used and stays.
+
+## Planned
+
+Covered by openspec change `cover-scanner-and-export` (tinychange). Planning
+artifacts written 2026-09-15; run /mip:tinychange-apply to implement.

@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: normal
 created_at: 2026-09-15T19:12:17Z
-updated_at: 2026-09-15T19:12:17Z
+updated_at: 2026-09-15T19:55:07Z
 ---
 
 The scan path is the least covered core code in the repo: 53.3% against the
@@ -46,3 +46,8 @@ project, which cost time before the guard was read.
 `specgetty-p4e2` (bubbletea v2) is deliberately waiting for the 70/80 gate,
 because that migration is broad and mechanical and the suite is what makes it
 safe.
+
+## Planned
+
+Covered by openspec change `cover-scanner-and-export` (tinychange). Planning
+artifacts written 2026-09-15; run /mip:tinychange-apply to implement.

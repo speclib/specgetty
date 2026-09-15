@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: normal
 created_at: 2026-09-15T19:12:17Z
-updated_at: 2026-09-15T19:12:17Z
+updated_at: 2026-09-15T19:55:07Z
 ---
 
 `export-change` was archived as a capability on 2026-09-15 with five
@@ -42,3 +42,8 @@ See `openspec/specs/export-change/spec.md`: export keybinding, confirmation
 modal, zip creation, result feedback, nav bar hint. The keybinding and modal
 behaviour are covered by the UI tests already; the zip creation and naming are
 not.
+
+## Planned
+
+Covered by openspec change `cover-scanner-and-export` (tinychange). Planning
+artifacts written 2026-09-15; run /mip:tinychange-apply to implement.
