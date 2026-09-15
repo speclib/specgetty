@@ -1,11 +1,11 @@
 ---
 # specgetty-g4pa
 title: change list should take full view
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-09-15T10:46:08Z
-updated_at: 2026-09-15T14:18:37Z
+updated_at: 2026-09-15T15:46:03Z
 ---
 
 selecting a change and clicking enter should open the change in a deeper level
@@ -79,3 +79,42 @@ moved to [[specgetty-vru8]].
 `openspec/changes/change-list-full-view/` holds proposal.md, design.md and spec
 deltas for `change-list-view`, `change-search`, `changes-tab`, `archive-tab`
 and `detail-tabs`. Validates strict. tasks.md has 11 groups, 67 items.
+
+## Summary of Changes
+
+Shipped as openspec change `change-list-full-view`, archived to
+`openspec/changes/archive/2026-09-15-change-list-full-view/`. Commit 113b89b.
+
+### What landed
+
+Navigation is now an explicit depth (`level`) rather than a `zoomed` boolean:
+projects, project, change. `enter` descends, `esc` ascends. A change fills the
+panel at its own level, so its artifact sub-tabs own left/right and no longer
+spill into the project tab bar.
+
+The changes tab and the archive tab are one list, filtered by `f` between open,
+archived and both. It renders as a full-width table whose columns come from
+`change_fields` in the config or `--change-fields`.
+
+`/` filters the list: fuzzy on names, `'` for a literal name match, `:` for the
+text inside artifact and spec files. Smart case throughout. Results are ranked
+strongest first. A row matched on file contents names the files that matched.
+
+### Two things worth remembering
+
+Every consumer of the change list already routed through `currentChanges()`, so
+the merge, the mode filter and the search all landed in one function
+(`currentRows()`), with nothing downstream needing to know a filter exists.
+
+`fuzzy.Find` compares with `equalFold` and has no case-sensitive mode, so smart
+case is enforced by post-filtering its `MatchedIndexes` against the pattern.
+
+### Deferred, deliberately
+
+- Columns needing new scanner data: [[specgetty-vru8]]
+- A key for the delete action. `d` is discard; overlaps [[specgetty-tyri]]
+- Cross-project search: [[specgetty-opwv]], left undecided
+- What sits above the change list: [[specgetty-jdif]]. The specs describe only
+  the change list and the change below it, so jdif can redefine the top of the
+  stack without contradicting an archived spec. [[specgetty-edee]] and
+  [[specgetty-oarh]] describe the model jdif replaces.
