@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Export a change as a zip with `e`, from the change list or on an archived
+  change. Writes `~/<change-name>-<date>.zip` with the change directory intact,
+  so the full proposal, design, tasks and specs can be attached to a pull
+  request in another repository.
 - Project picker on `p`, available from anywhere. Lists every project with its
   spec, change and task counts, filters with `/`, and switches project on
   `enter`.

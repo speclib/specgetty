@@ -120,7 +120,7 @@ update_nix_vendor_hash() {
         return 0
     fi
 
-    info "Updating vendorHash in package.nix..."
+    info "Updating vendorHash in package.nix and flake.nix..."
 
     # Save the current vendorHash
     OLD_HASH=$(grep 'vendorHash' package.nix | sed 's/.*"\(.*\)".*/\1/')
@@ -134,13 +134,15 @@ update_nix_vendor_hash() {
 
     if [[ -z "$NEW_HASH" ]]; then
         # Restore old hash if we couldn't determine the new one
-        sed -i "s|vendorHash = \".*\"|vendorHash = \"$OLD_HASH\"|" package.nix
+        sed -i "s|vendorHash = \".*\"|vendorHash = \"$OLD_HASH\"|" package.nix flake.nix
         warn "Could not determine new vendorHash — restored previous hash"
         return 0
     fi
 
-    # Update flake.nix with the correct hash
-    sed -i "s|vendorHash = \".*\"|vendorHash = \"$NEW_HASH\"|" package.nix
+    # Both files declare a vendorHash: package.nix for the binary, flake.nix for
+    # the checks derivation that runs the test suite. If they drift,
+    # `nix flake check` fails and every ship-change.sh run is blocked.
+    sed -i "s|vendorHash = \".*\"|vendorHash = \"$NEW_HASH\"|" package.nix flake.nix
     success "Updated vendorHash to $NEW_HASH"
 }
 
@@ -161,7 +163,7 @@ success "Updated CHANGELOG.md with version $NEW_VERSION"
 update_nix_vendor_hash
 
 # Commit changes
-git add "$VERSION_FILE" CHANGELOG.md package.nix
+git add "$VERSION_FILE" CHANGELOG.md package.nix flake.nix
 git commit -m "chore: release v$NEW_VERSION"
 success "Created release commit"
 

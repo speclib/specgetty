@@ -15,6 +15,7 @@ Releases are automated via GitHub Actions and goreleaser. When a `v*` tag is pus
 
 Before creating a release, ensure:
 
+- [ ] The gate passes: `nix flake check` (build, vet, tests, coverage ratchet)
 - [ ] All tests pass: `make test`
 - [ ] The application builds: `make build`
 - [ ] `CHANGELOG.md` is updated with the new version's changes
@@ -63,7 +64,7 @@ echo "X.Y.Z" > src/VERSION
 git add src/VERSION CHANGELOG.md
 git commit -m "chore: release vX.Y.Z"
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin HEAD:master
+git push origin HEAD:main
 git push origin vX.Y.Z
 ```
 
