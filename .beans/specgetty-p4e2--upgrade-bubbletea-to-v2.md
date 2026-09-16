@@ -1,11 +1,11 @@
 ---
 # specgetty-p4e2
 title: upgrade bubbletea to v2
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-09-15T17:49:32Z
-updated_at: 2026-09-15T21:03:54Z
+updated_at: 2026-09-16T13:42:08Z
 blocked_by:
     - specgetty-sreo
     - specgetty-17c3
@@ -116,3 +116,66 @@ was standing in for, `View` being untested, is gone.
 Do not switch `copy-change-name-and-path` to `tea.SetClipboard` afterwards. It
 is OSC 52 and fire-and-forget, so a refused write reports success, which that
 feature's requirements forbid. Recorded in the change's design and as task 7.1.
+
+## Summary of Changes
+
+Shipped as openspec change `upgrade-bubbletea-v2`, archived to
+`openspec/changes/archive/2026-09-16-upgrade-bubbletea-v2/`. Commit 56065aa.
+31 tasks. `nix flake check` passes.
+
+Now on `charm.land/bubbletea/v2` v2.0.9, `charm.land/bubbles/v2` v2.2.1 and
+`charm.land/lipgloss/v2` v2.0.6. `termenv` dropped out entirely.
+
+## Two things the plan did not foresee
+
+**lipgloss v2 redefined Style.Width.** It now means the TOTAL rendered width,
+with border and padding counted inside it; in v1 it was the content width and
+the chrome was added outside. Every box in the application was affected. This is
+the largest behavioural change in the upgrade and the guide does not mention it.
+
+Three tests caught it, which is exactly why they were written:
+
+- `TestPanelTopBorderMatchesTheBoxWidth`: the hand-built top border no longer
+  matched its box
+- `TestPickerDoesNotOverflowItsBox`: the picker came out two columns narrow
+- `TestViewDrawsTheScanningModal`: the modal wrapped mid-phrase, because its
+  content area had silently lost six columns
+
+`renderPanel` now takes the total width and derives the content width from it,
+the picker's split was inverted, and each fixed modal asks for its text width
+plus `modalChrome`.
+
+**The v2 modules require Go 1.25.** That raised this module's own directive, and
+the nix build was on Go 1.24.10: `go.mod requires go >= 1.25.0`. Fixed with
+`buildGo125Module`, which the already-pinned nixos-25.05 provides, so the
+toolchain moved without moving nixpkgs.
+
+## What went smoothly, and why
+
+The production surface really was one type switch. Nothing reads `msg.Type`,
+`msg.Runes` or `msg.Alt`, nothing binds space, and every key name v2 produces
+("esc", "pgdown", "tab") matches what the handlers already switch on. The 94
+key literals were all in tests.
+
+`View()` being at 100% coverage before this started is what made the rendering
+changes safe to make. It is also now asserted that `View().AltScreen` is set,
+which is a smaller claim than "the alt screen works" but is the part a test can
+make.
+
+## Still unverified, and only you can do it
+
+- The alternate screen actually being taken. The flag is asserted; whether the
+  terminal honours it is not something any test here sees. If it is wrong,
+  specgetty draws over the scrollback.
+- The program starting and tearing down at all: `Run` has no coverage and needs
+  a TTY.
+- A live resize, the picker overlay, and the nav bar at a narrow width.
+
+## Next
+
+Light and dark adaptation is now possible via `tea.RequestBackgroundColor()` and
+`lipgloss.LightDark`, and was deliberately left out of this change.
+
+Do not move the clipboard feature to `tea.SetClipboard`: it is fire-and-forget
+OSC 52, so a refused write would report success, which `copy-to-clipboard`
+forbids.
