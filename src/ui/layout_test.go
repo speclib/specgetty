@@ -4,19 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 )
 
-// Styles are stripped when there is no terminal, which hides exactly the class
-// of defect these tests exist to catch: an overflowing row wraps, and only a
-// row carrying a background colour makes the wrap visible.
-func withColor(t *testing.T) {
-	t.Helper()
-	previous := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
-}
+// Note for anyone wondering where the colour-forcing helper went: lipgloss v2
+// has no global colour profile. Style.Render always emits, and downgrading
+// happens at the output writer. Under v1 these tests needed a helper to stop
+// being silently vacuous, because Render checked for a terminal and stripped
+// styling when there was none. That trap is gone.
 
 func lineWidths(s string) []int {
 	lines := strings.Split(s, "\n")
@@ -32,7 +27,6 @@ func TestPickerLinesAllHaveTheSameWidth(t *testing.T) {
 	// wrapped remainder, so every line still measures the same width. The
 	// detector for that is TestPickerDoesNotOverflowItsBox, which counts lines.
 	// This test guards ragged output from other causes.
-	withColor(t)
 
 	for _, cursor := range []int{0, 1} {
 		m := makePickerModel()
@@ -51,7 +45,6 @@ func TestPickerLinesAllHaveTheSameWidth(t *testing.T) {
 }
 
 func TestPickerDoesNotOverflowItsBox(t *testing.T) {
-	withColor(t)
 
 	m := makePickerModel()
 	m.pickerOpen = true
@@ -73,7 +66,6 @@ func TestPickerDoesNotOverflowItsBox(t *testing.T) {
 }
 
 func TestPickerWidthsHoldWithAMatchHintColumn(t *testing.T) {
-	withColor(t)
 
 	m := makePickerModel()
 	m.pickerOpen = true
@@ -90,7 +82,6 @@ func TestPickerWidthsHoldWithAMatchHintColumn(t *testing.T) {
 }
 
 func TestPickerWidthsHoldAtAwkwardTerminalSizes(t *testing.T) {
-	withColor(t)
 
 	for _, size := range []struct{ w, h int }{
 		{60, 20}, {61, 21}, {80, 24}, {100, 30}, {201, 51},
@@ -112,7 +103,6 @@ func TestPickerWidthsHoldAtAwkwardTerminalSizes(t *testing.T) {
 }
 
 func TestPanelTopBorderMatchesTheBoxWidth(t *testing.T) {
-	withColor(t)
 
 	// The top border is assembled by hand rather than by lipgloss, so it can
 	// drift from the box it caps. It did: it was one column short.
@@ -132,7 +122,6 @@ func TestPanelTopBorderMatchesTheBoxWidth(t *testing.T) {
 }
 
 func TestPanelTopBorderHandlesALongTitle(t *testing.T) {
-	withColor(t)
 
 	// A title longer than the box must not make the border negative or ragged.
 	m := makeListModel()

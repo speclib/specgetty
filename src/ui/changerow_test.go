@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
@@ -191,13 +191,13 @@ func TestSyncCursorOnEmptyList(t *testing.T) {
 func TestEnterDescendsAndEscAscends(t *testing.T) {
 	m := makeListModel()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
 	if um.level != levelChange {
 		t.Fatalf("after enter level = %d, want levelChange", um.level)
 	}
 
-	updated, _ = um.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ = um.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	um = updated.(model)
 	if um.level != levelProject {
 		t.Errorf("after esc level = %d, want levelProject", um.level)
@@ -210,7 +210,7 @@ func TestEscAtTheProjectViewDoesNothing(t *testing.T) {
 	m := makeListModel()
 	m.level = levelProject
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if um := updated.(model); um.level != levelProject {
 		t.Errorf("esc moved to level %d, want to stay at levelProject", um.level)
 	}
@@ -233,7 +233,7 @@ func TestRightArrowDoesNotSpillIntoTheTabBar(t *testing.T) {
 	m.changeArtifactTab = 1 // the last sub-tab
 	before := m.detailTab
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	um := updated.(model)
 
 	if um.detailTab != before {
@@ -251,7 +251,7 @@ func TestLeftArrowDoesNotSpillIntoTheTabBar(t *testing.T) {
 	m.changeArtifactTab = 0
 	before := m.detailTab
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	um := updated.(model)
 
 	if um.detailTab != before {
@@ -264,7 +264,7 @@ func TestNumberKeysInertWhileChangeIsOpen(t *testing.T) {
 	m.level = levelChange
 	m.detailTab = tabChanges
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: '2', Text: "2"})
 	if um := updated.(model); um.detailTab != tabChanges {
 		t.Errorf("detailTab = %d, want it unchanged while a change is open", um.detailTab)
 	}
@@ -272,7 +272,7 @@ func TestNumberKeysInertWhileChangeIsOpen(t *testing.T) {
 
 func TestNumberKeysSwitchTabsAtTheProjectLevel(t *testing.T) {
 	m := makeListModel()
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: '2', Text: "2"})
 	if um := updated.(model); um.detailTab != tabSpecs {
 		t.Errorf("detailTab = %d, want tabSpecs (%d)", um.detailTab, tabSpecs)
 	}
@@ -281,7 +281,7 @@ func TestNumberKeysSwitchTabsAtTheProjectLevel(t *testing.T) {
 func TestFCyclesListMode(t *testing.T) {
 	m := makeListModel()
 	for _, want := range []int{modeArchived, modeBoth, modeOpen} {
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+		updated, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
 		m = updated.(model)
 		if m.listMode != want {
 			t.Fatalf("listMode = %d, want %d", m.listMode, want)
@@ -293,7 +293,7 @@ func TestArchiveKeyIgnoredOnArchivedRow(t *testing.T) {
 	m := makeListModel()
 	m.listMode = modeArchived // only gamma, which is archived
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if um := updated.(model); um.archiveState != archiveIdle {
 		t.Errorf("archiveState = %d, want archiveIdle: archiving an archived change is a no-op", um.archiveState)
 	}
@@ -303,7 +303,7 @@ func TestExportKeyWorksOnArchivedRow(t *testing.T) {
 	m := makeListModel()
 	m.listMode = modeArchived
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	um := updated.(model)
 	if um.exportState != exportConfirming {
 		t.Fatalf("exportState = %d, want exportConfirming", um.exportState)
@@ -316,14 +316,14 @@ func TestExportKeyWorksOnArchivedRow(t *testing.T) {
 func TestSearchPromptCapturesKeys(t *testing.T) {
 	m := makeListModel()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = updated.(model)
 	if !m.searchFocused {
 		t.Fatal("/ should focus the search prompt")
 	}
 
 	// 'a' is the archive action, but inside the prompt it is just a character.
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	m = updated.(model)
 	if m.archiveState != archiveIdle {
 		t.Error("a while typing must not trigger archive")
@@ -339,7 +339,7 @@ func TestEscapeClearsTheFilter(t *testing.T) {
 	m.searchInput.Focus()
 	m.searchInput.SetValue("alpha")
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	um := updated.(model)
 	if um.searchFocused {
 		t.Error("esc should unfocus the prompt")
@@ -359,7 +359,7 @@ func TestEnterFromPromptOpensTheChange(t *testing.T) {
 	m.searchInput.SetValue("beta")
 	m.syncCursor()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
 	if um.level != levelChange {
 		t.Fatalf("level = %d, want levelChange", um.level)
@@ -379,7 +379,7 @@ func TestArrowsNavigateWhileTyping(t *testing.T) {
 	m.searchFocused = true
 	m.searchInput.Focus()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	um := updated.(model)
 	if um.changeCursor != 1 {
 		t.Errorf("cursor = %d, want 1", um.changeCursor)

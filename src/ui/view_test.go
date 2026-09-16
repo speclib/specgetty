@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
@@ -34,7 +34,7 @@ func makeViewModel() model {
 
 func viewOf(m model) string {
 	m.syncDocument()
-	return m.View()
+	return m.View().Content
 }
 
 // --- the two early returns ---
@@ -43,12 +43,12 @@ func TestViewBeforeTheFirstWindowSize(t *testing.T) {
 	// bubbletea renders once before it knows the terminal size.
 	m := makeListModel()
 	m.width, m.height = 0, 0
-	if got := m.View(); got != "Initializing..." {
+	if got := m.View().Content; got != "Initializing..." {
 		t.Errorf("View() = %q, want the initialising placeholder", got)
 	}
 
 	m.width, m.height = 100, 0
-	if got := m.View(); got != "Initializing..." {
+	if got := m.View().Content; got != "Initializing..." {
 		t.Errorf("with height 0, View() = %q, want the initialising placeholder", got)
 	}
 }
@@ -59,7 +59,7 @@ func TestViewRefusesATerminalThatIsTooSmall(t *testing.T) {
 	} {
 		m := makeListModel()
 		m.width, m.height = size.w, size.h
-		got := m.View()
+		got := m.View().Content
 		if !strings.Contains(got, "Terminal too small") {
 			t.Errorf("at %dx%d View() did not refuse: %q", size.w, size.h, got)
 		}
@@ -378,5 +378,36 @@ func TestViewStaysWithinTheTerminalWithEveryOverlayUp(t *testing.T) {
 			t.Errorf("line %d is %d columns, wider than the terminal", i, w)
 			break
 		}
+	}
+}
+
+// --- what View returns, as opposed to what it renders ---
+
+func TestViewDeclaresTheAltScreen(t *testing.T) {
+	// In v2 the alternate screen is a property of the view rather than a
+	// program option, so it has to be set on every render. Miss it and
+	// specgetty draws over the scrollback instead of taking its own screen.
+	//
+	// This asserts the flag is set. Whether the terminal honours it is not
+	// something any test here can see.
+	m := makeViewModel()
+	if !m.View().AltScreen {
+		t.Error("View must declare AltScreen, or the program will not take the alternate screen")
+	}
+
+	// Even the early returns have to declare it, or the program would flip out
+	// of the alt screen while the terminal is too small.
+	small := makeListModel()
+	small.width, small.height = 40, 10
+	if !small.View().AltScreen {
+		t.Error("the too-small view must still declare AltScreen")
+	}
+}
+
+func TestViewContentMatchesTheFrame(t *testing.T) {
+	m := makeViewModel()
+	m.syncDocument()
+	if m.View().Content != m.renderFrame() {
+		t.Error("View().Content should be exactly the frame renderFrame builds")
 	}
 }

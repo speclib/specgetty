@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
@@ -212,15 +212,17 @@ func (m model) pickerBox() (width, height int) {
 func (m model) renderPicker() string {
 	width, height := m.pickerBox()
 
-	// lipgloss Style.Width covers the content plus its horizontal padding, and
-	// the border sits outside that. So a box of `width` total columns needs
-	// Width(width-2), which leaves width-4 for content once the padding either
-	// side is taken. Handing the table the wrong number here does not error: it
-	// silently overflows and lipgloss wraps the row, which shows up as the
-	// highlighted row alone looking misaligned, because only it carries a
-	// background colour into the wrapped remainder.
-	styleWidth := width - 2
-	inner := styleWidth - 2
+	// lipgloss v2 counts the border and the padding inside Style.Width, so a box
+	// of `width` total columns asks for exactly that, and the content area is
+	// four columns narrower: one border and one padding column on each side.
+	//
+	// Handing the table the wrong number here does not error. It silently
+	// overflows, lipgloss wraps the row, and the result shows up as the
+	// highlighted row alone looking misaligned, because only that row carries a
+	// background colour into the wrapped remainder. The line count is what
+	// catches it; equal line widths do not, since the wrap is padded.
+	styleWidth := width
+	inner := width - 4
 
 	var body string
 	switch {

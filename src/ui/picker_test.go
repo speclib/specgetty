@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
@@ -55,7 +55,7 @@ func TestPickerOpensFromBothLevels(t *testing.T) {
 		m := makePickerModel()
 		m.level = level
 
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+		updated, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
 		um := updated.(model)
 		if !um.pickerOpen {
 			t.Errorf("at level %d, p did not open the picker", level)
@@ -71,7 +71,7 @@ func TestPickerDismissLeavesCurrentProjectAlone(t *testing.T) {
 	m.pickerOpen = true
 	before := m.repoPaths[0]
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	um := updated.(model)
 	if um.pickerOpen {
 		t.Error("esc should close the picker")
@@ -86,7 +86,7 @@ func TestPickerSelectionSwitchesProject(t *testing.T) {
 	m.pickerOpen = true
 	m.pickerCursor = 1 // mipnix
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
 
 	if um.pickerOpen {
@@ -108,7 +108,7 @@ func TestPickerSelectionFromAnOpenChangeLandsAtTheProjectView(t *testing.T) {
 	m.pickerOpen = true
 	m.pickerCursor = 1
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
 
 	if um.level != levelProject {
@@ -126,7 +126,7 @@ func TestPickerSelectionResetsChangeListState(t *testing.T) {
 	m.searchInput.SetValue("alpha")
 	m.listMode = modeBoth
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
 
 	if um.searchInput.Value() != "" {
@@ -142,13 +142,13 @@ func TestPickerKeysOutrankTheChangeList(t *testing.T) {
 	m.pickerOpen = true
 
 	// 'a' archives in the change list; while the picker is open it must not.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if um := updated.(model); um.archiveState != archiveIdle {
 		t.Error("a reached the change list while the picker was open")
 	}
 
 	// 'f' cycles the change list mode; while the picker is open it must not.
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	if um := updated.(model); um.listMode != modeOpen {
 		t.Error("f reached the change list while the picker was open")
 	}
@@ -159,7 +159,7 @@ func TestConfirmModalOutranksThePicker(t *testing.T) {
 	m.archiveState = archiveConfirming
 	m.archiveChangeName = "alpha"
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
 	um := updated.(model)
 	if um.pickerOpen {
 		t.Error("p opened the picker while a confirmation was waiting for an answer")
@@ -249,14 +249,14 @@ func TestPickerSearchPromptCapturesKeys(t *testing.T) {
 	m := makePickerModel()
 	m.pickerOpen = true
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = updated.(model)
 	if !m.pickerFocused {
 		t.Fatal("/ should focus the picker filter")
 	}
 
 	// 'r' refreshes the picker; inside the prompt it is just a character.
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	m = updated.(model)
 	if m.pickerLoading {
 		t.Error("r while typing must not start a refresh")
@@ -273,7 +273,7 @@ func TestPickerEnterFromPromptSelects(t *testing.T) {
 	m.pickerInput.SetValue("nix")
 	m.pickerSync()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
 	if um.pickerOpen {
 		t.Error("enter should close the picker")
@@ -287,7 +287,7 @@ func TestPickerRefreshStartsLoading(t *testing.T) {
 	m := makePickerModel()
 	m.pickerOpen = true
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if um := updated.(model); !um.pickerLoading {
 		t.Error("r should start a refresh")
 	}
@@ -396,7 +396,7 @@ func TestStartupPromptOpensThePicker(t *testing.T) {
 	m := makeListModel()
 	m.askOpenPicker = true
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	um := updated.(model)
 	if um.askOpenPicker {
 		t.Error("answering should dismiss the prompt")
@@ -410,7 +410,7 @@ func TestStartupPromptDeclineLeavesAUsableView(t *testing.T) {
 	m := makeListModel()
 	m.askOpenPicker = true
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	um := updated.(model)
 	if um.askOpenPicker {
 		t.Error("answering should dismiss the prompt")

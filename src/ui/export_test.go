@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
@@ -186,7 +186,7 @@ func TestExportKeyPassesTheDirectoryName(t *testing.T) {
 	}}}
 	m.syncDocument()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	um := updated.(model)
 
 	if um.exportState != exportConfirming {

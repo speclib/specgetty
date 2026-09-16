@@ -34,7 +34,7 @@ floor_for() {
     # Measured at 48.8. Held a fraction lower because watcher's flutter moves
     # the total by about 0.15 points and a zero-margin total would fail at
     # random rather than for a real regression.
-    TOTAL)                                   echo "78.8" ;;
+    TOTAL)                                   echo "79.0" ;;
     *)                                       echo "" ;;
   esac
 }

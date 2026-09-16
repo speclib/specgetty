@@ -14,7 +14,7 @@ buildGoModule rec {
 
   doCheck = false;
 
-  vendorHash = "sha256-Lxik5/egn7vtWHcMPOBiFO/ZP5847TTEKfDXmLHHqS4=";
+  vendorHash = "sha256-J5Wy/Duhbw9JXVt1XhzaxdaLhNsbre8DO0s2FalZzP4=";
 
   meta = with lib; {
     description = ''

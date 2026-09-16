@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/mipmip/specgetty/src/scanner"
 )
 
@@ -97,7 +97,7 @@ func TestTabOnlyMovesWhenTheLogPanelIsOpen(t *testing.T) {
 		m := makeListModel()
 		m.logVisible = false
 
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		if um := updated.(model); um.activeView != viewDetail {
 			t.Errorf("activeView = %d, want it to stay on viewDetail", um.activeView)
 		}
@@ -107,13 +107,13 @@ func TestTabOnlyMovesWhenTheLogPanelIsOpen(t *testing.T) {
 		m := makeListModel()
 		m.logVisible = true
 
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		m = updated.(model)
 		if m.activeView != viewLog {
 			t.Fatalf("activeView = %d, want viewLog", m.activeView)
 		}
 
-		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		if um := updated.(model); um.activeView != viewDetail {
 			t.Errorf("activeView = %d, want viewDetail", um.activeView)
 		}
@@ -256,7 +256,7 @@ func TestArchiveKeyStartsConfirming(t *testing.T) {
 	m := makeArchiveTestModel()
 	m.activeView = viewDetail
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	um := updated.(model)
 	if um.archiveState != archiveConfirming {
 		t.Errorf("archiveState = %d, want %d (archiveConfirming)", um.archiveState, archiveConfirming)
@@ -271,7 +271,7 @@ func TestArchiveConfirmY(t *testing.T) {
 	m.archiveState = archiveConfirming
 	m.archiveChangeName = "my-change"
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	um := updated.(model)
 	if um.archiveState != archiveRunning {
 		t.Errorf("archiveState = %d, want %d (archiveRunning)", um.archiveState, archiveRunning)
@@ -283,7 +283,7 @@ func TestArchiveConfirmN(t *testing.T) {
 	m.archiveState = archiveConfirming
 	m.archiveChangeName = "my-change"
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	um := updated.(model)
 	if um.archiveState != archiveIdle {
 		t.Errorf("archiveState = %d, want %d (archiveIdle)", um.archiveState, archiveIdle)

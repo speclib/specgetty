@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mipmip/specgetty/src/scanner"
@@ -110,6 +110,12 @@ var (
 			BorderForeground(lipgloss.Color("1")). // red
 			Padding(1, 2).
 			Align(lipgloss.Center)
+
+	// lipgloss v2 counts border and padding inside Style.Width, where v1 added
+	// them outside. modalStyle spends two columns on its border and four on its
+	// padding, so a modal that wants N columns of text has to ask for N+6 or
+	// its content wraps where it used to fit.
+	modalChrome = 6
 
 	navBarStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("236")).
@@ -241,8 +247,8 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		ignoreDirErrors: ignoreDirErrors,
 		version:         version,
 		spinner:         s,
-		docViewport:     viewport.New(0, 0),
-		logViewport:     viewport.New(0, 0),
+		docViewport:     viewport.New(),
+		logViewport:     viewport.New(),
 		listMode:        modeOpen,
 		fields:          append([]string(nil), defaultFields...),
 		searchInput:     ti,
@@ -283,7 +289,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.recalcLayout()
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// The status line is cleared by the next keystroke rather than by a
 		// timer: no tea.Tick, no re-render loop, and it stays exactly as long
 		// as the user is still looking at it. Handlers below may set it again.
@@ -607,17 +613,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// which is how they have always moved.
 			switch {
 			case m.activeView == viewLog:
-				m.logViewport.LineDown(m.halfPage())
+				m.logViewport.ScrollDown(m.halfPage())
 			case m.docActive():
-				m.docViewport.ViewDown()
+				m.docViewport.PageDown()
 			}
 
 		case "pgup", "ctrl+b":
 			switch {
 			case m.activeView == viewLog:
-				m.logViewport.LineUp(m.halfPage())
+				m.logViewport.ScrollUp(m.halfPage())
 			case m.docActive():
-				m.docViewport.ViewUp()
+				m.docViewport.PageUp()
 			}
 
 		// 5.3: half page, in a document only.
@@ -663,9 +669,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			if m.activeView == viewLog {
-				m.logViewport.LineUp(1)
+				m.logViewport.ScrollUp(1)
 			} else if m.docActive() {
-				m.docViewport.LineUp(1)
+				m.docViewport.ScrollUp(1)
 			} else if m.level != levelChange {
 				switch m.detailTab {
 				case tabSpecs:
@@ -683,9 +689,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "down", "j":
 			if m.activeView == viewLog {
-				m.logViewport.LineDown(1)
+				m.logViewport.ScrollDown(1)
 			} else if m.docActive() {
-				m.docViewport.LineDown(1)
+				m.docViewport.ScrollDown(1)
 			} else if m.level != levelChange {
 				switch m.detailTab {
 				case tabSpecs:
@@ -846,13 +852,13 @@ func (m *model) recalcLayout() {
 	}
 
 	docW, docH := m.docRegion()
-	m.docViewport.Width = docW
-	m.docViewport.Height = docH
+	m.docViewport.SetWidth(docW)
+	m.docViewport.SetHeight(docH)
 
 	logHeight := m.logPanelHeight()
 	if logHeight > 0 {
-		m.logViewport.Width = m.width - 2
-		m.logViewport.Height = logHeight
+		m.logViewport.SetWidth(m.width - 2)
+		m.logViewport.SetHeight(logHeight)
 	}
 }
 
@@ -880,7 +886,7 @@ func (m model) halfPage() int {
 	case viewDetail:
 		return max(1, m.mainPanelHeight()/2)
 	case viewLog:
-		return max(1, m.logViewport.Height/2)
+		return max(1, m.logViewport.Height()/2)
 	default:
 		return max(1, m.mainPanelHeight()/2)
 	}
@@ -1166,7 +1172,21 @@ func doExportChange(projectPath string, dirName string, semanticName string, isA
 	}
 }
 
-func (m model) View() string {
+// View returns the frame plus the terminal features it needs.
+//
+// In v2 the alternate screen is a property of the view rather than a program
+// option, so it is declared here on every render. Getting this wrong means
+// specgetty draws over the scrollback instead of taking its own screen, and no
+// test can see that: what is asserted below is that the flag is set, not that
+// the terminal honoured it.
+func (m model) View() tea.View {
+	v := tea.NewView(m.renderFrame())
+	v.AltScreen = true
+	return v
+}
+
+// renderFrame builds the whole screen as a styled string.
+func (m model) renderFrame() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
 	}
@@ -1176,16 +1196,17 @@ func (m model) View() string {
 
 	panelH := m.mainPanelHeight()
 
-	fullW := m.width - 2
-	detailContent := m.renderDetailPanel(fullW, panelH)
-	mainRow := m.renderPanel(viewDetail, fullW, panelH, detailContent)
+	// renderPanel takes the total box width; the content inside it is two
+	// columns narrower, one for each border.
+	detailContent := m.renderDetailPanel(m.width-2, panelH)
+	mainRow := m.renderPanel(viewDetail, m.width, panelH, detailContent)
 
 	// Nav bar
 	navBar := m.renderNavBar()
 
 	var view string
 	if m.logVisible {
-		logPanel := m.renderPanel(viewLog, m.width-2, m.logPanelHeight(), m.logViewport.View())
+		logPanel := m.renderPanel(viewLog, m.width, m.logPanelHeight(), m.logViewport.View())
 		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, logPanel, navBar)
 	} else {
 		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, navBar)
@@ -1198,19 +1219,19 @@ func (m model) View() string {
 	}
 
 	if m.askOpenPicker {
-		modal := modalStyle.Width(56).Render(
+		modal := modalStyle.Width(56 + modalChrome).Render(
 			"No OpenSpec project here.\n\nOpen the project picker? (y/n)")
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 
 	// Modal overlays
 	if m.scanning {
-		modal := modalStyle.Width(40).Render(m.spinner.View() + " Scanning for OpenSpec sources...")
+		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Scanning for OpenSpec sources...")
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 	if m.err != nil {
 		errText := fmt.Sprintf("Error: %v", m.err)
-		modal := modalStyle.Width(m.width * 3 / 4).Render(errText)
+		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(errText)
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 
@@ -1226,10 +1247,10 @@ func (m model) View() string {
 				content = fmt.Sprintf("Archive \"%s\"? (y/n)", m.archiveChangeName)
 			}
 		}
-		modal := modalStyle.Width(50).Render(content)
+		modal := modalStyle.Width(50 + modalChrome).Render(content)
 		view = placeOverlay(m.width, m.height, modal, view)
 	case archiveRunning:
-		modal := modalStyle.Width(40).Render(m.spinner.View() + " Archiving...")
+		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Archiving...")
 		view = placeOverlay(m.width, m.height, modal, view)
 	case archiveResult:
 		var prefix string
@@ -1239,7 +1260,7 @@ func (m model) View() string {
 			prefix = "✗ "
 		}
 		content := prefix + m.archiveResultMsg + "\n\nPress any key to dismiss."
-		modal := modalStyle.Width(m.width * 3 / 4).Render(content)
+		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 
@@ -1255,10 +1276,10 @@ func (m model) View() string {
 				content = fmt.Sprintf("Discard \"%s\"? (y/n)", m.discardChangeName)
 			}
 		}
-		modal := modalStyle.Width(50).Render(content)
+		modal := modalStyle.Width(50 + modalChrome).Render(content)
 		view = placeOverlay(m.width, m.height, modal, view)
 	case discardRunning:
-		modal := modalStyle.Width(40).Render(m.spinner.View() + " Discarding...")
+		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Discarding...")
 		view = placeOverlay(m.width, m.height, modal, view)
 	case discardResult:
 		var prefix string
@@ -1268,7 +1289,7 @@ func (m model) View() string {
 			prefix = "✗ "
 		}
 		content := prefix + m.discardResultMsg + "\n\nPress any key to dismiss."
-		modal := modalStyle.Width(m.width * 3 / 4).Render(content)
+		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 
@@ -1277,10 +1298,10 @@ func (m model) View() string {
 	case exportConfirming:
 		destPath := exportDestPath(m.exportChangeName)
 		content := fmt.Sprintf("Export \"%s\"?\n\n→ %s\n\n(y/n)", m.exportChangeName, destPath)
-		modal := modalStyle.Width(60).Render(content)
+		modal := modalStyle.Width(60 + modalChrome).Render(content)
 		view = placeOverlay(m.width, m.height, modal, view)
 	case exportRunning:
-		modal := modalStyle.Width(40).Render(m.spinner.View() + " Exporting...")
+		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Exporting...")
 		view = placeOverlay(m.width, m.height, modal, view)
 	case exportResult:
 		var prefix string
@@ -1290,7 +1311,7 @@ func (m model) View() string {
 			prefix = "✗ "
 		}
 		content := prefix + m.exportResultMsg + "\n\nPress any key to dismiss."
-		modal := modalStyle.Width(m.width * 3 / 4).Render(content)
+		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
 		view = placeOverlay(m.width, m.height, modal, view)
 	}
 
@@ -1701,6 +1722,13 @@ func padToHeight(view string, height int) string {
 	return strings.Join(lines, "\n")
 }
 
+// renderPanel draws a titled box.
+//
+// width is the TOTAL width of the box including its borders. lipgloss v2
+// changed this: Style.Width now covers border and padding, where v1 added them
+// outside. Every caller therefore passes the terminal width rather than the
+// terminal width minus two, and the content handed in must already be sized to
+// width-2.
 func (m model) renderPanel(view int, width int, height int, content string) string {
 	content = truncateContent(content, height)
 	var title string
@@ -1732,14 +1760,13 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 
 	border := lipgloss.RoundedBorder()
 	titleStyled := lipgloss.NewStyle().Foreground(borderColor).Bold(true).Render(title)
-	// The box below renders as width+2 columns: Width(width) plus a border on
-	// each side. This line has to match it. It spends three columns on the two
-	// corners and the segment before the title, so the trailing run is
-	// width-len(title)-1, not -2.
+	// The box renders as exactly `width` columns. This line has to match it,
+	// and spends three of them on the two corners and the segment before the
+	// title.
 	topBorder := border.TopLeft +
 		strings.Repeat(border.Top, 1) +
 		titleStyled +
-		strings.Repeat(border.Top, max(0, width-lipgloss.Width(title)-1)) +
+		strings.Repeat(border.Top, max(0, width-lipgloss.Width(title)-3)) +
 		border.TopRight
 
 	boxStyle := lipgloss.NewStyle().
@@ -1763,7 +1790,7 @@ func (m model) renderNavBar() string {
 			m.width,
 			lipgloss.Left,
 			navBarStyle.Render(" "+m.statusMsg+" "),
-			lipgloss.WithWhitespaceBackground(lipgloss.Color("236")),
+			lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(lipgloss.Color("236"))),
 		)
 	}
 
@@ -1886,7 +1913,7 @@ func (m model) renderNavBar() string {
 		m.width,
 		lipgloss.Left,
 		left.String()+strings.Repeat(" ", max(0, m.width-lipgloss.Width(left.String())-lipgloss.Width(right)))+right,
-		lipgloss.WithWhitespaceBackground(lipgloss.Color("236")),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(lipgloss.Color("236"))),
 	)
 
 	return bar
@@ -1897,7 +1924,7 @@ func placeOverlay(width, height int, modal, background string) string {
 		width, height,
 		lipgloss.Center, lipgloss.Center,
 		modal,
-		lipgloss.WithWhitespaceBackground(lipgloss.NoColor{}),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle()),
 	)
 }
 
@@ -1920,7 +1947,8 @@ func Run(config *scanner.Config, ignoreDirErrors bool, version string, startupPa
 		// opening an empty view with no explanation.
 		m.askOpenPicker = true
 	}
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	// The alternate screen is declared by View now, not here.
+	p := tea.NewProgram(m)
 
 	m.program = p
 	log.SetOutput(logWriter{program: p})

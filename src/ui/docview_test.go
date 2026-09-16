@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mipmip/specgetty/src/scanner"
@@ -86,7 +86,6 @@ func TestRenderMarkdownBreaksUnbreakableTokens(t *testing.T) {
 // --- 8.2 styling survives a wrap ---
 
 func TestWrappedStyledLineIsStyledOnEveryRow(t *testing.T) {
-	withColor(t)
 
 	// A header is styled end to end, so every row it occupies must carry the
 	// styling. Relying on terminal state carrying across the newline breaks the
@@ -104,7 +103,6 @@ func TestWrappedStyledLineIsStyledOnEveryRow(t *testing.T) {
 }
 
 func TestWrappedBoldSpanIsStyledOnBothRows(t *testing.T) {
-	withColor(t)
 
 	line := "start **" + strings.Repeat("bold ", 12) + "** end"
 	rows := strings.Split(renderMarkdown(line, 24), "\n")
@@ -122,7 +120,6 @@ func TestWrappedBoldSpanIsStyledOnBothRows(t *testing.T) {
 }
 
 func TestReopenStylesAddsNoDisplayWidth(t *testing.T) {
-	withColor(t)
 	rows := []string{"\x1b[1mbold text", "continues here\x1b[0m"}
 	out := reopenStyles(rows)
 	for i := range rows {
@@ -138,7 +135,7 @@ func TestReopenStylesAddsNoDisplayWidth(t *testing.T) {
 func TestEveryRowIsReachable(t *testing.T) {
 	m := makeDocModel(t, numberedDoc(200), 30)
 
-	height := m.docViewport.Height
+	height := m.docViewport.Height()
 	if height < 5 {
 		t.Fatalf("pane height %d is too small to be a meaningful test", height)
 	}
@@ -153,7 +150,7 @@ func TestEveryRowIsReachable(t *testing.T) {
 		if m.docViewport.AtBottom() {
 			break
 		}
-		m.docViewport.ViewDown()
+		m.docViewport.PageDown()
 	}
 
 	for i := 1; i <= 200; i++ {
@@ -175,7 +172,7 @@ func TestGotoBottomShowsTheLastRows(t *testing.T) {
 	}
 
 	// Nothing missing between the top of the pane and the end.
-	height := m.docViewport.Height
+	height := m.docViewport.Height()
 	for i := 0; i < height; i++ {
 		want := fmt.Sprintf("row-%03d", 200-height+1+i)
 		if strings.TrimSpace(rows[i]) != want {
@@ -190,29 +187,29 @@ func firstRow(m model) string {
 	return strings.TrimSpace(visibleRows(m)[0])
 }
 
-func press(m model, k tea.KeyMsg) model {
+func press(m model, k tea.KeyPressMsg) model {
 	updated, _ := m.Update(k)
 	return updated.(model)
 }
 
 func TestScrollKeyDistances(t *testing.T) {
 	base := makeDocModel(t, numberedDoc(500), 30)
-	height := base.docViewport.Height
+	height := base.docViewport.Height()
 
 	tests := []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		want int
 	}{
-		{"down", tea.KeyMsg{Type: tea.KeyDown}, 1},
-		{"j", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, 1},
-		{"pgdown", tea.KeyMsg{Type: tea.KeyPgDown}, height},
-		{"ctrl+f", tea.KeyMsg{Type: tea.KeyCtrlF}, height},
-		{"ctrl+d", tea.KeyMsg{Type: tea.KeyCtrlD}, height / 2},
+		{"down", tea.KeyPressMsg{Code: tea.KeyDown}, 1},
+		{"j", tea.KeyPressMsg{Code: 'j', Text: "j"}, 1},
+		{"pgdown", tea.KeyPressMsg{Code: tea.KeyPgDown}, height},
+		{"ctrl+f", tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl}, height},
+		{"ctrl+d", tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, height / 2},
 	}
 	for _, tt := range tests {
 		m := press(base, tt.key)
-		if got := m.docViewport.YOffset; got != tt.want {
+		if got := m.docViewport.YOffset(); got != tt.want {
 			t.Errorf("%s moved to offset %d, want %d (pane height %d)",
 				tt.name, got, tt.want, height)
 		}
@@ -221,40 +218,40 @@ func TestScrollKeyDistances(t *testing.T) {
 
 func TestScrollUpKeysMirrorDown(t *testing.T) {
 	base := makeDocModel(t, numberedDoc(500), 30)
-	height := base.docViewport.Height
+	height := base.docViewport.Height()
 
 	m := base
 	m.docViewport.SetYOffset(200)
 
 	for _, tt := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 		want int
 	}{
-		{"up", tea.KeyMsg{Type: tea.KeyUp}, 199},
-		{"k", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, 199},
-		{"pgup", tea.KeyMsg{Type: tea.KeyPgUp}, 200 - height},
-		{"ctrl+b", tea.KeyMsg{Type: tea.KeyCtrlB}, 200 - height},
-		{"ctrl+u", tea.KeyMsg{Type: tea.KeyCtrlU}, 200 - height/2},
+		{"up", tea.KeyPressMsg{Code: tea.KeyUp}, 199},
+		{"k", tea.KeyPressMsg{Code: 'k', Text: "k"}, 199},
+		{"pgup", tea.KeyPressMsg{Code: tea.KeyPgUp}, 200 - height},
+		{"ctrl+b", tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl}, 200 - height},
+		{"ctrl+u", tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}, 200 - height/2},
 	} {
 		got := press(m, tt.key)
-		if got.docViewport.YOffset != tt.want {
-			t.Errorf("%s moved to offset %d, want %d", tt.name, got.docViewport.YOffset, tt.want)
+		if got.docViewport.YOffset() != tt.want {
+			t.Errorf("%s moved to offset %d, want %d", tt.name, got.docViewport.YOffset(), tt.want)
 		}
 	}
 }
 
 func TestJumpToEnds(t *testing.T) {
 	m := makeDocModel(t, numberedDoc(500), 30)
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = press(m, tea.KeyPressMsg{Code: 'G', Text: "G"})
 	if !m.docViewport.AtBottom() {
 		t.Error("G should jump to the end")
 	}
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
-	if m.docViewport.YOffset != 0 {
-		t.Errorf("gg should jump to the top, offset is %d", m.docViewport.YOffset)
+	m = press(m, tea.KeyPressMsg{Code: 'g', Text: "g"})
+	m = press(m, tea.KeyPressMsg{Code: 'g', Text: "g"})
+	if m.docViewport.YOffset() != 0 {
+		t.Errorf("gg should jump to the top, offset is %d", m.docViewport.YOffset())
 	}
 }
 
@@ -262,24 +259,27 @@ func TestScrollStopsAtBounds(t *testing.T) {
 	m := makeDocModel(t, numberedDoc(500), 30)
 
 	// Already at the top.
-	if got := press(m, tea.KeyMsg{Type: tea.KeyUp}).docViewport.YOffset; got != 0 {
+	um := press(m, tea.KeyPressMsg{Code: tea.KeyUp})
+	if got := um.docViewport.YOffset(); got != 0 {
 		t.Errorf("scrolling up at the top moved to %d, want 0", got)
 	}
 
 	m.docViewport.GotoBottom()
-	bottom := m.docViewport.YOffset
-	if got := press(m, tea.KeyMsg{Type: tea.KeyDown}).docViewport.YOffset; got != bottom {
+	bottom := m.docViewport.YOffset()
+	down := press(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	if got := down.docViewport.YOffset(); got != bottom {
 		t.Errorf("scrolling down at the end moved to %d, want %d", got, bottom)
 	}
 }
 
 func TestShortDocumentDoesNotScroll(t *testing.T) {
 	m := makeDocModel(t, "one\ntwo\nthree", 30)
-	for _, k := range []tea.KeyMsg{
-		{Type: tea.KeyDown}, {Type: tea.KeyPgDown}, {Type: tea.KeyCtrlD},
-		{Type: tea.KeyRunes, Runes: []rune{'G'}},
+	for _, k := range []tea.KeyPressMsg{
+		{Code: tea.KeyDown}, {Code: tea.KeyPgDown},
+		{Code: 'd', Mod: tea.ModCtrl}, {Code: 'G', Text: "G"},
 	} {
-		if got := press(m, k).docViewport.YOffset; got != 0 {
+		um := press(m, k)
+		if got := um.docViewport.YOffset(); got != 0 {
 			t.Errorf("a document shorter than the pane moved to offset %d", got)
 		}
 	}
@@ -300,14 +300,14 @@ func TestScrollKeysDoNotDisturbTheChangeList(t *testing.T) {
 	if m.docActive() {
 		t.Fatal("the change list must not own the vertical axis")
 	}
-	for _, k := range []tea.KeyMsg{
-		{Type: tea.KeyPgDown}, {Type: tea.KeyCtrlF}, {Type: tea.KeyCtrlD},
+	for _, k := range []tea.KeyPressMsg{
+		{Code: tea.KeyPgDown}, {Code: 'f', Mod: tea.ModCtrl}, {Code: 'd', Mod: tea.ModCtrl},
 	} {
 		got := press(m, k)
 		if got.changeCursor != m.changeCursor {
 			t.Errorf("a paging key moved the change cursor to %d", got.changeCursor)
 		}
-		if got.docViewport.YOffset != 0 {
+		if got.docViewport.YOffset() != 0 {
 			t.Errorf("a paging key scrolled a document that is not displayed")
 		}
 	}
@@ -318,7 +318,7 @@ func TestJAndKStillMoveTheChangeCursor(t *testing.T) {
 	m.width, m.height = 80, 30
 	m.syncDocument()
 
-	got := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if got.changeCursor != 1 {
 		t.Errorf("j moved the change cursor to %d, want 1", got.changeCursor)
 	}
@@ -332,8 +332,8 @@ func TestPickerKeepsTheVerticalAxisWhileOpen(t *testing.T) {
 	if m.docActive() {
 		t.Error("an open picker must take the vertical axis from the document")
 	}
-	got := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	if got.docViewport.YOffset != 0 {
+	got := press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	if got.docViewport.YOffset() != 0 {
 		t.Error("j scrolled the document behind the picker")
 	}
 }
@@ -345,9 +345,9 @@ func TestDifferentDocumentStartsAtTheTop(t *testing.T) {
 	m.docViewport.SetYOffset(50)
 
 	// Move to the other artifact sub-tab.
-	m = press(m, tea.KeyMsg{Type: tea.KeyRight})
-	if m.docViewport.YOffset != 0 {
-		t.Errorf("a different artifact opened at offset %d, want 0", m.docViewport.YOffset)
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+	if m.docViewport.YOffset() != 0 {
+		t.Errorf("a different artifact opened at offset %d, want 0", m.docViewport.YOffset())
 	}
 }
 
@@ -356,18 +356,18 @@ func TestSameDocumentKeepsItsPosition(t *testing.T) {
 	m.docViewport.SetYOffset(50)
 
 	// Away and back, without opening any other document.
-	m = press(m, tea.KeyMsg{Type: tea.KeyRight})
-	m = press(m, tea.KeyMsg{Type: tea.KeyLeft})
-	if m.docViewport.YOffset != 0 {
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyLeft})
+	if m.docViewport.YOffset() != 0 {
 		t.Errorf("returning via another artifact should start at the top, got %d",
-			m.docViewport.YOffset)
+			m.docViewport.YOffset())
 	}
 
 	// Scrolling then redisplaying the same document keeps the position.
 	m.docViewport.SetYOffset(40)
 	m.syncDocument()
-	if m.docViewport.YOffset != 40 {
-		t.Errorf("the same document moved to offset %d, want 40", m.docViewport.YOffset)
+	if m.docViewport.YOffset() != 40 {
+		t.Errorf("the same document moved to offset %d, want 40", m.docViewport.YOffset())
 	}
 }
 
@@ -386,13 +386,13 @@ func TestRewrittenDocumentKeepsPositionClamped(t *testing.T) {
 	if m.docKey != keyBefore {
 		t.Fatal("rewriting the file must not change the document identity")
 	}
-	if m.docViewport.YOffset > m.docViewport.TotalLineCount() {
+	if m.docViewport.YOffset() > m.docViewport.TotalLineCount() {
 		t.Errorf("offset %d points past the end of %d rows",
-			m.docViewport.YOffset, m.docViewport.TotalLineCount())
+			m.docViewport.YOffset(), m.docViewport.TotalLineCount())
 	}
 	if !m.docViewport.AtBottom() {
 		t.Errorf("a clamped offset should land at the end, offset %d of %d rows",
-			m.docViewport.YOffset, m.docViewport.TotalLineCount())
+			m.docViewport.YOffset(), m.docViewport.TotalLineCount())
 	}
 }
 
@@ -403,12 +403,12 @@ func TestResizeRewrapsAndClamps(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	wide := updated.(model)
 
-	if wide.docViewport.Width != 198 {
-		t.Errorf("viewport width %d, want 198 after the resize", wide.docViewport.Width)
+	if wide.docViewport.Width() != 198 {
+		t.Errorf("viewport width %d, want 198 after the resize", wide.docViewport.Width())
 	}
-	if wide.docViewport.YOffset > wide.docViewport.TotalLineCount() {
+	if wide.docViewport.YOffset() > wide.docViewport.TotalLineCount() {
 		t.Errorf("offset %d points past the end of %d rows after re-wrapping",
-			wide.docViewport.YOffset, wide.docViewport.TotalLineCount())
+			wide.docViewport.YOffset(), wide.docViewport.TotalLineCount())
 	}
 }
 
@@ -469,8 +469,8 @@ func TestConfigTabScrollsAndKeepsItsSourceLine(t *testing.T) {
 		t.Fatal("the config tab should own the vertical axis")
 	}
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyPgDown})
-	if m.docViewport.YOffset == 0 {
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	if m.docViewport.YOffset() == 0 {
 		t.Error("the config tab did not scroll")
 	}
 
@@ -499,7 +499,7 @@ func TestConfigTabResetsWhenTheProjectChanges(t *testing.T) {
 	m.cursor = 1 // a different project, same file name and content
 	m.syncDocument()
 
-	if m.docViewport.YOffset != 0 {
-		t.Errorf("switching project left the offset at %d, want 0", m.docViewport.YOffset)
+	if m.docViewport.YOffset() != 0 {
+		t.Errorf("switching project left the offset at %d, want 0", m.docViewport.YOffset())
 	}
 }

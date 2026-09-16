@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mipmip/specgetty/src/scanner"
@@ -62,22 +62,22 @@ func TestSpecsFocusStartsOnTheList(t *testing.T) {
 
 func TestSpecsFocusResetsWhenLeavingTheTab(t *testing.T) {
 	m := twoSpecs(t)
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.specsFocus != specsFocusContent {
 		t.Fatal("expected the content to take the keyboard")
 	}
 
 	// Away to another tab and back.
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = press(m, tea.KeyPressMsg{Code: '1', Text: "1"})
+	m = press(m, tea.KeyPressMsg{Code: '2', Text: "2"})
 	if m.specsFocus != specsFocusList {
 		t.Errorf("focus is %d after returning, want the list", m.specsFocus)
 	}
 
 	// The arrow keys change tabs too, and must reset it the same way.
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
-	m = press(m, tea.KeyMsg{Type: tea.KeyLeft})
-	m = press(m, tea.KeyMsg{Type: tea.KeyRight})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyLeft})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.specsFocus != specsFocusList {
 		t.Errorf("focus is %d after changing tab with the arrows, want the list", m.specsFocus)
 	}
@@ -89,11 +89,11 @@ func TestTabCyclesTheSpecsHalves(t *testing.T) {
 	m := twoSpecs(t)
 	m.logVisible = false
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.specsFocus != specsFocusContent {
 		t.Fatalf("first tab gave focus %d, want the content", m.specsFocus)
 	}
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.specsFocus != specsFocusList {
 		t.Errorf("second tab gave focus %d, want the list", m.specsFocus)
 	}
@@ -107,17 +107,17 @@ func TestTabCyclesThroughTheLogPanel(t *testing.T) {
 	m.logVisible = true
 	m.recalcLayout()
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.specsFocus != specsFocusContent || m.activeView != viewDetail {
 		t.Fatalf("first tab: focus=%d view=%d, want the content half", m.specsFocus, m.activeView)
 	}
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.activeView != viewLog {
 		t.Fatalf("second tab: view=%d, want the log panel", m.activeView)
 	}
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.activeView != viewDetail || m.specsFocus != specsFocusList {
 		t.Errorf("third tab: view=%d focus=%d, want back to the spec list", m.activeView, m.specsFocus)
 	}
@@ -128,24 +128,24 @@ func TestTabCyclesThroughTheLogPanel(t *testing.T) {
 func TestJAndKMoveTheSpecCursorWhenTheListIsFocused(t *testing.T) {
 	m := twoSpecs(t)
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if m.specCursor != 1 {
 		t.Errorf("spec cursor is %d, want 1", m.specCursor)
 	}
-	if m.docViewport.YOffset != 0 {
+	if m.docViewport.YOffset() != 0 {
 		t.Error("the document scrolled while the list held the keyboard")
 	}
 }
 
 func TestJAndKScrollWhenTheContentIsFocused(t *testing.T) {
 	m := twoSpecs(t)
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	before := m.specCursor
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
 
-	if m.docViewport.YOffset != 1 {
-		t.Errorf("document offset is %d, want 1", m.docViewport.YOffset)
+	if m.docViewport.YOffset() != 1 {
+		t.Errorf("document offset is %d, want 1", m.docViewport.YOffset())
 	}
 	if m.specCursor != before {
 		t.Errorf("the spec cursor moved to %d while the content held the keyboard", m.specCursor)
@@ -155,12 +155,12 @@ func TestJAndKScrollWhenTheContentIsFocused(t *testing.T) {
 func TestSpecCursorBoundsAreUnchanged(t *testing.T) {
 	m := twoSpecs(t)
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m = press(m, tea.KeyPressMsg{Code: 'k', Text: "k"})
 	if m.specCursor != 0 {
 		t.Errorf("k at the first spec moved to %d", m.specCursor)
 	}
 	for i := 0; i < 5; i++ {
-		m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
 	}
 	if m.specCursor != 1 {
 		t.Errorf("the cursor ran past the last spec to %d", m.specCursor)
@@ -171,7 +171,7 @@ func TestSpecCursorBoundsAreUnchanged(t *testing.T) {
 
 func TestEverySpecRowIsReachable(t *testing.T) {
 	m := twoSpecs(t)
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	seen := map[string]bool{}
 	for {
@@ -183,7 +183,7 @@ func TestEverySpecRowIsReachable(t *testing.T) {
 		if m.docViewport.AtBottom() {
 			break
 		}
-		m.docViewport.ViewDown()
+		m.docViewport.PageDown()
 	}
 	for i := 1; i <= 200; i++ {
 		want := fmt.Sprintf("row-%03d", i)
@@ -197,15 +197,15 @@ func TestEverySpecRowIsReachable(t *testing.T) {
 
 func TestSelectingADifferentSpecStartsAtTheTop(t *testing.T) {
 	m := twoSpecs(t)
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	m.docViewport.SetYOffset(80)
 
 	// Back to the list, then down one spec.
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
 
-	if m.docViewport.YOffset != 0 {
-		t.Errorf("the newly selected spec opened at offset %d, want 0", m.docViewport.YOffset)
+	if m.docViewport.YOffset() != 0 {
+		t.Errorf("the newly selected spec opened at offset %d, want 0", m.docViewport.YOffset())
 	}
 }
 
@@ -217,7 +217,7 @@ func TestPositionReportedOnlyWhileTheContentIsFocused(t *testing.T) {
 		t.Errorf("the list holds the keyboard but a position of %d%% was reported", pct)
 	}
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if pct := m.docScrollPercent(); pct != 0 {
 		t.Errorf("the content holds the keyboard, position is %d%%, want 0%%", pct)
 	}
@@ -236,9 +236,9 @@ func TestSpecContentWrapsToItsOwnHalf(t *testing.T) {
 	long := strings.Repeat("word ", 60)
 	m := makeSpecsModel(t, map[string]string{"alpha": long})
 
-	if m.docViewport.Width != contentWidth {
+	if m.docViewport.Width() != contentWidth {
 		t.Errorf("viewport width is %d, want the content half %d (list %d)",
-			m.docViewport.Width, contentWidth, listWidth)
+			m.docViewport.Width(), contentWidth, listWidth)
 	}
 	for _, row := range strings.Split(m.docViewport.View(), "\n") {
 		if got := ansi.StringWidth(row); got > contentWidth {
@@ -265,7 +265,7 @@ func TestSpecsTabWithNoSpecs(t *testing.T) {
 		t.Error("there is no spec, so nothing should own the vertical axis")
 	}
 
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.specsFocus != specsFocusList {
 		t.Errorf("focus moved to %d with no specs to focus on", m.specsFocus)
 	}
@@ -278,7 +278,7 @@ func TestSpecsTabWithNoSpecs(t *testing.T) {
 
 func TestSpecWithoutAFile(t *testing.T) {
 	m := makeSpecsModel(t, map[string]string{"alpha": ""})
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	if !strings.Contains(m.docViewport.View(), "No spec.md found") {
 		t.Errorf("expected the missing-file message, got:\n%s", m.docViewport.View())
@@ -286,11 +286,10 @@ func TestSpecWithoutAFile(t *testing.T) {
 }
 
 func TestSpecsListShowsWhichHalfHasTheKeyboard(t *testing.T) {
-	withColor(t)
 	m := twoSpecs(t)
 
 	lit := m.renderSpecsTab(m.width-2, 10)
-	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	dimmed := m.renderSpecsTab(m.width-2, 10)
 
 	if lit == dimmed {

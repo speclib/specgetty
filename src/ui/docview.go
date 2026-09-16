@@ -186,8 +186,8 @@ func (m *model) syncDocument() {
 	}
 
 	width, height := m.docRegion()
-	m.docViewport.Width = width
-	m.docViewport.Height = height
+	m.docViewport.SetWidth(width)
+	m.docViewport.SetHeight(height)
 
 	m.docViewport.SetContent(content)
 	if key != m.docKey {
@@ -196,7 +196,7 @@ func (m *model) syncDocument() {
 		return
 	}
 	// Same document, possibly shorter than it was. SetYOffset clamps.
-	m.docViewport.SetYOffset(m.docViewport.YOffset)
+	m.docViewport.SetYOffset(m.docViewport.YOffset())
 }
 
 // docScrollPercent reports how far down the document the viewport sits, or -1
@@ -205,7 +205,7 @@ func (m model) docScrollPercent() int {
 	if !m.docActive() {
 		return -1
 	}
-	if m.docViewport.TotalLineCount() <= m.docViewport.Height {
+	if m.docViewport.TotalLineCount() <= m.docViewport.Height() {
 		return -1
 	}
 	p := int(m.docViewport.ScrollPercent() * 100)

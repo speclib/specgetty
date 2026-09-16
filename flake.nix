@@ -16,8 +16,18 @@
           pkgs = nixpkgsFor.${system};
         in
         {
-          specgetty = pkgs.callPackage ./package.nix { inherit version; };
-          default = pkgs.callPackage ./package.nix { inherit version; };
+          # bubbletea v2 and its siblings declare `go 1.25.0`, which raises this
+          # module's own directive above the 1.24 that is default in this
+          # nixpkgs. buildGo125Module comes from the same pinned channel, so
+          # the toolchain moves without the rest of nixpkgs moving with it.
+          specgetty = pkgs.callPackage ./package.nix {
+            inherit version;
+            buildGoModule = pkgs.buildGo125Module;
+          };
+          default = pkgs.callPackage ./package.nix {
+            inherit version;
+            buildGoModule = pkgs.buildGo125Module;
+          };
         });
 
       checks = forAllSystems (system:
@@ -31,11 +41,11 @@
           # go vet, the full test suite, and the coverage ratchet.
           # scripts/coverage-gate.sh is the single source of truth for the
           # floors, so `nix flake check` and a local run enforce the same thing.
-          tests = pkgs.buildGoModule {
+          tests = pkgs.buildGo125Module {
             pname = "specgetty-tests";
             inherit version;
             src = ./.;
-            vendorHash = "sha256-Lxik5/egn7vtWHcMPOBiFO/ZP5847TTEKfDXmLHHqS4=";
+            vendorHash = "sha256-J5Wy/Duhbw9JXVt1XhzaxdaLhNsbre8DO0s2FalZzP4=";
 
             nativeBuildInputs = [ pkgs.bash ];
 

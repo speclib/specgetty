@@ -1,11 +1,11 @@
 ---
 # specgetty-p4e2
 title: upgrade bubbletea to v2
-status: draft
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-09-15T17:49:32Z
-updated_at: 2026-09-15T20:57:35Z
+updated_at: 2026-09-15T21:03:54Z
 blocked_by:
     - specgetty-sreo
     - specgetty-17c3

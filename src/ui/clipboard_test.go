@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
@@ -68,7 +68,7 @@ func TestCopyNameCopiesTheDisplayName(t *testing.T) {
 	got := fakeClipboard(t, nil)
 	m, _ := copyModel(t, modeOpen)
 
-	um := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	if *got != "my-feature" {
 		t.Errorf("copied %q, want the display name", *got)
@@ -82,7 +82,7 @@ func TestCopyPathOfAnActiveChangeResolves(t *testing.T) {
 	got := fakeClipboard(t, nil)
 	m, project := copyModel(t, modeOpen)
 
-	press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
+	press(m, tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 
 	want := filepath.Join(project, "openspec", "changes", "my-feature")
 	if *got != want {
@@ -103,7 +103,7 @@ func TestCopyPathOfAnArchivedChangeResolves(t *testing.T) {
 	got := fakeClipboard(t, nil)
 	m, project := copyModel(t, modeArchived)
 
-	press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
+	press(m, tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 
 	if _, err := os.Stat(*got); err != nil {
 		t.Fatalf("the copied path does not resolve: %q: %v", *got, err)
@@ -122,7 +122,7 @@ func TestCopyReportsAFailure(t *testing.T) {
 	fakeClipboard(t, errors.New("no clipboard tool found"))
 	m, _ := copyModel(t, modeOpen)
 
-	um := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 
 	if !strings.Contains(um.statusMsg, "could not copy") {
 		t.Errorf("status = %q, want it to report the failure", um.statusMsg)
@@ -139,7 +139,7 @@ func TestCopyDoesNothingWithoutASelection(t *testing.T) {
 	m.syncCursor()
 
 	for _, k := range []rune{'y', 'Y'} {
-		um := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{k}})
+		um := press(m, tea.KeyPressMsg{Code: k, Text: string(k)})
 		if *got != "" {
 			t.Errorf("%c copied %q with nothing selected", k, *got)
 		}
@@ -157,7 +157,7 @@ func TestCopyIsInertOnOtherTabs(t *testing.T) {
 		m.detailTab = tab
 		m.syncDocument()
 		for _, k := range []rune{'y', 'Y'} {
-			press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{k}})
+			press(m, tea.KeyPressMsg{Code: k, Text: string(k)})
 			if *got != "" {
 				t.Errorf("%c copied %q on tab %d", k, *got, tab)
 			}
@@ -173,7 +173,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 		m.pickerAll = testProjectRows()
 		m.pickerLoaded = true
 
-		press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+		press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 		if *got != "" {
 			t.Errorf("y copied %q with the picker open", *got)
 		}
@@ -185,7 +185,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 		m.searchFocused = true
 		m.searchInput.Focus()
 
-		um := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+		um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 		if *got != "" {
 			t.Errorf("y copied %q while typing a filter", *got)
 		}
@@ -199,7 +199,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 		m, _ := copyModel(t, modeOpen)
 		m.archiveState = archiveConfirming
 
-		press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+		press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 		if *got != "" {
 			t.Errorf("y copied %q while a confirmation was awaiting an answer", *got)
 		}
@@ -212,21 +212,21 @@ func TestStatusLineAppearsInTheViewAndThenClears(t *testing.T) {
 	fakeClipboard(t, nil)
 	m, _ := copyModel(t, modeOpen)
 
-	um := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	if !strings.Contains(um.View(), "copied name") {
-		t.Errorf("the status line should be visible in the view:\n%s", um.View())
+	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if !strings.Contains(um.View().Content, "copied name") {
+		t.Errorf("the status line should be visible in the view:\n%s", um.View().Content)
 	}
 	// It replaces the nav bar rather than being added to it, so the frame keeps
 	// its height.
-	if lines := strings.Split(um.View(), "\n"); len(lines) != um.height {
+	if lines := strings.Split(um.View().Content, "\n"); len(lines) != um.height {
 		t.Errorf("the view is %d lines with a status message, want %d", len(lines), um.height)
 	}
 
-	after := press(um, tea.KeyMsg{Type: tea.KeyDown})
+	after := press(um, tea.KeyPressMsg{Code: tea.KeyDown})
 	if after.statusMsg != "" {
 		t.Errorf("status = %q, want it cleared by the next keystroke", after.statusMsg)
 	}
-	if !strings.Contains(after.View(), "quit") {
+	if !strings.Contains(after.View().Content, "quit") {
 		t.Error("the nav bar should be back once the message is gone")
 	}
 }
