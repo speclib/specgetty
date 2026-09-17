@@ -97,7 +97,7 @@ change.
 | Key   | Action                                                |
 | ----- | ----------------------------------------------------- |
 | `/`   | Filter the list (see below)                           |
-| `f`   | Cycle open / archived / both                          |
+| `f`   | Cycle active / archived / both                        |
 | `a`   | Archive the selected change                           |
 | `d`   | Discard the selected change                           |
 | `e`   | Export the selected change as a zip                   |
@@ -188,11 +188,29 @@ spg --change-fields=name,tasks,specs,archived
 | `name`     | The change name. Takes the leftover width        |
 | `tasks`    | Task progress as `done/total`                    |
 | `specs`    | How many specs the change touches                |
-| `archived` | Whether the change is open or archived           |
+| `archived` | Whether the change is active or archived         |
 | `date`     | The archive date, for archived changes           |
 
 The default is `name,tasks,specs`. On a narrow terminal, columns are dropped
 from the right rather than squeezing the name past readability.
+
+## Which changes the list starts on
+
+`f` cycles between active, archived and both. Where it starts, and where it
+returns to when you switch project, comes from `change_mode` in the config file,
+and `--change-mode` overrides that:
+
+```bash
+spg --change-mode=active+archived
+```
+
+| Mode              | Shows                         |
+| ----------------- | ----------------------------- |
+| `active`          | active changes only (default) |
+| `archived`        | archived changes only         |
+| `active+archived` | both, each row labelled       |
+
+These are the same names the nav bar shows, so what you see is what you write.
 
 ## Development
 

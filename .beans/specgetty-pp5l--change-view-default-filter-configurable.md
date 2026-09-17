@@ -1,11 +1,11 @@
 ---
 # specgetty-pp5l
 title: change view default filter configurable
-status: todo
+status: in-progress
 type: feature
 priority: normal
 created_at: 2026-09-15T20:28:24Z
-updated_at: 2026-09-17T17:33:52Z
+updated_at: 2026-09-17T17:43:06Z
 ---
 
 

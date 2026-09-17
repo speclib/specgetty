@@ -29,3 +29,14 @@ edit_command: code %WORKING_DIRECTORY
 #
 # overridden by --change-fields on the command line
 #change_fields: name,tasks,specs,archived
+
+# which changes should the change list start on?
+#
+# valid modes: active, archived, active+archived
+# default: active
+#
+# the f key cycles between them; this is only where it starts, and where it
+# returns to when you switch project
+#
+# overridden by --change-mode on the command line
+#change_mode: active+archived

@@ -40,6 +40,41 @@ func findOpenSpecProject(startDir string) string {
 	}
 }
 
+// expandScanDirs expands environment variables in the configured scan
+// directories, so a config can be written with $HOME rather than a path that
+// only works for one person.
+func expandScanDirs(config *scanner.Config) {
+	for i := range config.ScanDirs.Include {
+		config.ScanDirs.Include[i] = os.ExpandEnv(config.ScanDirs.Include[i])
+	}
+	for i := range config.ScanDirs.Exclude {
+		config.ScanDirs.Exclude[i] = os.ExpandEnv(config.ScanDirs.Exclude[i])
+	}
+}
+
+// resolveStartupPath finds the project to open at startup.
+//
+// It never walks the configured scan directories: an explicit path is taken as
+// given, and otherwise the search walks up from the working directory, which
+// costs a few stats. Discovery only happens when the picker asks for it.
+func resolveStartupPath(startView, pathFlag string) string {
+	if startView != "single" {
+		return ""
+	}
+	if pathFlag != "" {
+		abs, err := filepath.Abs(pathFlag)
+		if err != nil {
+			return ""
+		}
+		return abs
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return findOpenSpecProject(cwd)
+}
+
 // resolveStartView validates the --view value and applies the rule that an
 // explicit --path means a single project, whatever --view said.
 func resolveStartView(view, path string) (string, error) {
@@ -95,6 +130,10 @@ func appFlags() []cli.Flag {
 			Usage:   "OpenSpec project to open; implies --view=single",
 		},
 		&cli.StringFlag{
+			Name:  "change-mode",
+			Usage: "Which changes the list starts on: active, archived or active+archived (overrides change_mode in the config)",
+		},
+		&cli.StringFlag{
 			Name:  "change-fields",
 			Usage: "Comma-separated columns for the change list (overrides change_fields in the config)",
 		},
@@ -124,12 +163,7 @@ func main() {
 			if err != nil {
 				return err
 			}
-			for i := range config.ScanDirs.Include {
-				config.ScanDirs.Include[i] = os.ExpandEnv(config.ScanDirs.Include[i])
-			}
-			for i := range config.ScanDirs.Exclude {
-				config.ScanDirs.Exclude[i] = os.ExpandEnv(config.ScanDirs.Exclude[i])
-			}
+			expandScanDirs(config)
 		}
 
 		if c.Bool("debug") {
@@ -150,24 +184,19 @@ func main() {
 			return err
 		}
 
-		// Resolve the startup project. This never walks the configured scan
-		// directories: discovery only happens when the picker asks for it.
-		var startupPath string
-		if startView == "single" {
-			if c.String("path") != "" {
-				startupPath, _ = filepath.Abs(c.String("path"))
-			} else {
-				cwd, _ := os.Getwd()
-				startupPath = findOpenSpecProject(cwd)
-			}
-		}
+		startupPath := resolveStartupPath(startView, c.String("path"))
 
 		fields, err := ui.ResolveFields(c.String("change-fields"), config.ChangeFields)
 		if err != nil {
 			return err
 		}
 
-		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, startupPath, startView, fields)
+		listMode, err := ui.ResolveListMode(c.String("change-mode"), config.ChangeMode)
+		if err != nil {
+			return err
+		}
+
+		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, startupPath, startView, fields, listMode)
 		if err != nil {
 			return err
 		}

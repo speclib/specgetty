@@ -66,7 +66,7 @@ func copyModel(t *testing.T, mode int) (model, string) {
 
 func TestCopyNameCopiesTheDisplayName(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, _ := copyModel(t, modeOpen)
+	m, _ := copyModel(t, modeActive)
 
 	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 
@@ -80,7 +80,7 @@ func TestCopyNameCopiesTheDisplayName(t *testing.T) {
 
 func TestCopyPathOfAnActiveChangeResolves(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, project := copyModel(t, modeOpen)
+	m, project := copyModel(t, modeActive)
 
 	press(m, tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 
@@ -120,7 +120,7 @@ func TestCopyPathOfAnArchivedChangeResolves(t *testing.T) {
 
 func TestCopyReportsAFailure(t *testing.T) {
 	fakeClipboard(t, errors.New("no clipboard tool found"))
-	m, _ := copyModel(t, modeOpen)
+	m, _ := copyModel(t, modeActive)
 
 	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 
@@ -134,7 +134,7 @@ func TestCopyReportsAFailure(t *testing.T) {
 
 func TestCopyDoesNothingWithoutASelection(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, _ := copyModel(t, modeOpen)
+	m, _ := copyModel(t, modeActive)
 	m.searchInput.SetValue("nothing-matches-this")
 	m.syncCursor()
 
@@ -151,7 +151,7 @@ func TestCopyDoesNothingWithoutASelection(t *testing.T) {
 
 func TestCopyIsInertOnOtherTabs(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, _ := copyModel(t, modeOpen)
+	m, _ := copyModel(t, modeActive)
 
 	for _, tab := range []int{tabSpecs, tabConfig} {
 		m.detailTab = tab
@@ -168,7 +168,7 @@ func TestCopyIsInertOnOtherTabs(t *testing.T) {
 func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 	t.Run("picker open", func(t *testing.T) {
 		got := fakeClipboard(t, nil)
-		m, _ := copyModel(t, modeOpen)
+		m, _ := copyModel(t, modeActive)
 		m.pickerOpen = true
 		m.pickerAll = testProjectRows()
 		m.pickerLoaded = true
@@ -181,7 +181,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 
 	t.Run("search prompt focused", func(t *testing.T) {
 		got := fakeClipboard(t, nil)
-		m, _ := copyModel(t, modeOpen)
+		m, _ := copyModel(t, modeActive)
 		m.searchFocused = true
 		m.searchInput.Focus()
 
@@ -196,7 +196,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 
 	t.Run("confirmation modal up", func(t *testing.T) {
 		got := fakeClipboard(t, nil)
-		m, _ := copyModel(t, modeOpen)
+		m, _ := copyModel(t, modeActive)
 		m.archiveState = archiveConfirming
 
 		press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
@@ -210,7 +210,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 
 func TestStatusLineAppearsInTheViewAndThenClears(t *testing.T) {
 	fakeClipboard(t, nil)
-	m, _ := copyModel(t, modeOpen)
+	m, _ := copyModel(t, modeActive)
 
 	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 	if !strings.Contains(um.View().Content, "copied name") {
@@ -232,7 +232,7 @@ func TestStatusLineAppearsInTheViewAndThenClears(t *testing.T) {
 }
 
 func TestNavBarAdvertisesTheCopyKeys(t *testing.T) {
-	m, _ := copyModel(t, modeOpen)
+	m, _ := copyModel(t, modeActive)
 	m.width = 220 // wide enough that no hint is dropped
 	if !strings.Contains(m.renderNavBar(), "copy") {
 		t.Errorf("the nav bar should advertise the copy keys:\n%s", m.renderNavBar())

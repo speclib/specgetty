@@ -14,7 +14,7 @@ import (
 func (m model) renderChangeDetail(r changeRow, artifactTab int) string {
 	var b strings.Builder
 
-	state := "open"
+	state := "active"
 	if r.archived {
 		state = "archived"
 	}

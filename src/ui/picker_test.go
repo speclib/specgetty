@@ -132,8 +132,8 @@ func TestPickerSelectionResetsChangeListState(t *testing.T) {
 	if um.searchInput.Value() != "" {
 		t.Errorf("change filter = %q, want cleared when the project changes", um.searchInput.Value())
 	}
-	if um.listMode != modeOpen {
-		t.Errorf("listMode = %d, want modeOpen", um.listMode)
+	if um.listMode != modeActive {
+		t.Errorf("listMode = %d, want modeActive", um.listMode)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestPickerKeysOutrankTheChangeList(t *testing.T) {
 
 	// 'f' cycles the change list mode; while the picker is open it must not.
 	updated, _ = m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
-	if um := updated.(model); um.listMode != modeOpen {
+	if um := updated.(model); um.listMode != modeActive {
 		t.Error("f reached the change list while the picker was open")
 	}
 }
@@ -424,7 +424,7 @@ func TestStartupPromptDeclineLeavesAUsableView(t *testing.T) {
 }
 
 func TestGenericTableRendersBothRowTypes(t *testing.T) {
-	changes := renderTable(wrap(buildRows(testInfo(), modeOpen)),
+	changes := renderTable(wrap(buildRows(testInfo(), modeActive)),
 		changeFieldDefs(defaultFields), 0, 80, 6)
 	if !strings.Contains(changes, "alpha") {
 		t.Errorf("change table missing its rows, got:\n%s", changes)

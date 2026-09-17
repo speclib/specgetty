@@ -16,7 +16,10 @@ func TestNavBarAtChangeListOffersActions(t *testing.T) {
 	m.width = 200 // wide enough that nothing is dropped
 
 	got := navBarFor(m)
-	for _, want := range []string{"search", "mode:open", "archive", "discard", "export", "view"} {
+	// The mode hint is derived rather than spelled out, so a rename cannot
+	// leave the test asserting a word the UI no longer uses.
+	for _, want := range []string{"search", "mode:" + listModeNames[modeActive],
+		"archive", "discard", "export", "view"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("change list nav bar missing %q, got:\n%s", want, got)
 		}

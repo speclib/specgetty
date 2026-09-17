@@ -80,6 +80,7 @@ type Config struct {
 	FollowSymlinks bool   `yaml:"followsymlinks"`
 	EditCommand    string `yaml:"edit_command"`
 	ChangeFields   string `yaml:"change_fields"`
+	ChangeMode     string `yaml:"change_mode"`
 }
 
 func DumpConfig(config *Config) error {

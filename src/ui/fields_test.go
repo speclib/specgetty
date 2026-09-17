@@ -139,8 +139,8 @@ func TestFieldValues(t *testing.T) {
 	if got := knownFields["specs"].value(open); got != "2" {
 		t.Errorf("specs = %q, want 2", got)
 	}
-	if got := knownFields["archived"].value(open); got != "open" {
-		t.Errorf("archived = %q, want open", got)
+	if got := knownFields["archived"].value(open); got != "active" {
+		t.Errorf("archived = %q, want active", got)
 	}
 	if got := knownFields["archived"].value(archived); got != "archived" {
 		t.Errorf("archived = %q, want archived", got)

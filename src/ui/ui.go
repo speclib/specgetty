@@ -199,7 +199,8 @@ type model struct {
 	askOpenPicker bool
 
 	// Change list state.
-	listMode      int // modeOpen, modeArchived, modeBoth
+	listMode      int // modeActive, modeArchived, modeBoth
+	defaultMode   int // what listMode returns to when the project changes
 	fields        []string
 	searchInput   textinput.Model
 	searchFocused bool
@@ -252,7 +253,8 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		spinner:         s,
 		docViewport:     viewport.New(),
 		logViewport:     viewport.New(),
-		listMode:        modeOpen,
+		listMode:        modeActive,
+		defaultMode:     modeActive,
 		fields:          append([]string(nil), defaultFields...),
 		searchInput:     ti,
 		pickerInput:     pi,
@@ -994,7 +996,7 @@ func (m *model) resetProjectState() {
 	m.changeCursor = 0
 	m.changeArtifactTab = 0
 	m.selectedKey = ""
-	m.listMode = modeOpen
+	m.listMode = m.defaultMode
 	m.searchFocused = false
 	m.searchInput.SetValue("")
 	m.searchInput.Blur()
@@ -1984,11 +1986,13 @@ func placeOverlay(width, height int, modal, background string) string {
 	)
 }
 
-func Run(config *scanner.Config, ignoreDirErrors bool, version string, startupPath string, startView string, fields []string) error {
+func Run(config *scanner.Config, ignoreDirErrors bool, version string, startupPath string, startView string, fields []string, listMode int) error {
 	m := newModel(config, ignoreDirErrors, version)
 	if len(fields) > 0 {
 		m.fields = fields
 	}
+	m.listMode = listMode
+	m.defaultMode = listMode
 	m.startupPath = startupPath
 	m.startView = startView
 

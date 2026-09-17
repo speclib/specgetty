@@ -9,12 +9,15 @@ import (
 // List modes for the merged change list. Active and archived changes live in
 // one list; this selects which of them it contains.
 const (
-	modeOpen = iota
+	modeActive = iota
 	modeArchived
 	modeBoth
 )
 
-var listModeNames = []string{"open", "archived", "open+archived"}
+// The names of the three states, used on screen and accepted in configuration.
+// One spelling everywhere: what the nav bar shows is what you write in the
+// config file.
+var listModeNames = []string{"active", "archived", "active+archived"}
 
 // changeRow is one line of the change list. It wraps a ChangeInfo with the one
 // thing the list needs that the scanner does not record: whether the change came
@@ -38,7 +41,7 @@ func (r changeRow) key() string {
 // order the requested mode implies: active changes first, then archived.
 func buildRows(info scanner.ProjectInfo, mode int) []changeRow {
 	var rows []changeRow
-	if mode == modeOpen || mode == modeBoth {
+	if mode == modeActive || mode == modeBoth {
 		for _, ci := range info.Changes {
 			rows = append(rows, changeRow{ci: ci})
 		}

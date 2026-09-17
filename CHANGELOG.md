@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The change list calls its two states **active** and archived everywhere. It
+  previously said "open" in the nav bar and "active" in the empty state for the
+  same thing, and "open" also means the change you have opened.
+- `change_mode` in the config, or `--change-mode`, sets which changes the list
+  starts on and returns to when you switch project: `active`, `archived` or
+  `active+archived`. `f` still cycles between them.
 - Building from source now needs Go 1.25 or newer, which the move to bubbletea
   v2 requires. Nothing about how specgetty behaves has changed.
 

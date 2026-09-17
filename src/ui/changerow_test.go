@@ -29,7 +29,7 @@ func TestBuildRowsModes(t *testing.T) {
 		mode int
 		want []string
 	}{
-		{modeOpen, []string{"alpha", "beta"}},
+		{modeActive, []string{"alpha", "beta"}},
 		{modeArchived, []string{"gamma"}},
 		{modeBoth, []string{"alpha", "beta", "gamma"}},
 	}
@@ -76,7 +76,7 @@ func TestIndexOfKey(t *testing.T) {
 
 func TestEmptyListMessageDiffersByMode(t *testing.T) {
 	seen := map[string]bool{}
-	for _, mode := range []int{modeOpen, modeArchived, modeBoth} {
+	for _, mode := range []int{modeActive, modeArchived, modeBoth} {
 		msg := emptyListMessage(mode)
 		if msg == "" {
 			t.Errorf("mode %d has no message", mode)
@@ -123,7 +123,7 @@ func makeListModel() model {
 func TestCurrentRowsAppliesModeAndQuery(t *testing.T) {
 	m := makeListModel()
 	if got := len(m.currentRows()); got != 2 {
-		t.Errorf("modeOpen gave %d rows, want 2", got)
+		t.Errorf("modeActive gave %d rows, want 2", got)
 	}
 
 	m.listMode = modeBoth
@@ -280,7 +280,7 @@ func TestNumberKeysSwitchTabsAtTheProjectLevel(t *testing.T) {
 
 func TestFCyclesListMode(t *testing.T) {
 	m := makeListModel()
-	for _, want := range []int{modeArchived, modeBoth, modeOpen} {
+	for _, want := range []int{modeArchived, modeBoth, modeActive} {
 		updated, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
 		m = updated.(model)
 		if m.listMode != want {
@@ -429,7 +429,7 @@ func TestRenderChangesTabShowsModeSpecificEmptyMessage(t *testing.T) {
 }
 
 func TestRenderChangeTableShowsHeadersAndRows(t *testing.T) {
-	rows := buildRows(testInfo(), modeOpen)
+	rows := buildRows(testInfo(), modeActive)
 	got := renderTable(wrap(rows), changeFieldDefs(defaultFields), 0, 80, 10)
 	for _, want := range []string{"name", "tasks", "specs", "alpha", "beta", "1/4"} {
 		if !strings.Contains(got, want) {
@@ -469,7 +469,7 @@ func TestRenderChangeDetailShowsNameAndTabs(t *testing.T) {
 	}
 
 	got := m.renderChangeDetail(r, 0)
-	for _, want := range []string{"alpha", "open", "proposal", "tasks", "why this"} {
+	for _, want := range []string{"alpha", "active", "proposal", "tasks", "why this"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("detail missing %q, got:\n%s", want, got)
 		}

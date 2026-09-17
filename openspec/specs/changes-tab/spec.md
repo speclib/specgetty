@@ -20,7 +20,7 @@ table, with the columns selected by configuration.
 
 #### Scenario: No active changes
 - **WHEN** the project has no directories under `openspec/changes/` and the
-  filter is in open-only mode
+  filter is in active-only mode
 - **THEN** the changes tab SHALL display "No active changes"
 
 ### Requirement: Changes tab shows artifact sub-tabs

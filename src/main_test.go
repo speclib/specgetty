@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mipmip/specgetty/src/scanner"
 )
 
 func TestFindOpenSpecProject(t *testing.T) {
@@ -164,5 +166,101 @@ func TestViewFlagExists(t *testing.T) {
 	}
 	if !found {
 		t.Error("--view is missing; it replaces --zoom")
+	}
+}
+
+func TestExpandScanDirs(t *testing.T) {
+	t.Setenv("SPECGETTY_TEST_ROOT", "/somewhere")
+
+	config := &scanner.Config{}
+	config.ScanDirs.Include = []string{"$SPECGETTY_TEST_ROOT/code", "/literal"}
+	config.ScanDirs.Exclude = []string{"$SPECGETTY_TEST_ROOT/junk", "vendor"}
+
+	expandScanDirs(config)
+
+	if config.ScanDirs.Include[0] != "/somewhere/code" {
+		t.Errorf("include[0] = %q, want it expanded", config.ScanDirs.Include[0])
+	}
+	if config.ScanDirs.Include[1] != "/literal" {
+		t.Errorf("include[1] = %q, want it untouched", config.ScanDirs.Include[1])
+	}
+	if config.ScanDirs.Exclude[0] != "/somewhere/junk" {
+		t.Errorf("exclude[0] = %q, want it expanded", config.ScanDirs.Exclude[0])
+	}
+	if config.ScanDirs.Exclude[1] != "vendor" {
+		t.Errorf("exclude[1] = %q, want it untouched", config.ScanDirs.Exclude[1])
+	}
+}
+
+func TestExpandScanDirsLeavesAnUnsetVariableEmpty(t *testing.T) {
+	// os.ExpandEnv turns an unset variable into an empty string, which is worth
+	// knowing: a typo in the config silently produces a path of "/code".
+	t.Setenv("SPECGETTY_TEST_UNSET", "")
+	config := &scanner.Config{}
+	config.ScanDirs.Include = []string{"$SPECGETTY_TEST_UNSET/code"}
+
+	expandScanDirs(config)
+
+	if config.ScanDirs.Include[0] != "/code" {
+		t.Errorf("got %q, want the unset variable to vanish", config.ScanDirs.Include[0])
+	}
+}
+
+func TestResolveStartupPath(t *testing.T) {
+	t.Run("an explicit path is made absolute", func(t *testing.T) {
+		got := resolveStartupPath("single", "some/where")
+		if !filepath.IsAbs(got) {
+			t.Errorf("got %q, want an absolute path", got)
+		}
+		if filepath.Base(got) != "where" {
+			t.Errorf("got %q, want it to end at the given path", got)
+		}
+	})
+
+	t.Run("view=all resolves nothing", func(t *testing.T) {
+		if got := resolveStartupPath("all", "/some/where"); got != "" {
+			t.Errorf("got %q, want nothing: the picker opens instead", got)
+		}
+	})
+
+	t.Run("found by walking up from the working directory", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "openspec"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		nested := filepath.Join(root, "a", "b")
+		if err := os.MkdirAll(nested, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(nested)
+
+		got := resolveStartupPath("single", "")
+		// Compare resolved paths: a temp dir can sit behind a symlink.
+		wantResolved, _ := filepath.EvalSymlinks(root)
+		gotResolved, _ := filepath.EvalSymlinks(got)
+		if gotResolved != wantResolved {
+			t.Errorf("got %q, want the project root %q", gotResolved, wantResolved)
+		}
+	})
+
+	t.Run("nothing found outside a project", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		if got := resolveStartupPath("single", ""); got != "" {
+			t.Errorf("got %q, want nothing outside a project", got)
+		}
+	})
+}
+
+func TestChangeModeFlagExists(t *testing.T) {
+	found := false
+	for _, f := range appFlags() {
+		for _, name := range f.Names() {
+			if name == "change-mode" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("--change-mode is missing")
 	}
 }
