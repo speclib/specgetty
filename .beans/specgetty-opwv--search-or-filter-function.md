@@ -1,11 +1,11 @@
 ---
 # specgetty-opwv
 title: search or filter function
-status: draft
+status: scrapped
 type: task
 priority: normal
 created_at: 2026-04-08T10:06:16Z
-updated_at: 2026-04-08T10:15:41Z
+updated_at: 2026-09-17T17:33:51Z
 ---
 
 It should be implemented in a generic way. It should implement a quesry
