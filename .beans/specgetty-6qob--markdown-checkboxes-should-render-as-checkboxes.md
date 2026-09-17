@@ -1,11 +1,11 @@
 ---
 # specgetty-6qob
 title: markdown checkboxes should render as checkboxes
-status: todo
+status: in-progress
 type: feature
 priority: normal
 created_at: 2026-09-15T15:55:40Z
-updated_at: 2026-09-17T17:24:41Z
+updated_at: 2026-09-17T17:35:20Z
 ---
 
 the checkboxes should be rendered as utf8 checkboxen and I want the lines to be selectable, highlighted. Space should change the state of the checkbox. Saving should be atomic at every change

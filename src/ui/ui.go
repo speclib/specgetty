@@ -167,6 +167,9 @@ type model struct {
 	spinner           spinner.Model
 	docViewport       viewport.Model
 	docKey            string
+	docLines          []sourceLine // source to screen mapping, when the document has a cursor
+	docCursor         int          // index into docLines
+	docPath           string       // the file a toggle writes back to
 	logViewport       viewport.Model
 	logContent        string
 	detailTab         int
@@ -670,6 +673,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.activeView == viewLog {
 				m.logViewport.ScrollUp(1)
+			} else if m.docHasCursor() {
+				m.moveDocCursor(-1)
 			} else if m.docActive() {
 				m.docViewport.ScrollUp(1)
 			} else if m.level != levelChange {
@@ -690,6 +695,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			if m.activeView == viewLog {
 				m.logViewport.ScrollDown(1)
+			} else if m.docHasCursor() {
+				m.moveDocCursor(1)
 			} else if m.docActive() {
 				m.docViewport.ScrollDown(1)
 			} else if m.level != levelChange {
@@ -718,6 +725,15 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if r, ok := m.selectedRow(); ok && m.detailTab == tabChanges && !r.archived {
 				m.discardChangeName = r.ci.Name
 				m.discardState = discardConfirming
+			}
+
+		case "space":
+			if m.docHasCursor() {
+				msg, cmd := m.toggleSelectedTask()
+				m.statusMsg = msg
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 
 		case "y":
@@ -1599,6 +1615,16 @@ func styleMarkdownLine(line string) string {
 		return mdHeaderStyle.Render(trimmed)
 	}
 
+	// Task checkboxes, drawn as boxes rather than as their punctuation. The
+	// prefixes matched here are exactly the ones the scanner counts, so the
+	// glyphs and the totals can never disagree about what a task is.
+	if rest, ok := strings.CutPrefix(line, taskUncheckedPrefix); ok {
+		return "  " + checkboxUnchecked + " " + renderInlineMarkdown(rest)
+	}
+	if rest, ok := strings.CutPrefix(line, taskCheckedPrefix); ok {
+		return "  " + checkboxChecked + " " + renderInlineMarkdown(rest)
+	}
+
 	// List items
 	if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
 		return "  " + renderInlineMarkdown(trimmed)
@@ -1614,12 +1640,42 @@ func styleMarkdownLine(line string) string {
 // a viewport slicing rows that are already final can report a position that
 // matches the screen. The previous version ignored width entirely, so the
 // lipgloss box wrapped afterwards and rows were lost inside the visible height.
-func renderMarkdown(content string, width int) string {
+// sourceLine records where one line of the source ended up on screen.
+//
+// The renderer wraps as it goes, so a source line becomes one to four screen
+// rows and the connection between them is otherwise lost. Two things need it
+// back: a highlight has to cover every row a line produced, and a toggle has to
+// know the exact text of the line it is about to rewrite.
+type sourceLine struct {
+	index    int    // position in the source, counting from zero
+	text     string // the source line verbatim, which is what a save matches on
+	rowStart int    // first screen row it produced
+	rowEnd   int    // last screen row it produced, inclusive
+}
+
+// renderMarkdownLines renders content and reports where each source line landed.
+func renderMarkdownLines(content string, width int) (string, []sourceLine) {
 	var rows []string
-	for _, line := range strings.Split(content, "\n") {
+	var lines []sourceLine
+
+	for i, line := range strings.Split(content, "\n") {
+		start := len(rows)
 		rows = append(rows, wrapStyled(styleMarkdownLine(line), width)...)
+		lines = append(lines, sourceLine{
+			index:    i,
+			text:     line,
+			rowStart: start,
+			rowEnd:   len(rows) - 1,
+		})
 	}
-	return strings.Join(rows, "\n")
+	return strings.Join(rows, "\n"), lines
+}
+
+// renderMarkdown renders content without reporting the mapping, for the panes
+// that have no cursor and do not need it.
+func renderMarkdown(content string, width int) string {
+	out, _ := renderMarkdownLines(content, width)
+	return out
 }
 
 func renderInlineMarkdown(line string) string {

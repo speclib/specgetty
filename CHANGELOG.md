@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Tick tasks off without leaving specgetty. Open a change's tasks, move the
+  cursor with `j`/`k`, and press space. Checkboxes draw as `▢` and `▣`, the
+  selected task is highlighted across every row it wraps onto, and the file is
+  saved immediately.
+- A toggle is applied to the file as it is on disk at that moment, so an edit
+  saved from your editor since the last scan is never discarded. If the task has
+  moved or vanished, specgetty says so instead of guessing.
+
 ### Changed
 
 - Building from source now needs Go 1.25 or newer, which the move to bubbletea

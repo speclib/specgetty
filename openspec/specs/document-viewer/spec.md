@@ -31,9 +31,16 @@ When a document occupies more rows than its pane, the user SHALL be able to reac
 every row with the keyboard.
 
 #### Scenario: Move one row
-- **WHEN** a document viewer is displayed and the user presses down, `j`, up or
-  `k`
+- **WHEN** a document viewer without a cursor is displayed and the user presses
+  down, `j`, up or `k`
 - **THEN** the document SHALL scroll by one row in that direction
+
+#### Scenario: Move one line, in a document with a cursor
+- **WHEN** a document viewer with a cursor is displayed and the user presses
+  down, `j`, up or `k`
+- **THEN** the cursor SHALL move by one source line and the view SHALL follow
+  it, which may move the view by more than one row because a source line can
+  wrap
 
 #### Scenario: Move one page
 - **WHEN** a document viewer is displayed and the user presses `pgdown`,
