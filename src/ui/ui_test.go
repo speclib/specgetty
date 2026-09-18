@@ -98,8 +98,8 @@ func TestTabOnlyMovesWhenTheLogPanelIsOpen(t *testing.T) {
 		m.logVisible = false
 
 		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-		if um := updated.(model); um.activeView != viewDetail {
-			t.Errorf("activeView = %d, want it to stay on viewDetail", um.activeView)
+		if um := updated.(model); um.focus == focusLog {
+			t.Errorf("focus = %d, want it to stay out of the log", um.focus)
 		}
 	})
 
@@ -109,13 +109,13 @@ func TestTabOnlyMovesWhenTheLogPanelIsOpen(t *testing.T) {
 
 		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		m = updated.(model)
-		if m.activeView != viewLog {
-			t.Fatalf("activeView = %d, want viewLog", m.activeView)
+		if m.focus != focusLog {
+			t.Fatalf("focus = %d, want the log panel", m.focus)
 		}
 
 		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-		if um := updated.(model); um.activeView != viewDetail {
-			t.Errorf("activeView = %d, want viewDetail", um.activeView)
+		if um := updated.(model); um.focus == focusLog {
+			t.Errorf("focus = %d, want it back out of the log", um.focus)
 		}
 	})
 }
@@ -254,7 +254,7 @@ func makeArchiveTestModel() model {
 
 func TestArchiveKeyStartsConfirming(t *testing.T) {
 	m := makeArchiveTestModel()
-	m.activeView = viewDetail
+	m.focus = focusDetail
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	um := updated.(model)

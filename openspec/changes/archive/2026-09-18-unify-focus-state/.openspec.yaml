@@ -1,0 +1,10 @@
+schema: tinychange
+created: 2026-09-18
+
+# No spec delta. The keyboard already moves exactly as openspec/specs/specs-tab
+# describes; this change stops that one position being stored as two fields that
+# have to be kept in step by hand. Nothing observable moves.
+#
+# It ships ahead of box-the-tab-content so that reverting the borders does not
+# also take the collapse with it.
+skip_specs: true

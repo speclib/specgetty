@@ -36,6 +36,10 @@ func makeSpecsModel(t *testing.T, specs map[string]string) model {
 	}}}
 	m.level = levelProject
 	m.detailTab = tabSpecs
+	// Same as switching to the tab with a key would do. Before the focus
+	// fields were collapsed this was right by accident: specsFocusList was the
+	// zero value, so a helper that never set it still landed on the list.
+	m.focus = m.defaultFocus()
 	m.recalcLayout()
 	m.syncDocument()
 	return m
@@ -52,8 +56,8 @@ func twoSpecs(t *testing.T) model {
 
 func TestSpecsFocusStartsOnTheList(t *testing.T) {
 	m := twoSpecs(t)
-	if m.specsFocus != specsFocusList {
-		t.Errorf("focus is %d, want the list", m.specsFocus)
+	if m.focus != focusSpecsList {
+		t.Errorf("focus is %d, want the list", m.focus)
 	}
 	if m.docActive() {
 		t.Error("the list holds the keyboard, so the document must not")
@@ -63,23 +67,23 @@ func TestSpecsFocusStartsOnTheList(t *testing.T) {
 func TestSpecsFocusResetsWhenLeavingTheTab(t *testing.T) {
 	m := twoSpecs(t)
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.specsFocus != specsFocusContent {
+	if m.focus != focusSpecsContent {
 		t.Fatal("expected the content to take the keyboard")
 	}
 
 	// Away to another tab and back.
 	m = press(m, tea.KeyPressMsg{Code: '1', Text: "1"})
 	m = press(m, tea.KeyPressMsg{Code: '2', Text: "2"})
-	if m.specsFocus != specsFocusList {
-		t.Errorf("focus is %d after returning, want the list", m.specsFocus)
+	if m.focus != focusSpecsList {
+		t.Errorf("focus is %d after returning, want the list", m.focus)
 	}
 
 	// The arrow keys change tabs too, and must reset it the same way.
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
-	if m.specsFocus != specsFocusList {
-		t.Errorf("focus is %d after changing tab with the arrows, want the list", m.specsFocus)
+	if m.focus != focusSpecsList {
+		t.Errorf("focus is %d after changing tab with the arrows, want the list", m.focus)
 	}
 }
 
@@ -90,15 +94,12 @@ func TestTabCyclesTheSpecsHalves(t *testing.T) {
 	m.logVisible = false
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.specsFocus != specsFocusContent {
-		t.Fatalf("first tab gave focus %d, want the content", m.specsFocus)
+	if m.focus != focusSpecsContent {
+		t.Fatalf("first tab gave focus %d, want the content", m.focus)
 	}
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.specsFocus != specsFocusList {
-		t.Errorf("second tab gave focus %d, want the list", m.specsFocus)
-	}
-	if m.activeView != viewDetail {
-		t.Errorf("activeView is %d, want viewDetail with the log closed", m.activeView)
+	if m.focus != focusSpecsList {
+		t.Errorf("second tab gave focus %d, want the list", m.focus)
 	}
 }
 
@@ -108,18 +109,18 @@ func TestTabCyclesThroughTheLogPanel(t *testing.T) {
 	m.recalcLayout()
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.specsFocus != specsFocusContent || m.activeView != viewDetail {
-		t.Fatalf("first tab: focus=%d view=%d, want the content half", m.specsFocus, m.activeView)
+	if m.focus != focusSpecsContent {
+		t.Fatalf("first tab gave focus %d, want the content half", m.focus)
 	}
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.activeView != viewLog {
-		t.Fatalf("second tab: view=%d, want the log panel", m.activeView)
+	if m.focus != focusLog {
+		t.Fatalf("second tab gave focus %d, want the log panel", m.focus)
 	}
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.activeView != viewDetail || m.specsFocus != specsFocusList {
-		t.Errorf("third tab: view=%d focus=%d, want back to the spec list", m.activeView, m.specsFocus)
+	if m.focus != focusSpecsList {
+		t.Errorf("third tab gave focus %d, want back to the spec list", m.focus)
 	}
 }
 
@@ -265,8 +266,11 @@ func TestSpecsTabWithNoSpecs(t *testing.T) {
 	}
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.specsFocus != specsFocusList {
-		t.Errorf("focus moved to %d with no specs to focus on", m.specsFocus)
+	if m.focus == focusSpecsContent {
+		t.Error("tab reached the content half of a tab that has no specs in it")
+	}
+	if m.focus != focusDetail {
+		t.Errorf("focus is %d with no specs to hold it, want the tab content", m.focus)
 	}
 
 	out := m.renderSpecsTab(m.width-2, 10)
@@ -293,5 +297,28 @@ func TestSpecsListShowsWhichHalfHasTheKeyboard(t *testing.T) {
 
 	if lit == dimmed {
 		t.Error("the spec list looks identical whichever half holds the keyboard")
+	}
+}
+
+// --- the tab and the focus move together ---
+
+func TestReachingTheSpecsTabWithAKeyPutsTheKeyboardOnTheList(t *testing.T) {
+	// Going through the key handler rather than setting detailTab directly.
+	// Before the two focus fields were collapsed, a caller that set the tab and
+	// forgot the focus still landed on the list, because specsFocusList was the
+	// zero value. It no longer is, so this pairing has to be real.
+	m := twoSpecs(t)
+	m.detailTab = tabChanges
+	m.focus = m.defaultFocus()
+
+	m = press(m, tea.KeyPressMsg{Code: '2', Text: "2"})
+
+	if m.focus != focusSpecsList {
+		t.Fatalf("focus is %d after switching to the specs tab, want the list", m.focus)
+	}
+	// Asserted on the render, not just the field: the highlight is the thing
+	// the user actually loses if the pairing is missed.
+	if !strings.Contains(m.renderSpecsTab(m.width-2, 10), "\x1b[30;42m") {
+		t.Error("the selected spec is not highlighted, so nothing shows the list has the keyboard")
 	}
 }

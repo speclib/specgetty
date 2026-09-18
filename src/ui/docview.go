@@ -60,7 +60,7 @@ func (m model) docActive() bool {
 	if m.pickerOpen || m.askOpenPicker || m.searchFocused {
 		return false
 	}
-	if m.activeView == viewLog {
+	if m.focus == focusLog {
 		return false
 	}
 	if m.level == levelChange {
@@ -77,7 +77,7 @@ func (m model) docActive() bool {
 	case tabSpecs:
 		// The specs tab has two halves. The vertical keys belong to the content
 		// only while the content holds the keyboard.
-		return m.specsFocus == specsFocusContent &&
+		return m.focus == focusSpecsContent &&
 			m.specCursor < len(info.SpecNames)
 	}
 	return false

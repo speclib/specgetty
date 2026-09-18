@@ -115,7 +115,7 @@ func makeListModel() model {
 	m.displayNames = []string{"p"}
 	m.projects = scanner.ProjectMap{"/p": scanner.ProjectStatus{Info: testInfo()}}
 	m.level = levelProject
-	m.activeView = viewDetail
+	m.focus = focusDetail
 	m.detailTab = tabChanges
 	return m
 }

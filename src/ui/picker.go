@@ -286,7 +286,7 @@ func (m model) choosePickerProject() (tea.Model, tea.Cmd) {
 
 	m.level = levelProject
 	m.detailTab = tabChanges
-	m.activeView = viewDetail
+	m.focus = focusDetail
 	m.resetProjectState()
 
 	var cmds []tea.Cmd

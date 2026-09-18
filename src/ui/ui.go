@@ -37,10 +37,22 @@ const (
 	levelChange  = 1 // one change, with its artifact sub-tabs
 )
 
-// Which half of the specs tab holds the keyboard.
+// Where the keyboard is. One position, one value.
+//
+// This used to be two fields, activeView and specsFocus, that every handler had
+// to move together. They could describe a state that means nothing, such as the
+// log panel holding the keyboard while the spec content also holds it, and the
+// only thing preventing it was a paired assignment in five places. Harmless
+// while nothing read the pair, which stopped being true once each border is
+// drawn lit or dim by asking where the keyboard is.
+//
+// viewDetail and viewLog survive above, because which panel gets which title is
+// a different question from where the keyboard is.
 const (
-	specsFocusList = iota
-	specsFocusContent
+	focusDetail       = iota // the active tab's content, or an open change's artifact
+	focusSpecsList           // the list half of the specs tab
+	focusSpecsContent        // the document half of the specs tab
+	focusLog                 // the log panel
 )
 
 // Changes lead, because that is what the tool is usually opened to look at.
@@ -161,7 +173,7 @@ type model struct {
 	repoPaths         []string
 	displayNames      []string
 	cursor            int
-	activeView        int
+	focus             int // focusDetail, focusSpecsList, focusSpecsContent, focusLog
 	scanning          bool
 	err               error
 	spinner           spinner.Model
@@ -174,7 +186,6 @@ type model struct {
 	logContent        string
 	detailTab         int
 	specCursor        int
-	specsFocus        int // specsFocusList or specsFocusContent
 	changeCursor      int
 	changeArtifactTab int
 	level             int    // navigation depth: levelProject, levelChange
@@ -509,7 +520,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingKey = ""
 			if key == "g" {
 				switch {
-				case m.activeView == viewLog:
+				case m.focus == focusLog:
 					m.logViewport.GotoTop()
 				case m.docActive():
 					m.docViewport.GotoTop()
@@ -575,8 +586,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.logViewport.GotoBottom()
 				}
 			} else {
-				if m.activeView == viewLog {
-					m.activeView = viewDetail
+				if m.focus == focusLog {
+					m.focus = m.defaultFocus()
 				}
 				m.recalcLayout()
 			}
@@ -588,18 +599,16 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			onSpecs := m.level == levelProject && m.detailTab == tabSpecs &&
 				len(m.currentSpecNames()) > 0
 			switch {
-			case m.activeView == viewLog:
-				m.activeView = viewDetail
-				m.specsFocus = specsFocusList
-			case onSpecs && m.specsFocus == specsFocusList:
-				m.specsFocus = specsFocusContent
+			case m.focus == focusLog:
+				m.focus = m.defaultFocus()
+			case onSpecs && m.focus == focusSpecsList:
+				m.focus = focusSpecsContent
 			case onSpecs && m.logVisible:
-				m.activeView = viewLog
-				m.specsFocus = specsFocusList
+				m.focus = focusLog
 			case onSpecs:
-				m.specsFocus = specsFocusList
+				m.focus = focusSpecsList
 			case m.logVisible:
-				m.activeView = viewLog
+				m.focus = focusLog
 			}
 
 		case "g":
@@ -607,7 +616,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "G":
 			switch {
-			case m.activeView == viewLog:
+			case m.focus == focusLog:
 				m.logViewport.GotoBottom()
 			case m.docActive():
 				m.docViewport.GotoBottom()
@@ -617,7 +626,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// A full page in a document, vim style. Lists keep halfPage(),
 			// which is how they have always moved.
 			switch {
-			case m.activeView == viewLog:
+			case m.focus == focusLog:
 				m.logViewport.ScrollDown(m.halfPage())
 			case m.docActive():
 				m.docViewport.PageDown()
@@ -625,7 +634,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "pgup", "ctrl+b":
 			switch {
-			case m.activeView == viewLog:
+			case m.focus == focusLog:
 				m.logViewport.ScrollUp(m.halfPage())
 			case m.docActive():
 				m.docViewport.PageUp()
@@ -649,9 +658,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.changeArtifactTab > 0 {
 					m.changeArtifactTab--
 				}
-			} else if m.activeView == viewDetail && m.detailTab > 0 {
+			} else if m.focus != focusLog && m.detailTab > 0 {
 				m.detailTab--
-				m.specsFocus = specsFocusList
+				m.focus = m.defaultFocus()
 			}
 
 		case "right":
@@ -659,21 +668,21 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.changeArtifactTab < m.changeArtifactTabCount()-1 {
 					m.changeArtifactTab++
 				}
-			} else if m.activeView == viewDetail && m.detailTab < len(tabNames)-1 {
+			} else if m.focus != focusLog && m.detailTab < len(tabNames)-1 {
 				m.detailTab++
-				m.specsFocus = specsFocusList
+				m.focus = m.defaultFocus()
 			}
 
 		case "1", "2", "3":
 			// Number keys address the project tab bar, so they are inert while
 			// a change is open.
-			if m.level != levelChange && m.activeView == viewDetail {
+			if m.level != levelChange && m.focus != focusLog {
 				m.detailTab = int(key[0] - '1')
-				m.specsFocus = specsFocusList
+				m.focus = m.defaultFocus()
 			}
 
 		case "up", "k":
-			if m.activeView == viewLog {
+			if m.focus == focusLog {
 				m.logViewport.ScrollUp(1)
 			} else if m.docHasCursor() {
 				m.moveDocCursor(-1)
@@ -695,7 +704,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			if m.activeView == viewLog {
+			if m.focus == focusLog {
 				m.logViewport.ScrollDown(1)
 			} else if m.docHasCursor() {
 				m.moveDocCursor(1)
@@ -918,14 +927,30 @@ func (m model) logPanelHeight() int {
 }
 
 func (m model) halfPage() int {
-	switch m.activeView {
-	case viewDetail:
-		return max(1, m.mainPanelHeight()/2)
-	case viewLog:
+	if m.focus == focusLog {
 		return max(1, m.logViewport.Height()/2)
-	default:
-		return max(1, m.mainPanelHeight()/2)
 	}
+	return max(1, m.mainPanelHeight()/2)
+}
+
+// defaultFocus is where the keyboard lands when the active tab changes, or when
+// the log panel gives it back. The specs tab opens on its list; everything else
+// has one place for it to be.
+func (m model) defaultFocus() int {
+	if m.level == levelProject && m.detailTab == tabSpecs && len(m.currentSpecNames()) > 0 {
+		return focusSpecsList
+	}
+	return focusDetail
+}
+
+// viewFocused answers renderPanel's question: does this panel hold the keyboard?
+// The panel is the coarse unit, so every focus inside the detail area counts as
+// the detail panel holding it.
+func (m model) viewFocused(view int) bool {
+	if view == viewLog {
+		return m.focus == focusLog
+	}
+	return m.focus != focusLog
 }
 
 func (m model) currentSpecNames() []string {
@@ -1492,16 +1517,15 @@ func (m model) renderSpecsTab(width int, height int) string {
 		end = len(info.SpecNames)
 	}
 
-	isActive := m.activeView == viewDetail && m.detailTab == tabSpecs
 	for i := offset; i < end; i++ {
 		if i > offset {
 			listB.WriteString("\n")
 		}
 		name := info.SpecNames[i]
 		switch {
-		case isActive && i == m.specCursor && m.specsFocus == specsFocusList:
+		case i == m.specCursor && m.focus == focusSpecsList:
 			listB.WriteString(selectedStyle.Width(listWidth).Render(name))
-		case isActive && i == m.specCursor:
+		case i == m.specCursor && m.focus == focusSpecsContent:
 			// Still the selected spec, but the keys belong to the content now.
 			listB.WriteString(dimSelectedStyle.Width(listWidth).Render(name))
 		default:
@@ -1833,7 +1857,7 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 	}
 
 	borderColor := lipgloss.Color("240")
-	if m.activeView == view {
+	if m.viewFocused(view) {
 		borderColor = lipgloss.Color("2")
 	}
 
@@ -1930,7 +1954,7 @@ func (m model) renderNavBar() string {
 				{"\u2190\u2192/1-3", "tabs"},
 			}
 			if m.detailTab == tabSpecs && len(m.currentSpecNames()) > 0 {
-				if m.specsFocus == specsFocusContent {
+				if m.focus == focusSpecsContent {
 					keys = append(keys,
 						struct{ key, action string }{"tab", "focus list"},
 						struct{ key, action string }{"^f^b", "page"},
