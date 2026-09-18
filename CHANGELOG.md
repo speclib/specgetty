@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The nav bar indents its text by a column at each end, and the gap between the
   key hints and the version is painted rather than left bare. That gap used to
   be a hole in the middle of the strip.
+- Table columns are separated by two blank columns instead of one, in the
+  change list and the project picker. A value that filled its column used to
+  sit a single space from the value beside it. At narrow terminals a column is
+  now dropped two columns sooner, since the wider gaps come out of the same
+  budget.
 
 ## [0.5.0] - 2026-09-18
 

@@ -123,3 +123,11 @@ and be outranked by a confirmation modal.
 #### Scenario: A confirmation modal outranks the picker
 - **WHEN** a confirmation modal is awaiting an answer
 - **THEN** the picker key SHALL NOT open the picker
+
+### Requirement: Picker columns are separated by two blank columns
+The project picker draws its rows with the same table renderer as the change
+list, and its columns SHALL be separated by the same two blank columns.
+
+#### Scenario: A project name that fills its column
+- **WHEN** a project name is as wide as its column allows
+- **THEN** two blank columns SHALL separate it from the spec count beside it

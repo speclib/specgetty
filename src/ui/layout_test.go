@@ -6,6 +6,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/mipmip/specgetty/src/scanner"
 )
 
 // Note for anyone wondering where the colour-forcing helper went: lipgloss v2
@@ -348,6 +350,90 @@ func TestNavBarIndentsItsTextAndStillPaintsEveryColumn(t *testing.T) {
 	for _, seg := range strings.Split(bar, "\x1b[m") {
 		if strings.TrimSpace(seg) == "" && strings.Contains(seg, "  ") && !strings.Contains(seg, "48;5;236") {
 			t.Errorf("an unpainted run of %d spaces in the nav bar", len(seg))
+		}
+	}
+}
+
+// --- column separation ---
+
+func TestTableColumnsAreSeparatedByTwoBlankColumns(t *testing.T) {
+	// A value that exactly fills its column used to sit one space from the
+	// value beside it, which reads as one run-on field rather than two.
+	defs := []fieldDef[changeRow]{
+		{header: "name", width: 0, value: func(r changeRow) string { return r.ci.Name }},
+		{header: "tasks", width: 7, value: func(r changeRow) string { return "6/6" }},
+	}
+	// The name is built to fill the flexible column exactly, because that is
+	// the case the wider gap exists for. A shorter name leaves its own padding
+	// behind and would make this pass for the wrong reason.
+	_, widths := layoutFields(defs, 50)
+	rows := []filtered[changeRow]{{row: changeRow{ci: scanner.ChangeInfo{
+		Name: strings.Repeat("n", widths[0])}}}}
+
+	body := ansi.Strip(strings.Split(renderTable(rows, defs, 0, 50, 2), "\n")[1])
+
+	i := strings.LastIndex(body, "n")
+	if i < 0 {
+		t.Fatalf("the name never reached the row: %q", body)
+	}
+	if got := body[i+1 : i+4]; got != "  6" {
+		t.Errorf("want two blank columns between a full name and the next value, got %q in %q", got, body)
+	}
+}
+
+func TestTableRowsStillMeasureTheTableWidth(t *testing.T) {
+	// What this does NOT catch, checked by breaking it: the gap count and the
+	// separator disagreeing. fitCell normalises the joined row to the table
+	// width in both directions, padding a short row and truncating a long one,
+	// so the measurement comes out right either way. The disagreement is
+	// caught by TestTableColumnsAreSeparatedByTwoBlankColumns in one direction
+	// and TestWiderGapsShiftWhenColumnsAreDropped in the other. This test
+	// pins the normalisation itself, which is what keeps a row from ever
+	// running past its panel.
+	defs := []fieldDef[changeRow]{
+		{header: "name", width: 0, value: func(r changeRow) string { return r.ci.Name }},
+		{header: "tasks", width: 7, value: func(r changeRow) string { return "6/6" }},
+		{header: "specs", width: 5, value: func(r changeRow) string { return "1" }},
+	}
+	rows := []filtered[changeRow]{{row: changeRow{ci: scanner.ChangeInfo{Name: "alpha"}}}}
+
+	for _, width := range []int{40, 56, 80, 120} {
+		for i, line := range strings.Split(renderTable(rows, defs, -1, width, 2), "\n") {
+			if got := ansi.StringWidth(line); got != width {
+				t.Errorf("at table width %d, row %d measured %d", width, i, got)
+			}
+		}
+	}
+}
+
+func TestWiderGapsShiftWhenColumnsAreDropped(t *testing.T) {
+	// Recorded rather than discovered on a laptop: the gaps come out of the
+	// flexible column's budget, so a column starts being dropped at a slightly
+	// wider terminal than it used to.
+	defs := []fieldDef[changeRow]{
+		{header: "name", width: 0, value: func(r changeRow) string { return r.ci.Name }},
+		{header: "tasks", width: 7, value: func(r changeRow) string { return "6/6" }},
+		{header: "specs", width: 5, value: func(r changeRow) string { return "1" }},
+	}
+	// Measured, not predicted. With one-column gaps the three columns survived
+	// down to 26; with two they survive to 28, and the two-column form to 21
+	// rather than 19. Two columns of gap, two columns of threshold.
+	for _, tc := range []struct {
+		width, want int
+	}{
+		{60, 3},
+		{28, 3}, // the narrowest that still fits all three
+		{27, 2}, // specs is dropped here
+		{21, 2}, // the narrowest that still fits two
+		{20, 1}, // tasks goes too
+	} {
+		kept, _ := layoutFields(defs, tc.width)
+		if len(kept) != tc.want {
+			names := make([]string, len(kept))
+			for i, d := range kept {
+				names[i] = d.header
+			}
+			t.Errorf("at width %d, %d columns survive (%v), want %d", tc.width, len(kept), names, tc.want)
 		}
 	}
 }

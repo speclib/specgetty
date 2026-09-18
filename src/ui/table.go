@@ -65,6 +65,15 @@ type fieldDef[T tableRow] struct {
 // are dropped instead of squeezed further.
 const minFlexWidth = 12
 
+// columnGap is how many blank columns separate one column from the next. One
+// was not enough: a value that filled its column sat a single space from the
+// value beside it, which read as one run-on field rather than two.
+const columnGap = 2
+
+// columnSep is what cells are joined with. It must be columnGap columns wide;
+// layoutFields charges for it by the same constant.
+var columnSep = strings.Repeat(" ", columnGap)
+
 // layoutFields decides which columns fit and how wide each is. Fixed columns
 // are served first and the flexible column takes the remainder. When that
 // remainder would fall below minFlexWidth, columns are dropped from the right.
@@ -82,9 +91,13 @@ func layoutFields[T tableRow](defs []fieldDef[T], width int) (kept []fieldDef[T]
 				fixed += d.width
 			}
 		}
+		// columnGap columns per gap. This and the separator the cells are
+		// joined with below are the same fact written twice: if they disagree
+		// the row comes out one or two columns wrong per gap, and nothing
+		// downstream notices because every row is wrong by the same amount.
 		gaps := 0
 		if len(kept) > 1 {
-			gaps = len(kept) - 1
+			gaps = columnGap * (len(kept) - 1)
 		}
 		remaining := width - fixed - gaps
 
@@ -159,7 +172,7 @@ func renderTable[T tableRow](rows []filtered[T], defs []fieldDef[T], cursor, wid
 	for i, d := range kept {
 		headerCells[i] = fitCell(d.header, widths[i])
 	}
-	header := fitCell(strings.Join(headerCells, " "), tableWidth)
+	header := fitCell(strings.Join(headerCells, columnSep), tableWidth)
 	if hintWidth > 0 {
 		header += fitCell("matched", hintWidth)
 	}
@@ -186,7 +199,7 @@ func renderTable[T tableRow](rows []filtered[T], defs []fieldDef[T], cursor, wid
 		for j, d := range kept {
 			cells[j] = fitCell(d.value(rows[i].row), widths[j])
 		}
-		base := fitCell(strings.Join(cells, " "), tableWidth)
+		base := fitCell(strings.Join(cells, columnSep), tableWidth)
 
 		hint := ""
 		if hintWidth > 0 {
