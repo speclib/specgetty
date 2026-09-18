@@ -47,7 +47,12 @@
             src = ./.;
             vendorHash = "sha256-J5Wy/Duhbw9JXVt1XhzaxdaLhNsbre8DO0s2FalZzP4=";
 
-            nativeBuildInputs = [ pkgs.bash ];
+            # git is a real test dependency, not a convenience: the store
+            # details report a store working copy's local state, and those
+            # paths are only exercised against an actual repository. Without
+            # it here the git tests skip, and scanner coverage reads about
+            # five points lower in the sandbox than on a developer machine.
+            nativeBuildInputs = [ pkgs.bash pkgs.git ];
 
             buildPhase = "true";
 

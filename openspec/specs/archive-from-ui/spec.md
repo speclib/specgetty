@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change archive-change-from-ui. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Archive keybinding
 The system SHALL provide an `a` keybinding that initiates archiving when the changes tab is active and a change is selected.
 
@@ -48,7 +50,9 @@ The system SHALL require explicit confirmation before executing the archive comm
 - **THEN** the system SHALL dismiss the modal and return to normal state
 
 ### Requirement: Archive execution
-The system SHALL execute `openspec archive <name> -y` from the project directory and capture the output.
+The system SHALL execute `openspec archive <name> -y` from the resolved root and
+capture the output. Where the open project was resolved through a store
+declaration, the resolved root is the store, not the repo the user started in.
 
 #### Scenario: Successful archive
 - **WHEN** the archive command exits with code 0
@@ -57,6 +61,11 @@ The system SHALL execute `openspec archive <name> -y` from the project directory
 #### Scenario: Failed archive
 - **WHEN** the archive command exits with a non-zero code
 - **THEN** the system SHALL display a failure modal with the error output
+
+#### Scenario: Archiving in a store-backed project
+- **WHEN** a change is archived in a project resolved through a store
+  declaration
+- **THEN** the command SHALL run with the store as its working directory
 
 ### Requirement: Result feedback
 The system SHALL display the archive result in a modal that dismisses on any keypress.
@@ -75,4 +84,3 @@ The nav bar SHALL show an `a archive` hint when the changes tab is active and ch
 #### Scenario: Changes tab not active
 - **WHEN** a tab other than changes is active
 - **THEN** the nav bar SHALL NOT include the `a archive` hint
-

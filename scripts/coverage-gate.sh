@@ -9,8 +9,8 @@
 # quietly.
 #
 # The target is 70% overall and 80% for the core packages (scanner and ui).
-# Overall and scanner now clear it; ui is the one still short, at 72.4% against
-# 80%. These floors track what is actually achieved, so they can only rise.
+# Every package now clears it. These floors track what is actually achieved, so
+# they can only rise.
 #
 # Run it by hand with: bash scripts/coverage-gate.sh
 #
@@ -25,16 +25,18 @@ set -euo pipefail
 
 floor_for() {
   case "$1" in
-    github.com/mipmip/specgetty/src)         echo "42.3" ;;
-    github.com/mipmip/specgetty/src/scanner) echo "91.9" ;;
-    github.com/mipmip/specgetty/src/ui)      echo "79.7" ;;
-    # watcher measures 84.6% or 87.2% depending on how its inotify paths fall,
-    # so its floor tracks the lower reading.
+    # Raised from 42.3 when the CLI action moved out of main() into runApp,
+    # which made everything up to the terminal takeover reachable from a test.
+    github.com/mipmip/specgetty/src)         echo "85.9" ;;
+    github.com/mipmip/specgetty/src/scanner) echo "93.5" ;;
+    github.com/mipmip/specgetty/src/ui)      echo "81.7" ;;
+    # watcher measures anywhere from 84.6% to 90.2% depending on how its
+    # inotify paths fall, so its floor tracks the lowest reading seen.
     github.com/mipmip/specgetty/src/watcher) echo "84.6" ;;
-    # Measured at 48.8. Held a fraction lower because watcher's flutter moves
-    # the total by about 0.15 points and a zero-margin total would fail at
-    # random rather than for a real regression.
-    TOTAL)                                   echo "79.7" ;;
+    # Measured at 84.5 in both environments. Held a fraction lower because
+    # watcher's flutter moves the total by a few tenths and a zero-margin
+    # total would fail at random rather than for a real regression.
+    TOTAL)                                   echo "84.0" ;;
     *)                                       echo "" ;;
   esac
 }

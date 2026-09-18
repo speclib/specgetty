@@ -91,15 +91,19 @@ func walkone(ctx context.Context, dir string, config *Config, results chan strin
 }
 
 // isValidOpenSpecDir checks whether an openspec/ directory contains the required
-// markers: (config.yaml OR project.md) AND (specs/ OR changes/).
+// markers: (config.yaml OR config.yml OR project.md) AND (specs/ OR changes/).
+//
+// The second half is what keeps a store-backed repo out of the project list.
+// Such a repo has a configuration naming a store and no content of its own, so
+// it fails here and the store it points at is discovered on its own account.
+// That is deliberate: the repo is an entry point to a root, not a root, and
+// listing both would show the same specs twice under two names.
 func isValidOpenSpecDir(path string) bool {
 	hasConfig := false
-	if _, err := os.Stat(filepath.Join(path, "config.yaml")); err == nil {
-		hasConfig = true
-	}
-	if !hasConfig {
-		if _, err := os.Stat(filepath.Join(path, "project.md")); err == nil {
+	for _, name := range []string{"config.yaml", "config.yml", "project.md"} {
+		if _, err := os.Stat(filepath.Join(path, name)); err == nil {
 			hasConfig = true
+			break
 		}
 	}
 	if !hasConfig {

@@ -58,10 +58,41 @@ type ProjectInfo struct {
 	ActiveChanges   []string
 	Changes         []ChangeInfo
 	ArchivedChanges []ChangeInfo
-	ConfigFile      string // "project.md", "config.yaml", or ""
+	ConfigFile      string // "project.md", "config.yaml", "config.yml", or ""
 	ConfigContent   string
 	TasksTotal      int // aggregate across all active changes
 	TasksDone       int
+
+	// Where the content was read from, and where the reading started. They
+	// differ only when a store declaration was followed, and every filesystem
+	// operation belongs to Root while the header belongs to Origin.
+	Root   string
+	Origin string
+
+	// Set when Root is a store. StoreID is what the store calls itself, which
+	// is not necessarily what its directory is called.
+	StoreID string
+	Store   *StoreInfo
+
+	// The configuration of the repo the resolution started from, which a store
+	// keeps none of. Empty unless Origin and Root differ.
+	OriginConfigFile    string
+	OriginConfigContent string
+
+	// Set when a store declaration could not be followed. The project is not
+	// empty in that case; it is unreadable, and saying so is the difference.
+	StoreProblem *StoreProblem
+}
+
+// FromStore reports whether this project reads its content from a store.
+func (i ProjectInfo) FromStore() bool {
+	return i.StoreID != "" || i.StoreProblem != nil
+}
+
+// ResolvedElsewhere reports whether the content came from a directory other
+// than the one the user is standing in.
+func (i ProjectInfo) ResolvedElsewhere() bool {
+	return i.Origin != "" && i.Root != "" && i.Origin != i.Root
 }
 
 type ProjectStatus struct {
@@ -253,18 +284,81 @@ func ParseProjectInfo(dir string) ProjectInfo {
 		}
 	}
 
-	// Config file: project.md takes priority over config.yaml
-	projectMd := filepath.Join(openspecDir, "project.md")
-	configYaml := filepath.Join(openspecDir, "config.yaml")
-	if b, err := os.ReadFile(projectMd); err == nil {
-		info.ConfigFile = "project.md"
-		info.ConfigContent = string(b)
-	} else if b, err := os.ReadFile(configYaml); err == nil {
-		info.ConfigFile = "config.yaml"
-		info.ConfigContent = string(b)
+	// Config file: project.md takes priority, then the two spellings OpenSpec
+	// accepts for the YAML configuration, .yaml before .yml.
+	info.ConfigFile, info.ConfigContent = readProjectConfig(dir)
+
+	// Identity. A directory is a store when it carries the metadata file, and
+	// that is checked with one stat before the registry is opened, so an
+	// ordinary project never pays for a registry parse.
+	info.Root = dir
+	info.Origin = dir
+	if si := storeInfoAt(dir); si != nil {
+		info.StoreID = si.ID
+		info.Store = si
 	}
 
 	return info
+}
+
+// readProjectConfig returns the display name and content of a directory's
+// OpenSpec configuration, or two empty strings when it has none.
+func readProjectConfig(dir string) (name, content string) {
+	openspecDir := filepath.Join(dir, "openspec")
+	for _, candidate := range []string{"project.md", "config.yaml", "config.yml"} {
+		if b, err := os.ReadFile(filepath.Join(openspecDir, candidate)); err == nil {
+			return candidate, string(b)
+		}
+	}
+	return "", ""
+}
+
+// ScanResolved reads the project reached from startDir, following a store
+// declaration when there is one.
+//
+// It returns the root the content was read from, which is the key the caller
+// files the result under: every later read and every write goes there, while
+// the origin travels along inside the info so the header can name it.
+func ScanResolved(startDir string) (string, ProjectStatus, error) {
+	res, ok := ResolveRoot(startDir)
+	if !ok {
+		return "", ProjectStatus{}, nil
+	}
+
+	files, err := ListOpenSpecContents(res.Root)
+	if err != nil {
+		// A store whose registered path went missing between resolution and
+		// reading leaves nothing to list. The problem is the report, not the
+		// listing error.
+		if res.Problem == nil {
+			return "", ProjectStatus{}, err
+		}
+		files = nil
+	}
+
+	info := ParseProjectInfo(res.Root)
+	info.Root = res.Root
+	info.Origin = res.Origin
+	info.StoreID = res.StoreID
+	info.StoreProblem = res.Problem
+	if res.Store != nil {
+		info.Store = res.Store
+	}
+
+	if info.ResolvedElsewhere() {
+		info.OriginConfigFile, info.OriginConfigContent = readProjectConfig(res.Origin)
+	}
+
+	// The git state is read for the open project only. Doing it during a walk
+	// would mean several processes per discovered store, which is what the
+	// picker cannot afford.
+	if info.Store != nil {
+		info.Store.Origin = res.Origin
+		g := ReadStoreGit(info.Store.Root)
+		info.Store.Git = &g
+	}
+
+	return res.Root, ProjectStatus{Files: files, Info: info}, nil
 }
 
 // ScanPaths parses a known list of project paths without walking the

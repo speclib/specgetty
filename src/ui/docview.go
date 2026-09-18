@@ -78,7 +78,7 @@ func (m model) docActive() bool {
 	info := m.projects[m.repoPaths[m.cursor]].Info
 	switch m.detailTab {
 	case tabConfig:
-		return info.ConfigFile != ""
+		return len(configPanes(info)) > 0
 	case tabSpecs:
 		// The specs tab has two halves. The vertical keys belong to the content
 		// only while the content holds the keyboard.
@@ -221,15 +221,20 @@ func (m model) currentDoc() (document, bool) {
 		return document{key: key, content: renderMarkdown(content, width)}, true
 
 	case m.level == levelProject && m.detailTab == tabConfig:
-		info := m.projects[project].Info
-		if info.ConfigFile == "" {
+		panes := m.currentConfigPanes()
+		if len(panes) == 0 {
 			return document{}, false
 		}
-		key := strings.Join([]string{project, "config", info.ConfigFile}, docKeySep)
-		if strings.HasSuffix(info.ConfigFile, ".md") {
-			return document{key: key, content: renderMarkdown(info.ConfigContent, width)}, true
+		i := m.configPaneIndex(panes)
+		pane := panes[i]
+		// Keyed by the pane, so selecting a different sub-tab is moving to a
+		// different document and starts at the top, by the same rule the spec
+		// list and the artifact sub-tabs already follow.
+		key := strings.Join([]string{project, "config", pane.label, pane.source}, docKeySep)
+		if pane.md {
+			return document{key: key, content: renderMarkdown(pane.content, width)}, true
 		}
-		return document{key: key, content: renderYAML(info.ConfigContent, width)}, true
+		return document{key: key, content: renderYAML(pane.content, width)}, true
 	}
 
 	return document{}, false

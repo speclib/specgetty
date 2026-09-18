@@ -21,23 +21,15 @@ func getDefaultConfigPath() string {
 	return filepath.Join(configDir, "specgetty", "config.yml")
 }
 
-// findOpenSpecProject walks up from startDir looking for a directory containing openspec/.
+// findOpenSpecProject walks up from startDir looking for a directory whose
+// openspec/ is one worth stopping at.
+//
+// A directory named openspec with nothing in it does not qualify. OpenSpec
+// added that rule when stores arrived: the recommended store layout puts one
+// at ~/openspec, and without the qualification that empty shell would make the
+// home directory capture every project beneath it.
 func findOpenSpecProject(startDir string) string {
-	dir, err := filepath.Abs(startDir)
-	if err != nil {
-		return ""
-	}
-	for {
-		candidate := filepath.Join(dir, "openspec")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "" // reached root
-		}
-		dir = parent
-	}
+	return scanner.FindRoot(startDir)
 }
 
 // expandScanDirs expands environment variables in the configured scan
@@ -140,7 +132,57 @@ func appFlags() []cli.Flag {
 	}
 }
 
-func main() {
+// runApp is the whole command-line surface's behaviour, separated from main so
+// that it can be driven by a test. Everything up to the point the terminal is
+// taken over is reachable that way, which `--debug` exercises end to end.
+func runApp(c *cli.Context) error {
+	config, err := scanner.ParseConfigFile(c.String("config"), defaultConfig)
+	if c.Args().Len() > 0 {
+
+		fmt.Println("Arguments given, skipping config")
+		config.ScanDirs.Include = c.Args().Slice()
+
+	} else {
+		if err != nil {
+			return err
+		}
+		expandScanDirs(config)
+	}
+
+	if c.Bool("debug") {
+		projects, err := scanner.Scan(config, c.Bool("ignore_dir_errors"))
+		if err != nil {
+			return err
+		}
+
+		for r, st := range projects {
+			fmt.Printf("%-40s %v\n", r, st.ScanTime)
+		}
+		return nil
+	}
+
+	startView, err := resolveStartView(c.String("view"), c.String("path"))
+	if err != nil {
+		return err
+	}
+
+	startupPath := resolveStartupPath(startView, c.String("path"))
+
+	fields, err := ui.ResolveFields(c.String("change-fields"), config.ChangeFields)
+	if err != nil {
+		return err
+	}
+
+	listMode, err := ui.ResolveListMode(c.String("change-mode"), config.ChangeMode)
+	if err != nil {
+		return err
+	}
+
+	return ui.Run(config, c.Bool("ignore_dir_errors"), version, startupPath, startView, fields, listMode)
+}
+
+// newApp builds the command-line application.
+func newApp() *cli.App {
 	app := cli.NewApp()
 	app.Name = "specgetty"
 	app.Version = version
@@ -150,61 +192,12 @@ func main() {
 		fmt.Printf("ERROR: Unknown command '%s'\n", cmd)
 	}
 	app.Flags = appFlags()
+	app.Action = runApp
+	return app
+}
 
-	app.Action = func(c *cli.Context) error {
-
-		config, err := scanner.ParseConfigFile(c.String("config"), defaultConfig)
-		if c.Args().Len() > 0 {
-
-			fmt.Println("Arguments given, skipping config")
-			config.ScanDirs.Include = c.Args().Slice()
-
-		} else {
-			if err != nil {
-				return err
-			}
-			expandScanDirs(config)
-		}
-
-		if c.Bool("debug") {
-			var projects scanner.ProjectMap
-			projects, err = scanner.Scan(config, c.Bool("ignore_dir_errors"))
-			if err != nil {
-				panic(err)
-			}
-
-			for r, st := range projects {
-				fmt.Printf("%-40s %v\n", r, st.ScanTime)
-			}
-			return nil
-		}
-
-		startView, err := resolveStartView(c.String("view"), c.String("path"))
-		if err != nil {
-			return err
-		}
-
-		startupPath := resolveStartupPath(startView, c.String("path"))
-
-		fields, err := ui.ResolveFields(c.String("change-fields"), config.ChangeFields)
-		if err != nil {
-			return err
-		}
-
-		listMode, err := ui.ResolveListMode(c.String("change-mode"), config.ChangeMode)
-		if err != nil {
-			return err
-		}
-
-		err = ui.Run(config, c.Bool("ignore_dir_errors"), version, startupPath, startView, fields, listMode)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
-	err := app.Run(os.Args)
-	if err != nil {
+func main() {
+	if err := newApp().Run(os.Args); err != nil {
 		fmt.Printf("%+v\n", err)
 	}
 }

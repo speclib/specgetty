@@ -58,6 +58,18 @@ var projectFields = []fieldDef[projectRow]{
 		value: func(r projectRow) string { return r.display },
 	},
 	{
+		// A store is not a project that happens to be called after its folder,
+		// and the row says so. Several stores commonly share one working copy,
+		// so without this the picker reads as a set of sibling projects.
+		id: "kind", header: "kind", width: 5,
+		value: func(r projectRow) string {
+			if r.info.StoreID != "" {
+				return "store"
+			}
+			return ""
+		},
+	},
+	{
 		id: "specs", header: "specs", width: 6,
 		value: func(r projectRow) string { return fmt.Sprintf("%d", r.info.SpecCount) },
 	},
@@ -95,7 +107,7 @@ func buildProjectRows(projects scanner.ProjectMap) []projectRow {
 	}
 	sort.Strings(paths)
 
-	names := projectDisplayNames(paths)
+	names := projectDisplayNamesFor(paths, projects)
 	rows := make([]projectRow, len(paths))
 	for i, p := range paths {
 		rows[i] = projectRow{
@@ -293,5 +305,9 @@ func (m model) choosePickerProject() (tea.Model, tea.Cmd) {
 	if cmd := m.startWatcher(r.path); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
+	// The rows carry what a walk can afford to read. Opening a project is the
+	// moment the rest is worth reading, which for a store means its git state,
+	// so the selected project is read once more on its own.
+	cmds = append(cmds, m.doScanSingle(r.path))
 	return m, tea.Batch(cmds...)
 }

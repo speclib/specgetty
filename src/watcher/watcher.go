@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,9 +19,18 @@ type Watcher struct {
 	done   chan struct{}
 }
 
-// New creates a Watcher that recursively watches dir and all its subdirectories.
-// It returns the watcher and any error from setup.
-func New(dir string) (*Watcher, error) {
+// New creates a Watcher that recursively watches every given directory and all
+// their subdirectories. It returns the watcher and any error from setup.
+//
+// More than one tree is watched when a project reads its content from a store:
+// the store's tree, where specs and changes move, and the originating repo's,
+// where the declaration pointing at the store lives. The second holds one file,
+// but editing that file changes everything on screen without touching the
+// store at all.
+//
+// A directory that does not exist is skipped rather than failing the whole
+// watcher, so a project with one readable tree still gets notifications.
+func New(dirs ...string) (*Watcher, error) {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -32,15 +42,35 @@ func New(dir string) (*Watcher, error) {
 		done:   make(chan struct{}),
 	}
 
-	// Add dir and all subdirectories
-	if err := w.addRecursive(dir); err != nil {
+	watched := 0
+	seen := make(map[string]bool, len(dirs))
+	for _, dir := range dirs {
+		if dir == "" || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			continue
+		}
+		if err := w.addRecursive(dir); err != nil {
+			fsw.Close()
+			return nil, err
+		}
+		watched++
+	}
+	if watched == 0 {
 		fsw.Close()
-		return nil, err
+		return nil, errNothingToWatch
 	}
 
 	go w.loop()
 	return w, nil
 }
+
+// errNothingToWatch is returned when none of the given directories exist. The
+// caller logs it and carries on without a watcher rather than failing to open
+// the project.
+var errNothingToWatch = errors.New("watcher: no directory to watch")
 
 // Events returns a channel that receives a value each time a debounced
 // filesystem change is detected. The channel is closed when the watcher stops.

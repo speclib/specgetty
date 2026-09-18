@@ -164,6 +164,19 @@ var (
 	dimSelectedStyle = lipgloss.NewStyle().
 				Background(lipgloss.Color("238")).
 				Foreground(lipgloss.Color("252"))
+
+	// The header's store mark. A chip rather than a glyph: it has to read the
+	// same in every terminal font, which a geometric symbol does not.
+	storeMarkStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("5")). // magenta
+			Foreground(lipgloss.Color("0")).
+			Bold(true).
+			Padding(0, 1)
+
+	// A store declaration that could not be followed, shown where a tab would
+	// otherwise report the project as empty.
+	warnStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("1")) // red
 )
 
 type model struct {
@@ -243,6 +256,12 @@ type model struct {
 	program           *tea.Program
 	version           string
 	watcher           *watcher.Watcher
+	watchedRoot       string
+
+	// Which configuration the config tab is showing. A project reading from a
+	// store has more than one, so the tab is a set of panes rather than a
+	// single document.
+	configPane int
 }
 
 func newModel(config *scanner.Config, ignoreDirErrors bool, version string) model {
@@ -329,8 +348,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y":
 				m.archiveState = archiveRunning
-				projectPath := m.repoPaths[m.cursor]
-				cmds = append(cmds, doArchiveChange(projectPath, m.archiveChangeName))
+				cmds = append(cmds, doArchiveChange(m.currentRoot(), m.archiveChangeName))
 			case "n", "esc":
 				m.archiveState = archiveIdle
 			}
@@ -349,8 +367,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y":
 				m.exportState = exportRunning
-				projectPath := m.repoPaths[m.cursor]
-				cmds = append(cmds, doExportChange(projectPath, m.exportDirName, m.exportChangeName, m.exportIsArchived))
+				cmds = append(cmds, doExportChange(m.currentRoot(), m.exportDirName, m.exportChangeName, m.exportIsArchived))
 			case "n", "esc":
 				m.exportState = exportIdle
 			}
@@ -369,8 +386,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y":
 				m.discardState = discardRunning
-				projectPath := m.repoPaths[m.cursor]
-				cmds = append(cmds, doDiscardChange(projectPath, m.discardChangeName))
+				cmds = append(cmds, doDiscardChange(m.currentRoot(), m.discardChangeName))
 			case "n", "esc":
 				m.discardState = discardIdle
 			}
@@ -552,6 +568,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "p":
+			// The cursor opens on the row whose root holds what is on screen.
+			// For a project that reads from a store that is the store's row,
+			// because the repo the user started in has no row of its own.
+			if len(m.repoPaths) > 0 && m.cursor < len(m.repoPaths) {
+				m.pickerKey = m.repoPaths[m.cursor]
+			}
 			m.pickerOpen = true
 			m.pickerSync()
 			if !m.pickerLoaded && !m.pickerLoading {
@@ -574,7 +596,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "s":
 			if len(m.repoPaths) > 0 {
 				m.scanning = true
-				cmds = append(cmds, m.doScanSingle(m.repoPaths[m.cursor]))
+				cmds = append(cmds, m.rescanCurrent())
 			}
 
 		case "l":
@@ -594,19 +616,33 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "tab":
 			// The specs tab has two halves, so tab moves the keyboard between
-			// them there, and on through the log panel when it is open.
-			// Elsewhere there is one main panel and tab only reaches the log.
+			// them there, and on through the log panel when it is open. The
+			// config tab's sub-tabs follow the same ring: each pane in turn,
+			// then the log, then back to the first pane. Elsewhere there is one
+			// main panel and tab only reaches the log.
 			onSpecs := m.level == levelProject && m.detailTab == tabSpecs &&
 				len(m.currentSpecNames()) > 0
+			configPanes := m.currentConfigPanes()
+			onConfig := m.level == levelProject && m.detailTab == tabConfig &&
+				len(configPanes) > 1
 			switch {
 			case m.focus == focusLog:
 				m.focus = m.defaultFocus()
+				if onConfig {
+					m.configPane = 0
+				}
 			case onSpecs && m.focus == focusSpecsList:
 				m.focus = focusSpecsContent
 			case onSpecs && m.logVisible:
 				m.focus = focusLog
 			case onSpecs:
 				m.focus = focusSpecsList
+			case onConfig && m.configPaneIndex(configPanes) < len(configPanes)-1:
+				m.configPane = m.configPaneIndex(configPanes) + 1
+			case onConfig && m.logVisible:
+				m.focus = focusLog
+			case onConfig:
+				m.configPane = 0
 			case m.logVisible:
 				m.focus = focusLog
 			}
@@ -772,7 +808,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.archiveResultMsg = msg.output
 		m.archiveState = archiveResult
 		if msg.ok && len(m.repoPaths) > 0 {
-			cmds = append(cmds, m.doScanSingle(m.repoPaths[m.cursor]))
+			cmds = append(cmds, m.rescanCurrent())
 		}
 
 	case discardMsg:
@@ -780,7 +816,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.discardResultMsg = msg.output
 		m.discardState = discardResult
 		if msg.ok && len(m.repoPaths) > 0 {
-			cmds = append(cmds, m.doScanSingle(m.repoPaths[m.cursor]))
+			cmds = append(cmds, m.rescanCurrent())
 		}
 
 	case exportMsg:
@@ -791,7 +827,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fsChangeMsg:
 		if m.level >= levelProject && len(m.repoPaths) > 0 {
 			m.scanning = true
-			cmds = append(cmds, m.doScanSingle(m.repoPaths[m.cursor]))
+			cmds = append(cmds, m.rescanCurrent())
 			if m.watcher != nil {
 				cmds = append(cmds, waitForFsChange(m.watcher))
 			}
@@ -808,7 +844,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.repoPaths = append(m.repoPaths, r)
 			}
 			sort.Strings(m.repoPaths)
-			m.displayNames = projectDisplayNames(m.repoPaths)
+			m.displayNames = projectDisplayNamesFor(m.repoPaths, m.projects)
 			if m.cursor >= len(m.repoPaths) {
 				m.cursor = max(0, len(m.repoPaths)-1)
 			}
@@ -817,10 +853,21 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// and the selection are preserved across it rather than reset.
 			m.syncCursor()
 
-			// Start watching the open project after its first scan.
-			if m.watcher == nil && len(m.repoPaths) > 0 {
-				if cmd := m.startWatcher(m.repoPaths[m.cursor]); cmd != nil {
-					cmds = append(cmds, cmd)
+			// Start watching the open project after its first scan. A rescan
+			// that resolved to a different root, which is what editing a
+			// `store:` key does, moves the watch with it rather than leaving
+			// it on a tree nothing is read from any more.
+			if len(m.repoPaths) > 0 {
+				root := m.repoPaths[m.cursor]
+				if m.watcher == nil {
+					if cmd := m.startWatcher(root); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+				} else if m.watchedRoot != root {
+					m.stopWatcher()
+					if cmd := m.startWatcher(root); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
 				}
 			}
 		}
@@ -853,19 +900,47 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // projectDisplayNames returns basenames for each path, disambiguating duplicates
 // by appending the parent directory name.
 func projectDisplayNames(paths []string) []string {
-	names := make([]string, len(paths))
-	baseCounts := make(map[string]int)
+	return disambiguate(paths, nil)
+}
 
-	for _, p := range paths {
-		base := filepath.Base(p)
-		baseCounts[base]++
+// projectDisplayNamesFor names each row the way the user should read it.
+//
+// A store is named by the id it declares for itself, not by the folder it
+// happens to sit in: several stores commonly share one working copy, and the
+// id is the name every other OpenSpec surface uses for it.
+func projectDisplayNamesFor(paths []string, projects scanner.ProjectMap) []string {
+	preferred := make([]string, len(paths))
+	for i, p := range paths {
+		if st, ok := projects[p]; ok && st.Info.StoreID != "" {
+			preferred[i] = st.Info.StoreID
+		}
+	}
+	return disambiguate(paths, preferred)
+}
+
+// disambiguate names each path, preferring the given name where one is set and
+// falling back to the basename, then qualifies any name that is not unique
+// with its parent directory. A store id colliding with a project name is
+// settled the same way two equal basenames are.
+func disambiguate(paths []string, preferred []string) []string {
+	names := make([]string, len(paths))
+	counts := make(map[string]int)
+
+	nameOf := func(i int) string {
+		if preferred != nil && preferred[i] != "" {
+			return preferred[i]
+		}
+		return filepath.Base(paths[i])
+	}
+
+	for i := range paths {
+		counts[nameOf(i)]++
 	}
 
 	for i, p := range paths {
-		base := filepath.Base(p)
-		if baseCounts[base] > 1 {
-			parent := filepath.Base(filepath.Dir(p))
-			names[i] = base + " (" + parent + ")"
+		base := nameOf(i)
+		if counts[base] > 1 {
+			names[i] = base + " (" + filepath.Base(filepath.Dir(p)) + ")"
 		} else {
 			names[i] = base
 		}
@@ -1078,6 +1153,7 @@ func (m *model) resetProjectState() {
 	m.specCursor = 0
 	m.changeCursor = 0
 	m.changeArtifactTab = 0
+	m.configPane = 0
 	m.selectedKey = ""
 	m.listMode = m.defaultMode
 	m.searchFocused = false
@@ -1094,21 +1170,72 @@ func (m model) doScan() tea.Cmd {
 	}
 }
 
-func (m model) doScanSingle(projectPath string) tea.Cmd {
+// doScanSingle reads one project, resolving startDir to the root its content
+// lives in.
+//
+// The argument is where to start looking, not where to read. For a project
+// that reads from a store those are two different directories, and starting
+// from the origin every time is what lets an edited `store:` key be picked up
+// by the next rescan.
+func (m model) doScanSingle(startDir string) tea.Cmd {
 	return func() tea.Msg {
-		files, err := scanner.ListOpenSpecContents(projectPath)
+		root, st, err := scanner.ScanResolved(startDir)
 		if err != nil {
 			return scanMsg{err: err}
 		}
-		info := scanner.ParseProjectInfo(projectPath)
-		projects := scanner.ProjectMap{
-			projectPath: scanner.ProjectStatus{
-				Files: files,
-				Info:  info,
-			},
+		if root == "" {
+			return scanMsg{projects: scanner.ProjectMap{}}
 		}
-		return scanMsg{projects: projects}
+		return scanMsg{projects: scanner.ProjectMap{root: st}}
 	}
+}
+
+// rescanCurrent rereads the open project from where its resolution started, so
+// that the store declaration is followed again rather than assumed.
+func (m model) rescanCurrent() tea.Cmd {
+	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
+		return nil
+	}
+	return m.doScanSingle(m.startDirOf(m.repoPaths[m.cursor]))
+}
+
+// currentRoot is the directory every filesystem operation on the open project
+// targets.
+//
+// It is the root the content was resolved to, never the repo the user started
+// in. The projects map is keyed by root for exactly this reason: archiving,
+// discarding and exporting all reach for the key, and a store-backed project
+// whose actions reached for the origin instead would create a discarded/
+// directory under a repo that holds no changes at all.
+func (m model) currentRoot() string {
+	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
+		return ""
+	}
+	return m.repoPaths[m.cursor]
+}
+
+// watchDirs is every tree the open project depends on.
+//
+// One for an ordinary project. Two when the content comes from a store: the
+// store's, where specs and changes move, and the originating repo's, which
+// holds a single file whose `store:` key decides which store is read at all.
+// Watching only the first would show stale content with no sign that anything
+// had happened.
+func (m model) watchDirs(root string) []string {
+	dirs := []string{filepath.Join(root, "openspec")}
+	if origin := m.startDirOf(root); origin != root {
+		dirs = append(dirs, filepath.Join(origin, "openspec"))
+	}
+	return dirs
+}
+
+// startDirOf returns the directory a project's resolution began at, which is
+// the project itself unless a store declaration was followed.
+func (m model) startDirOf(root string) string {
+	if info, ok := m.projects[root]; ok && info.Info.Origin != "" {
+		return info.Info.Origin
+	}
+	return root
 }
 
 func waitForFsChange(w *watcher.Watcher) tea.Cmd {
@@ -1121,14 +1248,19 @@ func waitForFsChange(w *watcher.Watcher) tea.Cmd {
 	}
 }
 
-func (m *model) startWatcher(projectPath string) tea.Cmd {
-	openspecDir := filepath.Join(projectPath, "openspec")
-	w, err := watcher.New(openspecDir)
+// startWatcher watches every tree the open project depends on.
+//
+// That is one tree for an ordinary project, and two when the content comes
+// from a store: the store's, where specs and changes move, and the originating
+// repo's, which holds the declaration that decides which store is read at all.
+func (m *model) startWatcher(root string) tea.Cmd {
+	w, err := watcher.New(m.watchDirs(root)...)
 	if err != nil {
 		log.Printf("watcher: failed to start: %v", err)
 		return nil
 	}
 	m.watcher = w
+	m.watchedRoot = root
 	return waitForFsChange(w)
 }
 
@@ -1137,6 +1269,7 @@ func (m *model) stopWatcher() {
 		m.watcher.Close()
 		m.watcher = nil
 	}
+	m.watchedRoot = ""
 }
 
 type archiveMsg struct {
@@ -1154,6 +1287,11 @@ type exportMsg struct {
 	output string
 }
 
+// doArchiveChange runs the OpenSpec CLI in the resolved root.
+//
+// For a store-backed project that is the store, not the repo the user started
+// in. The CLI would resolve the declaration for itself either way, but running
+// it where the content is keeps this command honest about what it touches.
 func doArchiveChange(projectPath string, changeName string) tea.Cmd {
 	return func() tea.Msg {
 		if _, err := exec.LookPath("openspec"); err != nil {
@@ -1458,7 +1596,8 @@ func (m model) renderDetailPanel(width int, height int) string {
 	if info.TasksTotal > 0 {
 		statsLine += fmt.Sprintf("  Tasks: %d/%d", info.TasksDone, info.TasksTotal)
 	}
-	headerContent := headerStyle.Render(currentProject) + "\n" + dimStyle.Render(statsLine)
+	headerContent := headerStyle.Render(headerName(info, currentProject)) +
+		storeMark(info) + "\n" + dimStyle.Render(statsLine)
 	// Vertical only. The horizontal half is the panel's job now, and keeping
 	// both would put the header two columns in while everything under it sits
 	// at one.
@@ -1473,13 +1612,19 @@ func (m model) renderDetailPanel(width int, height int) string {
 	// one.
 	boxHeight := height - 5
 
-	// The config tab names its file above the border. A line that says what the
-	// content is belongs with the tab bar; a line that reports on the content
-	// belongs inside. See openspec/specs/panel-layout.
-	if m.detailTab == tabConfig && info.ConfigFile != "" {
-		b.WriteString(dimStyle.Render("openspec/" + info.ConfigFile))
-		b.WriteString("\n\n")
-		boxHeight -= 2
+	// The config tab names its content above the border. A line that says what
+	// the content is belongs with the tab bar; a line that reports on the
+	// content belongs inside. See openspec/specs/panel-layout.
+	//
+	// With more than one configuration to show, the naming line becomes a row
+	// of sub-tabs. It names rather than reports, so it stays outside the box by
+	// the same rule.
+	if m.detailTab == tabConfig {
+		if panes := configPanes(info); len(panes) > 0 {
+			b.WriteString(m.renderConfigPaneRow(panes))
+			b.WriteString("\n\n")
+			boxHeight -= 2
+		}
 	}
 
 	if boxHeight < boxRows+1 {
@@ -1510,6 +1655,16 @@ func (m model) renderDetailPanel(width int, height int) string {
 // renderChangesTab draws the full-width change table, plus the search prompt
 // whenever a filter is active or being typed.
 func (m model) renderChangesTab(width int, height int) string {
+	// A store declaration that could not be followed leaves no changes to
+	// list, which is indistinguishable from a project that has none. The
+	// reason goes where the emptiness shows.
+	if len(m.repoPaths) > 0 && m.cursor < len(m.repoPaths) {
+		if line := storeProblemLine(m.projects[m.repoPaths[m.cursor]].Info); line != "" {
+			return warnStyle.Render(line) + "\n\n" +
+				dimStyle.Render("See the config tab's store details.")
+		}
+	}
+
 	rows := m.currentRows()
 	total := len(m.allRows())
 
@@ -1564,8 +1719,15 @@ func (m model) renderSpecsTab(width int, height int) string {
 	info := m.projects[m.repoPaths[m.cursor]].Info
 
 	if len(info.SpecNames) == 0 {
-		// Nothing to split, so nothing to tell apart: one box.
-		return contentBox(width, height, lit, dimStyle.Render("No specs found"))
+		// Nothing to split, so nothing to tell apart: one box. An unfollowed
+		// store declaration says why there is nothing, rather than letting the
+		// emptiness stand as the whole report.
+		body := dimStyle.Render("No specs found")
+		if line := storeProblemLine(info); line != "" {
+			body = warnStyle.Render(line) + "\n\n" +
+				dimStyle.Render("See the config tab's store details.")
+		}
+		return contentBox(width, height, lit, body)
 	}
 
 	listOuter, contentOuter := specsSplit(width)
@@ -1621,12 +1783,85 @@ func (m model) renderConfigTab(width int, height int) string {
 	}
 
 	info := m.projects[m.repoPaths[m.cursor]].Info
-	if info.ConfigFile == "" {
+	if len(configPanes(info)) == 0 {
 		return dimStyle.Render("No project configuration found")
 	}
 
-	// The source line is drawn by renderDetailPanel, above the border.
+	// The naming line, single or sub-tabbed, is drawn by renderDetailPanel
+	// above the border.
 	return m.docViewport.View()
+}
+
+// headerName is what the header calls the open project.
+//
+// The user is standing in the repo, so that is what the header names. A store
+// opened on its own account has no repo to name and is called by its id, which
+// is what every other OpenSpec surface calls it.
+func headerName(info scanner.ProjectInfo, root string) string {
+	if info.ResolvedElsewhere() {
+		return info.Origin
+	}
+	if info.StoreID != "" {
+		return info.StoreID
+	}
+	return root
+}
+
+// storeMark is the header's one sign that the content came from a store.
+//
+// It carries nothing else on purpose. The id, the path, the remote and the git
+// state are answers to a question asked once per project, not once per glance,
+// and they live on the config tab's details pane.
+func storeMark(info scanner.ProjectInfo) string {
+	if !info.FromStore() {
+		return ""
+	}
+	return " " + storeMarkStyle.Render("store")
+}
+
+// renderConfigPaneRow draws the config tab's naming line: one dimmed filename
+// when there is a single configuration, a row of sub-tabs when there is more.
+func (m model) renderConfigPaneRow(panes []configPane) string {
+	if len(panes) == 1 {
+		return dimStyle.Render(panes[0].source)
+	}
+	active := m.configPaneIndex(panes)
+	var b strings.Builder
+	for i, p := range panes {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		if i == active {
+			b.WriteString(activeTabStyle.Render(p.label))
+		} else {
+			b.WriteString(inactiveTabStyle.Render(p.label))
+		}
+	}
+	return b.String()
+}
+
+// configPaneIndex clamps the selected pane to the set this project has, so
+// switching from a store-backed project to a plain one cannot land past the
+// end.
+func (m model) configPaneIndex(panes []configPane) int {
+	if len(panes) == 0 {
+		return 0
+	}
+	if m.configPane < 0 {
+		return 0
+	}
+	if m.configPane >= len(panes) {
+		return len(panes) - 1
+	}
+	return m.configPane
+}
+
+// currentConfigPanes returns the open project's configuration panes.
+func (m model) currentConfigPanes() []configPane {
+	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
+		return nil
+	}
+	return configPanes(m.projects[m.repoPaths[m.cursor]].Info)
 }
 
 var (
@@ -2020,6 +2255,12 @@ func (m model) renderNavBar() string {
 				{"q", "quit"},
 				{"jk/\u2191\u2193", "navigate"},
 				{"\u2190\u2192/1-3", "tabs"},
+			}
+			if m.detailTab == tabConfig && len(m.currentConfigPanes()) > 1 {
+				keys = append(keys,
+					struct{ key, action string }{"tab", "config pane"},
+					struct{ key, action string }{"^f^b", "page"},
+					struct{ key, action string }{"gg/G", "ends"})
 			}
 			if m.detailTab == tabSpecs && len(m.currentSpecNames()) > 0 {
 				if m.focus == focusSpecsContent {

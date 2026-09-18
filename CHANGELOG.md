@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- OpenSpec stores are supported. A repo whose `openspec/` holds only a
+  `config.yaml` naming a `store:` now opens on that store's specs and changes
+  instead of reporting an empty project, resolved through the registry at
+  `$XDG_DATA_HOME/openspec/stores/registry.yaml` without calling the `openspec`
+  binary or touching the network.
+- The project header marks a project whose content comes from a store, and the
+  config tab explains the mark: it gains sub-tabs for the repo's own
+  configuration, the store's shared one, and a store report with the id, the
+  root path, the registered remote and branch, and the store working copy's
+  local git state (uncommitted changes, and how far ahead or behind its last
+  known upstream ref it is, read without fetching).
+- The project picker names a store by the id it declares for itself rather than
+  by the folder it sits in, and marks the row as a store. Repos that only point
+  at a store stay out of the list, so shared specs appear once rather than once
+  per repo reading them.
+- A store declaration that cannot be followed now says so where the project
+  would otherwise look empty, naming the declared id, the file that declared it
+  and the reason, rather than showing zero specs and zero changes.
+
+### Changed
+
+- The archive, discard and export actions act on the store a project resolves
+  to. Discarding a change in a store-backed project used to create an unused
+  `openspec/changes/discarded/` directory in the pointing repo and move nothing.
+- Filesystem watching covers both the store's tree and the pointing repo's, so
+  editing a `store:` key is picked up and the view follows it.
+- `openspec/config.yml` is now read wherever `openspec/config.yaml` is, matching
+  what OpenSpec itself accepts.
+- A directory named `openspec` holding neither a configuration nor any content
+  is no longer treated as a project. Without that rule a store kept at
+  `~/openspec` would make the home directory capture every project beneath it.
+
 ## [0.6.0] - 2026-09-18
 
 ### Changed

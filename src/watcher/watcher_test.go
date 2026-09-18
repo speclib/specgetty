@@ -116,3 +116,52 @@ func TestWatcherClose(t *testing.T) {
 		t.Fatal("expected events channel to be closed")
 	}
 }
+
+func TestWatchesSeveralTrees(t *testing.T) {
+	// A project reading from a store depends on two trees: the store's, where
+	// the content moves, and the repo's, which holds the declaration.
+	store := t.TempDir()
+	repo := t.TempDir()
+
+	w, err := New(store, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+
+	for _, dir := range []string{store, repo} {
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-w.Events():
+		case <-time.After(3 * time.Second):
+			t.Fatalf("no event for a write in %q", dir)
+		}
+	}
+}
+
+func TestSkipsADirectoryThatDoesNotExist(t *testing.T) {
+	real := t.TempDir()
+	w, err := New(real, filepath.Join(real, "nope"))
+	if err != nil {
+		t.Fatalf("a missing tree must be skipped, not fatal: %v", err)
+	}
+	defer w.Close()
+}
+
+func TestRefusesWhenThereIsNothingToWatch(t *testing.T) {
+	if w, err := New(filepath.Join(t.TempDir(), "nope")); err == nil {
+		w.Close()
+		t.Error("want an error when no given directory exists")
+	}
+}
+
+func TestIgnoresADuplicateTree(t *testing.T) {
+	dir := t.TempDir()
+	w, err := New(dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+}
