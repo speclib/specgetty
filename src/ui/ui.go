@@ -884,14 +884,14 @@ func (m *model) recalcLayout() {
 // to work with.
 //
 // Every consumer of this number must get the same one. The panel is drawn at
-// m.width and the box spends a column on each border, so its content is two
-// narrower. If a caller derives that separately and drifts, the lipgloss box
+// m.width and spends a column on each border and a column of inset inside each
+// border, so its content is four narrower. If a caller derives that separately and drifts, the lipgloss box
 // re-wraps the rows and the viewport's line count, and therefore its reported
 // position, stops matching the screen. That warning used to sit on docRegion
 // and on specsSplit, written twice and enforced nowhere, while three files
 // spelled the arithmetic out for themselves.
 func (m model) panelContentWidth() int {
-	w := m.width - 2
+	w := m.width - 4
 	if w < 1 {
 		w = 1
 	}
@@ -1371,7 +1371,7 @@ func (m model) renderTabHeader(width int) string {
 
 func (m model) renderDetailPanel(width int, height int) string {
 	if len(m.repoPaths) == 0 {
-		return "\n  " + dimStyle.Render("No project selected. Press p to pick one.")
+		return "\n" + dimStyle.Render("No project selected. Press p to pick one.")
 	}
 
 	// An open change fills the panel on its own: no project header, no tab bar,
@@ -1394,7 +1394,10 @@ func (m model) renderDetailPanel(width int, height int) string {
 		statsLine += fmt.Sprintf("  Tasks: %d/%d", info.TasksDone, info.TasksTotal)
 	}
 	headerContent := headerStyle.Render(currentProject) + "\n" + dimStyle.Render(statsLine)
-	b.WriteString(lipgloss.NewStyle().Padding(1, 1).Render(headerContent))
+	// Vertical only. The horizontal half is the panel's job now, and keeping
+	// both would put the header two columns in while everything under it sits
+	// at one.
+	b.WriteString(lipgloss.NewStyle().Padding(1, 0).Render(headerContent))
 	b.WriteString("\n")
 
 	b.WriteString(m.renderTabHeader(width))
@@ -1849,6 +1852,10 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 		Border(border).
 		BorderTop(false).
 		BorderForeground(borderColor).
+		// One column of air inside each border, so no view has to indent
+		// itself and none of them disagree about how far. In lipgloss v2
+		// Width is the total, so the padding comes out of the content.
+		Padding(0, 1).
 		Width(width).
 		Height(height).
 		MaxHeight(height + 2) // +2 for border lines
@@ -1964,7 +1971,8 @@ func (m model) renderNavBar() string {
 
 	// Hints are dropped from the end rather than allowed to run underneath the
 	// version on the right. A collided nav bar is worse than a short one.
-	budget := m.width - lipgloss.Width(right) - 2
+	// Two for the gutters at each end, two for the gap before the version.
+	budget := m.width - lipgloss.Width(right) - 4
 
 	var left strings.Builder
 	used := 0
@@ -1985,10 +1993,16 @@ func (m model) renderNavBar() string {
 		left.WriteString(navBarStyle.Render(" " + k.action))
 	}
 
+	// A gutter at each end to match the panel, and the fill between the hints
+	// and the version rendered through navBarStyle. Bare spaces here left an
+	// unpainted hole in the middle of a strip whose whole job is to mark the
+	// bottom edge of the screen.
+	gutter := navBarStyle.Render(" ")
+	fill := max(0, m.width-2-lipgloss.Width(left.String())-lipgloss.Width(right))
 	bar := lipgloss.PlaceHorizontal(
 		m.width,
 		lipgloss.Left,
-		left.String()+strings.Repeat(" ", max(0, m.width-lipgloss.Width(left.String())-lipgloss.Width(right)))+right,
+		gutter+left.String()+navBarStyle.Render(strings.Repeat(" ", fill))+right+gutter,
 		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(lipgloss.Color("236"))),
 	)
 

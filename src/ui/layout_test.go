@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Note for anyone wondering where the colour-forcing helper went: lipgloss v2
@@ -230,5 +231,123 @@ func TestEveryConsumerOfTheContentWidthAgrees(t *testing.T) {
 			}
 			m.detailTab = tabChanges
 		})
+	}
+}
+
+// --- the inset ---
+
+// stripANSI is deliberately not lipgloss.Width: these tests care about which
+// column a character sits in, and a width alone cannot tell a leading blank
+// from a missing one.
+func panelRows(s string) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if strings.HasPrefix(ansi.Strip(l), "│") {
+			out = append(out, ansi.Strip(l))
+		}
+	}
+	return out
+}
+
+func TestPanelContentStartsOneColumnInsideTheBorder(t *testing.T) {
+	// The misalignment this change exists to remove: the project header used
+	// to sit one column in and everything under it flush against the border.
+	m := makeViewModel()
+	m.syncDocument()
+
+	rows := panelRows(m.renderFrame())
+	if len(rows) < 6 {
+		t.Fatalf("expected a drawn panel, got %d rows", len(rows))
+	}
+	for i, r := range rows {
+		body := []rune(r)
+		if len(body) < 3 {
+			continue
+		}
+		if body[1] != ' ' {
+			t.Errorf("row %d starts flush against the border: %q", i, r)
+		}
+		if body[len(body)-2] != ' ' {
+			t.Errorf("row %d ends flush against the border: %q", i, r)
+		}
+	}
+}
+
+func TestTheHeaderAndTheRowsBelowItShareAColumn(t *testing.T) {
+	// The header carries padding of its own. If it kept the horizontal half it
+	// would sit two columns in while everything under it sat at one, which is
+	// the one thing the inset cannot be allowed to reintroduce.
+	m := makeViewModel()
+	m.syncDocument()
+
+	var project, table int
+	for _, r := range panelRows(m.renderFrame()) {
+		col := len([]rune(r)) - len([]rune(strings.TrimLeft(r, "│ ")))
+		switch {
+		case strings.Contains(r, "/p") && project == 0:
+			project = col
+		case strings.Contains(r, "name") && strings.Contains(r, "tasks") && table == 0:
+			table = col
+		}
+	}
+	if project == 0 || table == 0 {
+		t.Fatalf("did not find both rows (header %d, table %d)", project, table)
+	}
+	if project != table {
+		t.Errorf("the header starts at column %d and the table at %d; they must agree", project, table)
+	}
+
+	// The tab bar is measured separately and on the raw line. Its chips are
+	// painted blocks that begin with a space of their own, so on stripped text
+	// they look one column further in than they are drawn. What must hold is
+	// that the chip's paint starts right after the gutter.
+	for _, l := range strings.Split(m.renderFrame(), "\n") {
+		if !strings.Contains(ansi.Strip(l), "changes") || !strings.Contains(ansi.Strip(l), "config") {
+			continue
+		}
+		if !strings.HasPrefix(l, "\x1b[32m│\x1b[m \x1b[") {
+			t.Errorf("the tab bar's first chip does not begin one column inside the border: %q", l)
+		}
+		return
+	}
+	t.Fatal("no tab bar in the frame")
+}
+
+func TestSelectedRowKeepsTheGutterOnBothSides(t *testing.T) {
+	// The picker already draws its selected row this way. This is the change
+	// list catching up, not a new look.
+	m := makeViewModel()
+	m.syncDocument()
+
+	for _, l := range strings.Split(m.renderFrame(), "\n") {
+		if !strings.Contains(l, "\x1b[30;42m") {
+			continue
+		}
+		plain := []rune(ansi.Strip(l))
+		if plain[1] != ' ' || plain[len(plain)-2] != ' ' {
+			t.Errorf("the highlighted row touches a border: %q", ansi.Strip(l))
+		}
+		return
+	}
+	t.Fatal("no highlighted row in the frame")
+}
+
+func TestNavBarIndentsItsTextAndStillPaintsEveryColumn(t *testing.T) {
+	// A strip whose job is to mark the bottom edge of the screen must not have
+	// holes in it. The fill between the hints and the version used to be bare
+	// spaces, which left one.
+	m := makeViewModel()
+	bar := m.renderNavBar()
+
+	plain := []rune(ansi.Strip(bar))
+	if plain[0] != ' ' || plain[len(plain)-1] != ' ' {
+		t.Errorf("the nav bar text is not inset: %q", string(plain))
+	}
+	// Every run of spaces inside the bar must carry the background. A bare run
+	// is a hole.
+	for _, seg := range strings.Split(bar, "\x1b[m") {
+		if strings.TrimSpace(seg) == "" && strings.Contains(seg, "  ") && !strings.Contains(seg, "48;5;236") {
+			t.Errorf("an unpainted run of %d spaces in the nav bar", len(seg))
+		}
 	}
 }

@@ -403,8 +403,11 @@ func TestResizeRewrapsAndClamps(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	wide := updated.(model)
 
-	if wide.docViewport.Width() != 198 {
-		t.Errorf("viewport width %d, want 198 after the resize", wide.docViewport.Width())
+	// Asked for rather than restated: the panel's content width is derived in
+	// one place, and a test that hardcodes the number has to be edited every
+	// time the panel's chrome changes, which tells you nothing when it fails.
+	if want := wide.panelContentWidth(); wide.docViewport.Width() != want {
+		t.Errorf("viewport width %d, want %d after the resize", wide.docViewport.Width(), want)
 	}
 	if wide.docViewport.YOffset() > wide.docViewport.TotalLineCount() {
 		t.Errorf("offset %d points past the end of %d rows after re-wrapping",

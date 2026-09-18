@@ -231,10 +231,9 @@ func TestPositionReportedOnlyWhileTheContentIsFocused(t *testing.T) {
 // --- 4.8 wrapping respects the content half ---
 
 func TestSpecContentWrapsToItsOwnHalf(t *testing.T) {
-	listWidth, contentWidth := specsSplit(98)
-
 	long := strings.Repeat("word ", 60)
 	m := makeSpecsModel(t, map[string]string{"alpha": long})
+	listWidth, contentWidth := specsSplit(m.panelContentWidth())
 
 	if m.docViewport.Width() != contentWidth {
 		t.Errorf("viewport width is %d, want the content half %d (list %d)",

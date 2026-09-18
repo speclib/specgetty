@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Every view now has a column of air inside the panel border, on both sides.
+  Only the project header had it before, so the tab bars, the change list, the
+  specs split, the config pane and every markdown document sat flush against
+  the frame, and wrapped lines ended on the border itself. The change list's
+  selected row now has the same gutter the project picker already had.
+- The nav bar indents its text by a column at each end, and the gap between the
+  key hints and the version is painted rather than left bare. That gap used to
+  be a hole in the middle of the strip.
+
 ## [0.5.0] - 2026-09-18
 
 ### Added
