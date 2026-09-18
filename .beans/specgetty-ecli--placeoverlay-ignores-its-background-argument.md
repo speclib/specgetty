@@ -1,11 +1,11 @@
 ---
 # specgetty-ecli
 title: placeOverlay ignores its background argument
-status: in-progress
+status: completed
 type: bug
 priority: low
 created_at: 2026-09-15T20:46:59Z
-updated_at: 2026-09-18T09:21:44Z
+updated_at: 2026-09-18T09:28:05Z
 ---
 
 `placeOverlay` takes a `background` argument and never uses it.
@@ -57,3 +57,31 @@ minutes and makes the code honest.
 Nothing is broken for the user today. This is code that lies about itself, which
 matters mainly because the next person to touch overlays will believe the
 comment.
+
+
+## Summary of Changes
+
+Shipped in `0218bf4`, OpenSpec change `modal-takes-the-whole-frame`.
+
+The decision went to the first option: the full-frame modal is intended. It is
+how specgetty has looked since the first commit, and compositing would change
+how every modal reads for no reported complaint.
+
+- `placeOverlay` lost the `background` parameter it discarded, and is now
+  `modalFrame`, which is what it builds.
+- The comment in `View()` that promised a stacking order is gone. The order
+  there is precedence, not layering, and only one modal can be up at a time
+  because whatever holds the keyboard refuses the keys that would raise another.
+- The two test comments that repeated the same claim were corrected.
+
+The decision is recorded in `openspec/specs/modal-presentation/spec.md` rather
+than in a commit message, and pinned by
+`TestAModalReplacesTheFrameRatherThanCoveringIt`. That test was checked against
+a working composite implementation, which it fails.
+
+## Correction to this report
+
+The example given in conversation was wrong: pressing `a` with the picker open
+does nothing, because the picker refuses every key it does not bind. The
+observable case is pressing `a` from the change list, which leaves the
+confirmation alone on a blank frame.
