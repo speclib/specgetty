@@ -1230,27 +1230,29 @@ func (m model) renderFrame() string {
 		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, navBar)
 	}
 
-	// The picker is an overlay over the current view. Confirmation modals are
-	// drawn after it, so they sit on top.
+	// Each of these replaces the frame rather than being drawn over it, so the
+	// order below is precedence, not layering: whichever runs last is what the
+	// user sees. Only one can be up at a time in practice, because whatever
+	// holds the keyboard refuses the keys that would raise another.
 	if m.pickerOpen {
-		view = placeOverlay(m.width, m.height, m.renderPicker(), view)
+		view = modalFrame(m.width, m.height, m.renderPicker())
 	}
 
 	if m.askOpenPicker {
 		modal := modalStyle.Width(56 + modalChrome).Render(
 			"No OpenSpec project here.\n\nOpen the project picker? (y/n)")
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	}
 
 	// Modal overlays
 	if m.scanning {
 		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Scanning for OpenSpec sources...")
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	}
 	if m.err != nil {
 		errText := fmt.Sprintf("Error: %v", m.err)
 		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(errText)
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	}
 
 	// Archive modals
@@ -1266,10 +1268,10 @@ func (m model) renderFrame() string {
 			}
 		}
 		modal := modalStyle.Width(50 + modalChrome).Render(content)
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	case archiveRunning:
 		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Archiving...")
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	case archiveResult:
 		var prefix string
 		if m.archiveResultOk {
@@ -1279,7 +1281,7 @@ func (m model) renderFrame() string {
 		}
 		content := prefix + m.archiveResultMsg + "\n\nPress any key to dismiss."
 		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	}
 
 	// Discard modals
@@ -1295,10 +1297,10 @@ func (m model) renderFrame() string {
 			}
 		}
 		modal := modalStyle.Width(50 + modalChrome).Render(content)
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	case discardRunning:
 		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Discarding...")
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	case discardResult:
 		var prefix string
 		if m.discardResultOk {
@@ -1308,7 +1310,7 @@ func (m model) renderFrame() string {
 		}
 		content := prefix + m.discardResultMsg + "\n\nPress any key to dismiss."
 		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	}
 
 	// Export modals
@@ -1317,10 +1319,10 @@ func (m model) renderFrame() string {
 		destPath := exportDestPath(m.exportChangeName)
 		content := fmt.Sprintf("Export \"%s\"?\n\n→ %s\n\n(y/n)", m.exportChangeName, destPath)
 		modal := modalStyle.Width(60 + modalChrome).Render(content)
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	case exportRunning:
 		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Exporting...")
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	case exportResult:
 		var prefix string
 		if m.exportResultOk {
@@ -1330,7 +1332,7 @@ func (m model) renderFrame() string {
 		}
 		content := prefix + m.exportResultMsg + "\n\nPress any key to dismiss."
 		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
-		view = placeOverlay(m.width, m.height, modal, view)
+		view = modalFrame(m.width, m.height, modal)
 	}
 
 	return padToHeight(view, m.height)
@@ -1977,7 +1979,11 @@ func (m model) renderNavBar() string {
 	return bar
 }
 
-func placeOverlay(width, height int, modal, background string) string {
+// modalFrame builds a whole frame holding the modal and nothing else, centred
+// on blank space. It does not draw over the view it replaces, and it never took
+// a background to draw over: it used to accept one and discard it, which read
+// as compositing to everyone who saw the call.
+func modalFrame(width, height int, modal string) string {
 	return lipgloss.Place(
 		width, height,
 		lipgloss.Center, lipgloss.Center,

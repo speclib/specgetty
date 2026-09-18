@@ -15,8 +15,8 @@ import (
 // A golden-file comparison of View() would break on every styling tweak and
 // train whoever hits it to regenerate the file without reading it. Asserting
 // that a modal appears when its state is set, that the size guard fires, and
-// that overlays stack in the documented order survives cosmetic change and
-// still catches a real regression.
+// that the right modal wins when two states are set survives cosmetic change
+// and still catches a real regression.
 //
 // The cautionary tale is the picker misalignment of 2026-09-15: a test asserting
 // every line had the same width passed both with and without the bug, because
@@ -329,11 +329,12 @@ func TestViewExportModals(t *testing.T) {
 	})
 }
 
-// --- stacking order ---
+// --- precedence ---
 
-func TestConfirmationModalDrawsOverThePicker(t *testing.T) {
-	// The comment in View says confirmation modals are drawn after the picker
-	// so they sit on top. A question awaiting an answer must not be buried.
+func TestConfirmationModalWinsOverThePicker(t *testing.T) {
+	// A question awaiting an answer must not be the thing that loses. View
+	// draws confirmations after the picker, and each modal replaces the frame,
+	// so drawing last is what decides it.
 	// A change with all its tasks done, so the modal takes its plain branch and
 	// the assertion is about precedence rather than about which variant shows.
 	m := viewWithTasks(t, 4, 4)
@@ -346,19 +347,40 @@ func TestConfirmationModalDrawsOverThePicker(t *testing.T) {
 
 	got := viewOf(m)
 	if !strings.Contains(got, `Archive "alpha"?`) {
-		t.Errorf("the confirmation should be visible over the picker:\n%s", got)
+		t.Errorf("the confirmation should be the modal that shows:\n%s", got)
+	}
+	if strings.Contains(got, "Projects") {
+		t.Errorf("the picker should be gone, not behind the confirmation:\n%s", got)
+	}
+}
+
+func TestAModalReplacesTheFrameRatherThanCoveringIt(t *testing.T) {
+	// The full-frame modal is the intended design, not an accident of the
+	// helper. Pinning it here so the next person to touch overlays finds an
+	// assertion rather than guessing from a comment.
+	m := viewWithTasks(t, 4, 4)
+	plain := viewOf(m)
+	if !strings.Contains(plain, "alpha") {
+		t.Fatalf("expected the change list to name its rows:\n%s", plain)
 	}
 
-	// Note what is NOT asserted here: that the picker is still visible behind
-	// the modal. It is not. placeOverlay takes a `background` argument and
-	// never uses it, so each overlay replaces the whole screen rather than
-	// compositing onto it. Tracked separately; this test pins only the
-	// precedence, which holds either way.
+	m.archiveState = archiveConfirming
+	m.archiveChangeName = "alpha"
+
+	got := viewOf(m)
+	if !strings.Contains(got, `Archive "alpha"?`) {
+		t.Fatalf("the confirmation should show:\n%s", got)
+	}
+	for _, behind := range []string{"specs", "tasks", "proposal"} {
+		if strings.Contains(got, behind) {
+			t.Errorf("%q from the view behind is still drawn; a modal takes the whole frame:\n%s", behind, got)
+		}
+	}
 }
 
 func TestViewStaysWithinTheTerminalWithEveryOverlayUp(t *testing.T) {
-	// Overlays are composed by writing over the frame, so a modal wider or
-	// taller than the terminal would push the frame out of shape.
+	// A modal builds the frame it sits in, so one wider or taller than the
+	// terminal would push that frame out of shape.
 	m := makeViewModel()
 	m.pickerOpen = true
 	m.pickerAll = testProjectRows()

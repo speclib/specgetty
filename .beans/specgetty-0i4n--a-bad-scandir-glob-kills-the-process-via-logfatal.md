@@ -1,11 +1,11 @@
 ---
 # specgetty-0i4n
 title: a bad scandir glob kills the process via log.Fatal
-status: in-progress
+status: completed
 type: bug
 priority: normal
 created_at: 2026-09-15T20:16:30Z
-updated_at: 2026-09-18T09:21:44Z
+updated_at: 2026-09-18T09:25:50Z
 ---
 
 A scan directory glob whose parent cannot be read kills the process.
@@ -60,3 +60,26 @@ the flag already promises.
 Not fixed in `cover-scanner-and-export` because it is pre-existing and out of
 that change's scope, and because a test for it has to spawn a subprocess to
 survive.
+
+
+## Summary of Changes
+
+Shipped in `c2f6dcf`, OpenSpec change `survive-bad-scan-config`.
+
+The `log.Fatal` in `Walk`'s glob expansion now gets the same handling the walk
+loop below it already gave a directory it cannot read: logged and skipped when
+`ignore_dir_errors` is set, returned to the caller when it is not. The flag now
+covers the case it was named for.
+
+Two things came out of the fix that were not in the report:
+
+- Returning early from `Walk` would have deadlocked any caller ranging over the
+  results channel, because `close(results)` sat after `errors.Wait()` and was
+  reached on the happy path only. It is a `defer` at the top of `Walk` now.
+- `completeIncludeList` aliased `config.ScanDirs.Include` and was appended to,
+  which can write into the caller's config. It is a copy now.
+
+Covered by `TestWalkCarriesOnPastAGlobIntoAMissingDirectory` and
+`TestWalkReturnsTheGlobErrorWhenDirectoryErrorsAreNotIgnored` in
+`src/scanner/find_badconfig_test.go`. Both were confirmed to fail with the old
+code restored and building.

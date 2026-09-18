@@ -1,11 +1,11 @@
 ---
 # specgetty-knqz
 title: an empty exclude entry panics the scan
-status: in-progress
+status: completed
 type: bug
 priority: low
 created_at: 2026-09-15T20:16:30Z
-updated_at: 2026-09-18T09:21:44Z
+updated_at: 2026-09-18T09:25:50Z
 ---
 
 An empty entry in `scandirs.exclude` panics the scan.
@@ -43,3 +43,20 @@ stop the crash.
 
 Not fixed in `cover-scanner-and-export`: pre-existing and outside that change's
 scope.
+
+
+## Summary of Changes
+
+Shipped in `c2f6dcf`, OpenSpec change `survive-bad-scan-config`.
+
+`skip` now passes over an empty haystack entry and tests the leading slash with
+`strings.HasPrefix` rather than `f[0:1]`, so it cannot go out of range whatever
+the entry holds.
+
+The same bug sat on the other half of the config: `Walk` tested an include for a
+trailing `*` with `globPath[len(globPath)-1:]`, which panics on an empty include
+for the same reason. Fixed alongside it, since a YAML dash with nothing after it
+reaches both lists the same way.
+
+Covered by `TestSkipIgnoresEmptyExcludeEntries` and `TestWalkIgnoresAnEmptyInclude`.
+Both were confirmed to fail with the old code restored and building.
