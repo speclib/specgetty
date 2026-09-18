@@ -1,11 +1,11 @@
 ---
 # specgetty-0i4n
 title: a bad scandir glob kills the process via log.Fatal
-status: todo
+status: in-progress
 type: bug
 priority: normal
 created_at: 2026-09-15T20:16:30Z
-updated_at: 2026-09-15T20:16:30Z
+updated_at: 2026-09-18T09:21:44Z
 ---
 
 A scan directory glob whose parent cannot be read kills the process.

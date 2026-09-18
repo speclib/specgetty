@@ -1,11 +1,11 @@
 ---
 # specgetty-knqz
 title: an empty exclude entry panics the scan
-status: todo
+status: in-progress
 type: bug
 priority: low
 created_at: 2026-09-15T20:16:30Z
-updated_at: 2026-09-15T20:16:30Z
+updated_at: 2026-09-18T09:21:44Z
 ---
 
 An empty entry in `scandirs.exclude` panics the scan.

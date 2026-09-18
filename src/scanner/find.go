@@ -4,9 +4,9 @@ import (
 	"context"
 	"log"
 	"os"
-	"strings"
-	"path/filepath"
 	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/karrick/godirwalk"
 	"golang.org/x/sync/errgroup"
@@ -14,14 +14,20 @@ import (
 
 func skip(needle string, haystack []string) bool {
 	for _, f := range haystack {
+		// A YAML dash with nothing after it parses to an empty string. It
+		// excludes nothing, and it must not be indexed.
+		if f == "" {
+			continue
+		}
+
 		//FULL PATH COMPARISON
-		if(f[0:1]=="/"){
+		if strings.HasPrefix(f, "/") {
 			if f == needle {
 				return true
 			}
 
-		//PARTIAL PATH COMPARISON
-		} else{
+			//PARTIAL PATH COMPARISON
+		} else {
 			if f == path.Base(needle) {
 				return true
 			}
@@ -117,7 +123,13 @@ func Walk(ctx context.Context, config *Config, results chan string, ignore_dir_e
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	completeIncludeList := config.ScanDirs.Include
+	// Every return path has to close the channel. A caller ranging over it
+	// blocks forever otherwise, and the error paths below return early.
+	defer close(results)
+
+	// Copied rather than aliased: the expansion below appends to this list, and
+	// appending to config.ScanDirs.Include would reach into the caller's config.
+	completeIncludeList := make([]string, 0, len(config.ScanDirs.Include))
 
 	var errors errgroup.Group
 
@@ -125,18 +137,32 @@ func Walk(ctx context.Context, config *Config, results chan string, ignore_dir_e
 		j := i // copy loop variable
 		globPath := config.ScanDirs.Include[j]
 
-		if(string(globPath[len(globPath)-1:]) == "*"){
+		// An empty include matches nothing, and slicing it would panic.
+		if globPath == "" {
+			continue
+		}
+		completeIncludeList = append(completeIncludeList, globPath)
+
+		if strings.HasSuffix(globPath, "*") {
 			parent := filepath.Dir(globPath)
-			baseGlob := path.Base(globPath[0:len(globPath)-1])
+			baseGlob := path.Base(globPath[0 : len(globPath)-1])
 
 			entries, err := os.ReadDir(parent)
 			if err != nil {
-				log.Fatal(err)
+				// The same treatment the walk below gives a directory it
+				// cannot read. Expanding a glob used to call log.Fatal here,
+				// which took the whole process down and ignored the flag that
+				// exists to prevent exactly that.
+				if !ignore_dir_errors {
+					return err
+				}
+				log.Printf("ERROR: %s: %v", globPath, err)
+				continue
 			}
 
 			for _, e := range entries {
 				if strings.HasPrefix(e.Name(), baseGlob) {
-					completeIncludeList = append(completeIncludeList, parent + "/" + e.Name())
+					completeIncludeList = append(completeIncludeList, parent+"/"+e.Name())
 				}
 			}
 
@@ -163,7 +189,5 @@ func Walk(ctx context.Context, config *Config, results chan string, ignore_dir_e
 		})
 	}
 
-	err := errors.Wait()
-	close(results)
-	return err
+	return errors.Wait()
 }

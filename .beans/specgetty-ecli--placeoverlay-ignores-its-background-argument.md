@@ -1,11 +1,11 @@
 ---
 # specgetty-ecli
 title: placeOverlay ignores its background argument
-status: todo
+status: in-progress
 type: bug
 priority: low
 created_at: 2026-09-15T20:46:59Z
-updated_at: 2026-09-15T20:46:59Z
+updated_at: 2026-09-18T09:21:44Z
 ---
 
 `placeOverlay` takes a `background` argument and never uses it.

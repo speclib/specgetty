@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Building from source now needs Go 1.25 or newer, which the move to bubbletea
   v2 requires. Nothing about how specgetty behaves has changed.
 
+### Fixed
+
+- A scan directory that cannot be read no longer ends the program. An include
+  ending in `*` whose parent is missing, an unmounted drive or a path that
+  moved, used to exit specgetty from inside the full-screen view. It is now
+  logged and skipped, which is what `--ignore_dir_errors` always promised.
+- An empty entry under `scandirs.include` or `scandirs.exclude` no longer
+  crashes the scan. A YAML dash with nothing after it now matches nothing.
+
 ## [0.4.0] - 2026-09-15
 
 ### Added
