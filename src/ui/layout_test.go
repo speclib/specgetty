@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -226,9 +227,12 @@ func TestEveryConsumerOfTheContentWidthAgrees(t *testing.T) {
 		t.Run("document in the specs split", func(t *testing.T) {
 			m.detailTab = tabSpecs
 			m.recalcLayout()
-			_, want := specsSplit(m.contentBoxWidth())
+			// The specs tab splits the whole region into two bordered boxes, so
+			// the document gets what is inside the right-hand one.
+			_, contentOuter := specsSplit(m.panelContentWidth())
+			want := contentOuter - boxChrome
 			if w, _ := m.docRegion(); w != want {
-				t.Errorf("docRegion is %d wide at terminal width %d, the split's content half is %d",
+				t.Errorf("docRegion is %d wide at terminal width %d, the right box's inside is %d",
 					w, width, want)
 			}
 			m.detailTab = tabChanges
@@ -569,6 +573,104 @@ func TestEveryViewFitsTheTerminalWithTheBorderDrawn(t *testing.T) {
 					break
 				}
 			}
+		}
+	}
+}
+
+// --- the lit border follows the keyboard ---
+
+// litContentBorders reports, left to right and top to bottom, whether each
+// content box inside the panel is drawn in the active colour.
+//
+// Rows are filtered to those the panel's own side border starts, which keeps
+// the log panel out: it is a sibling of the panel, not a box inside it. The
+// panel's top border is built by hand and colours only its title, so it is not
+// readable this way and is checked through viewFocused instead.
+var contentBoxTop = regexp.MustCompile(`\x1b\[([0-9;]+)m╭`)
+
+func litContentBorders(frame string) []bool {
+	var out []bool
+	for _, l := range strings.Split(frame, "\n") {
+		if !strings.HasPrefix(ansi.Strip(l), "│") {
+			continue
+		}
+		for _, m := range contentBoxTop.FindAllStringSubmatch(l, -1) {
+			out = append(out, m[1] == "32")
+		}
+	}
+	return out
+}
+
+func specsFrame(t *testing.T, focus int, logOpen bool) string {
+	t.Helper()
+	m := makeSpecsModel(t, map[string]string{"alpha": numberedDoc(80), "beta": numberedDoc(60)})
+	m.logVisible = logOpen
+	m.focus = focus
+	m.recalcLayout()
+	m.syncDocument()
+	return m.renderFrame()
+}
+
+func TestTheLitBorderIsTheOneHoldingTheKeyboard(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		focus     int
+		wantInner []bool // list, content
+	}{
+		{"the spec list has it", focusSpecsList, []bool{true, false}},
+		{"the spec content has it", focusSpecsContent, []bool{false, true}},
+		{"the log panel has it", focusLog, []bool{false, false}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frame := specsFrame(t, tc.focus, true)
+			inner := litContentBorders(frame)
+			if len(inner) != len(tc.wantInner) {
+				t.Fatalf("found %d content borders, want %d", len(inner), len(tc.wantInner))
+			}
+			for i := range inner {
+				if inner[i] != tc.wantInner[i] {
+					t.Errorf("content border %d lit = %v, want %v", i, inner[i], tc.wantInner[i])
+				}
+			}
+		})
+	}
+}
+
+func TestTheTwoSpecsBordersAreNeverLitTogether(t *testing.T) {
+	for _, focus := range []int{focusSpecsList, focusSpecsContent, focusLog} {
+		inner := litContentBorders(specsFrame(t, focus, true))
+		n := 0
+		for _, l := range inner {
+			if l {
+				n++
+			}
+		}
+		if n > 1 {
+			t.Errorf("focus %d lit %d of the two specs borders; at most one holds the keyboard", focus, n)
+		}
+	}
+}
+
+func TestThePanelBorderStillMeansWhatItAlwaysMeant(t *testing.T) {
+	// The one thing this change must not move. The panel is lit whenever the
+	// keyboard is anywhere in the detail area, which is what it did before the
+	// content had borders of its own.
+	for _, tc := range []struct {
+		focus int
+		want  bool
+	}{
+		{focusDetail, true},
+		{focusSpecsList, true},
+		{focusSpecsContent, true},
+		{focusLog, false},
+	} {
+		m := makeViewModel()
+		m.focus = tc.focus
+		if got := m.viewFocused(viewDetail); got != tc.want {
+			t.Errorf("with focus %d the detail panel reads lit=%v, want %v", tc.focus, got, tc.want)
+		}
+		if got := m.viewFocused(viewLog); got == tc.want && tc.focus != focusLog {
+			t.Errorf("with focus %d the log panel reads lit=%v, want the opposite", tc.focus, got)
 		}
 	}
 }

@@ -43,7 +43,7 @@ func (m model) renderChangeDetail(r changeRow, artifactTab, width, height int) s
 	if boxHeight < boxRows+1 {
 		boxHeight = boxRows + 1
 	}
-	b.WriteString(contentBox(width, boxHeight, m.docViewport.View()))
+	b.WriteString(contentBox(width, boxHeight, m.focus != focusLog, m.docViewport.View()))
 
 	return b.String()
 }

@@ -30,9 +30,11 @@ func (m model) docRegion() (width, height int) {
 		height = panelH - 2 - boxRows
 
 	case m.detailTab == tabSpecs:
-		// The specs tab splits its width; the document is the content half.
-		_, contentWidth := specsSplit(width)
-		width = contentWidth
+		// The specs tab splits the region below the tab bar into two boxes, so
+		// the split is over the whole region and the document gets what is
+		// inside the right-hand one.
+		_, contentOuter := specsSplit(m.panelContentWidth())
+		width = contentOuter - boxChrome
 		height = panelH - 5 - boxRows
 
 	default:

@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a 20-row terminal shows nine changes where it showed eleven.
 - The config tab's filename now sits above that border rather than inside it,
   with the tab bar. It names what is in the box, the same job the tab chips do.
+- The specs tab draws its list and its document in separate borders, and the
+  one holding the keyboard is lit. `tab` moves between them, and until now the
+  only sign it had was the selected spec dimming. A border is lit whenever the
+  keyboard is inside it, so the panel border keeps meaning exactly what it did.
 
 ## [0.5.0] - 2026-09-18
 

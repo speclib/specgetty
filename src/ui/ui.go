@@ -927,10 +927,19 @@ func (m model) contentBoxWidth() int {
 
 // contentBox draws the border around a tab's content. No title: the tab bar
 // directly above it already names what is inside.
-func contentBox(width, height int, content string) string {
+//
+// lit follows containment: a border is drawn in the active colour when the
+// region holding the keyboard lies inside it. Borders nest, so the panel's and
+// this one can both be lit, and the innermost lit border is the region actually
+// receiving the keys.
+func contentBox(width, height int, lit bool, content string) string {
+	colour := lipgloss.Color("240")
+	if lit {
+		colour = lipgloss.Color("2")
+	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(colour).
 		Padding(0, 1).
 		Width(width).
 		Height(height).
@@ -1479,18 +1488,21 @@ func (m model) renderDetailPanel(width int, height int) string {
 	inner := boxHeight - boxRows
 	w := m.contentBoxWidth()
 
-	var content string
+	// The keyboard is inside the detail area unless the log panel has it, so
+	// that is what lights a single box. The specs tab has two and decides for
+	// itself which one is lit.
+	lit := m.focus != focusLog
+
 	switch m.detailTab {
 	case tabSpecs:
-		content = m.renderSpecsTab(w, inner)
+		b.WriteString(m.renderSpecsTab(width, boxHeight))
 	case tabChanges:
-		content = m.renderChangesTab(w, inner)
+		b.WriteString(contentBox(width, boxHeight, lit, m.renderChangesTab(w, inner)))
 	case tabConfig:
-		content = m.renderConfigTab(w, inner)
+		b.WriteString(contentBox(width, boxHeight, lit, m.renderConfigTab(w, inner)))
 	default:
-		content = m.renderNotImplemented(w, inner)
+		b.WriteString(contentBox(width, boxHeight, lit, m.renderNotImplemented(w, inner)))
 	}
-	b.WriteString(contentBox(width, boxHeight, content))
 
 	return b.String()
 }
@@ -1540,26 +1552,38 @@ func specsSplit(width int) (listWidth, contentWidth int) {
 	return listWidth, width - listWidth - 1 // 1 for the gap
 }
 
+// renderSpecsTab draws the two halves, each in its own border. width and height
+// are the whole region below the tab bar, because this function owns the chrome
+// rather than being handed the space inside it.
 func (m model) renderSpecsTab(width int, height int) string {
+	lit := m.focus != focusLog
 	if len(m.repoPaths) == 0 {
-		return "No project selected."
+		return contentBox(width, height, lit, "No project selected.")
 	}
 
 	info := m.projects[m.repoPaths[m.cursor]].Info
 
 	if len(info.SpecNames) == 0 {
-		return dimStyle.Render("No specs found")
+		// Nothing to split, so nothing to tell apart: one box.
+		return contentBox(width, height, lit, dimStyle.Render("No specs found"))
 	}
 
-	listWidth, contentWidth := specsSplit(width)
+	listOuter, contentOuter := specsSplit(width)
+	// The document is already wrapped to the right box's inside by docRegion,
+	// which is why only the list needs its own width here.
+	listWidth := listOuter - boxChrome
+	rows := height - boxRows
+	if rows < 1 {
+		rows = 1
+	}
 
 	// Render spec list
 	var listB strings.Builder
 	offset := 0
-	if m.specCursor >= height {
-		offset = m.specCursor - height + 1
+	if m.specCursor >= rows {
+		offset = m.specCursor - rows + 1
 	}
-	end := offset + height
+	end := offset + rows
 	if end > len(info.SpecNames) {
 		end = len(info.SpecNames)
 	}
@@ -1580,12 +1604,13 @@ func (m model) renderSpecsTab(width int, height int) string {
 		}
 	}
 
-	specList := truncateContent(listB.String(), height)
-	specContentStr := truncateContent(m.docViewport.View(), height)
+	specList := truncateContent(listB.String(), rows)
+	specContentStr := truncateContent(m.docViewport.View(), rows)
 
-	// Force fixed dimensions on both sides to prevent wrapping/flickering
-	leftBox := lipgloss.NewStyle().Width(listWidth).Height(height).MaxHeight(height).Render(specList)
-	rightBox := lipgloss.NewStyle().Width(contentWidth).Height(height).MaxHeight(height).Render(specContentStr)
+	// Each half says for itself whether the keyboard is in it. Both dim means
+	// the log panel has it.
+	leftBox := contentBox(listOuter, height, m.focus == focusSpecsList, specList)
+	rightBox := contentBox(contentOuter, height, m.focus == focusSpecsContent, specContentStr)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, " ", rightBox)
 }
