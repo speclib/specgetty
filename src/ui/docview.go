@@ -16,11 +16,10 @@ const docKeySep = "\x00"
 // docRegion returns the size of the scrolling region for whichever document
 // pane is on screen.
 //
-// The width has to match the content width of the panel exactly. If it does
-// not, the lipgloss box re-wraps the rows and the viewport's line count, and
-// therefore its reported position, stops matching the screen.
+// The width comes from panelContentWidth rather than being worked out here, so
+// that it cannot drift from the width the panel is actually drawn at.
 func (m model) docRegion() (width, height int) {
-	width = m.width - 2 // the panel content width that View passes down
+	width = m.panelContentWidth()
 	panelH := m.mainPanelHeight()
 
 	switch {

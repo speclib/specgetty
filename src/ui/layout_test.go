@@ -136,3 +136,99 @@ func TestPanelTopBorderHandlesALongTitle(t *testing.T) {
 		}
 	}
 }
+
+// --- the panel's content width ---
+
+// The panel's content width used to be derived in three files, each spelling
+// out m.width - 2 for itself, while the comments on docRegion and specsSplit
+// both warned that these must agree. These tests hold the agreement rather
+// than restating it in a fourth comment.
+
+func TestPanelContentWidthIsWhatThePanelActuallyDraws(t *testing.T) {
+	// Not m.width - 2 asserted against itself: the panel is rendered and the
+	// region between its borders is measured. If renderPanel ever draws its
+	// content at a different width than panelContentWidth reports, the
+	// document wraps somewhere other than where the viewport thinks it does,
+	// and the scroll percentage starts lying.
+	for _, width := range []int{60, 72, 100, 137} {
+		m := makeViewModel()
+		m.width = width
+		m.recalcLayout()
+
+		marker := strings.Repeat("x", m.panelContentWidth())
+		rendered := m.renderPanel(viewDetail, m.width, 3, marker)
+
+		var found bool
+		for _, line := range strings.Split(rendered, "\n") {
+			if !strings.Contains(line, "x") {
+				continue
+			}
+			found = true
+			// The marker fills the content region exactly, so the whole line
+			// is the two borders plus that region.
+			if got := lipgloss.Width(line); got != width {
+				t.Errorf("at width %d the content row measured %d", width, got)
+			}
+			if strings.Count(line, "x") != m.panelContentWidth() {
+				t.Errorf("at width %d the panel drew %d content columns, panelContentWidth says %d",
+					width, strings.Count(line, "x"), m.panelContentWidth())
+			}
+		}
+		if !found {
+			t.Errorf("at width %d the marker never reached the panel", width)
+		}
+	}
+}
+
+func TestPanelContentWidthNeverGoesBelowOne(t *testing.T) {
+	// renderFrame refuses to draw under 60 columns, but recalcLayout runs
+	// whenever a size arrives, and a viewport set to a negative width is a
+	// panic waiting for the next resize.
+	for _, width := range []int{1, 2, 3} {
+		m := makeViewModel()
+		m.width = width
+		if got := m.panelContentWidth(); got < 1 {
+			t.Errorf("at terminal width %d the content width came out %d", width, got)
+		}
+	}
+}
+
+func TestEveryConsumerOfTheContentWidthAgrees(t *testing.T) {
+	// The drift this guards against is a caller working the width out for
+	// itself again. Each case below is a place that used to.
+	for _, width := range []int{60, 80, 120} {
+		m := makeViewModel()
+		m.width = width
+
+		t.Run("log viewport", func(t *testing.T) {
+			m.logVisible = true
+			m.recalcLayout()
+			if got := m.logViewport.Width(); got != m.panelContentWidth() {
+				t.Errorf("log viewport is %d wide at terminal width %d, panel content is %d",
+					got, width, m.panelContentWidth())
+			}
+			m.logVisible = false
+		})
+
+		t.Run("document in an open change", func(t *testing.T) {
+			m.level = levelChange
+			m.recalcLayout()
+			if w, _ := m.docRegion(); w != m.panelContentWidth() {
+				t.Errorf("docRegion is %d wide at terminal width %d, panel content is %d",
+					w, width, m.panelContentWidth())
+			}
+			m.level = levelProject
+		})
+
+		t.Run("document in the specs split", func(t *testing.T) {
+			m.detailTab = tabSpecs
+			m.recalcLayout()
+			_, want := specsSplit(m.panelContentWidth())
+			if w, _ := m.docRegion(); w != want {
+				t.Errorf("docRegion is %d wide at terminal width %d, the split's content half is %d",
+					w, width, want)
+			}
+			m.detailTab = tabChanges
+		})
+	}
+}

@@ -1,0 +1,10 @@
+schema: tinychange
+created: 2026-09-18
+
+# No spec delta. Three places derive the panel's content width by writing
+# `m.width - 2`, and this change replaces them with one method that returns the
+# same number. Nothing the user can see changes, and no requirement moves.
+#
+# It ships on its own, ahead of pad-every-view, so that reverting the padding
+# does not also take the deduplication with it.
+skip_specs: true

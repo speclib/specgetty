@@ -875,9 +875,27 @@ func (m *model) recalcLayout() {
 
 	logHeight := m.logPanelHeight()
 	if logHeight > 0 {
-		m.logViewport.SetWidth(m.width - 2)
+		m.logViewport.SetWidth(m.panelContentWidth())
 		m.logViewport.SetHeight(logHeight)
 	}
+}
+
+// panelContentWidth is how many columns a view drawn inside the main panel has
+// to work with.
+//
+// Every consumer of this number must get the same one. The panel is drawn at
+// m.width and the box spends a column on each border, so its content is two
+// narrower. If a caller derives that separately and drifts, the lipgloss box
+// re-wraps the rows and the viewport's line count, and therefore its reported
+// position, stops matching the screen. That warning used to sit on docRegion
+// and on specsSplit, written twice and enforced nowhere, while three files
+// spelled the arithmetic out for themselves.
+func (m model) panelContentWidth() int {
+	w := m.width - 2
+	if w < 1 {
+		w = 1
+	}
+	return w
 }
 
 func (m model) mainPanelHeight() int {
@@ -1214,9 +1232,7 @@ func (m model) renderFrame() string {
 
 	panelH := m.mainPanelHeight()
 
-	// renderPanel takes the total box width; the content inside it is two
-	// columns narrower, one for each border.
-	detailContent := m.renderDetailPanel(m.width-2, panelH)
+	detailContent := m.renderDetailPanel(m.panelContentWidth(), panelH)
 	mainRow := m.renderPanel(viewDetail, m.width, panelH, detailContent)
 
 	// Nav bar
