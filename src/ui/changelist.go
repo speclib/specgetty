@@ -11,7 +11,7 @@ import (
 // The name line and the sub-tab row stay put; only the document scrolls. The
 // content comes from the viewport rather than being truncated, which is what
 // makes the rows below the fold reachable at all.
-func (m model) renderChangeDetail(r changeRow, artifactTab int) string {
+func (m model) renderChangeDetail(r changeRow, artifactTab, width, height int) string {
 	var b strings.Builder
 
 	state := "active"
@@ -37,7 +37,13 @@ func (m model) renderChangeDetail(r changeRow, artifactTab int) string {
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString(m.docViewport.View())
+
+	// The change name and the sub-tab row are chrome; the artifact is content.
+	boxHeight := height - 2
+	if boxHeight < boxRows+1 {
+		boxHeight = boxRows + 1
+	}
+	b.WriteString(contentBox(width, boxHeight, m.docViewport.View()))
 
 	return b.String()
 }

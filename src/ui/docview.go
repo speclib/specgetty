@@ -19,24 +19,27 @@ const docKeySep = "\x00"
 // The width comes from panelContentWidth rather than being worked out here, so
 // that it cannot drift from the width the panel is actually drawn at.
 func (m model) docRegion() (width, height int) {
-	width = m.panelContentWidth()
+	// Inside the tab's own border, not the panel's: the document is drawn in
+	// the box, so it has to be wrapped to the box.
+	width = m.contentBoxWidth()
 	panelH := m.mainPanelHeight()
 
 	switch {
 	case m.level == levelChange:
-		// The change name line and the sub-tab row stay put above the document.
-		height = panelH - 2
+		// The change name line and the sub-tab row stay put above the box.
+		height = panelH - 2 - boxRows
 
 	case m.detailTab == tabSpecs:
 		// The specs tab splits its width; the document is the content half.
 		_, contentWidth := specsSplit(width)
 		width = contentWidth
-		height = panelH - 5
+		height = panelH - 5 - boxRows
 
 	default:
 		// The project header takes four rows and the tab bar one, then the
-		// config pane's own source line and the blank line under it.
-		height = panelH - 5 - 2
+		// config pane's source line and the blank line under it, all above the
+		// box.
+		height = panelH - 5 - 2 - boxRows
 	}
 
 	if width < 1 {

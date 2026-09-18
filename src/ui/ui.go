@@ -907,6 +907,37 @@ func (m model) panelContentWidth() int {
 	return w
 }
 
+// The content of a tab sits in a border of its own. These are what that border
+// costs: a column of border and a column of inset on each side, and a row of
+// border top and bottom.
+const (
+	boxChrome = 4
+	boxRows   = 2
+)
+
+// contentBoxWidth is how many columns a tab's content has inside its own
+// border. panelContentWidth is what the box itself is drawn at.
+func (m model) contentBoxWidth() int {
+	w := m.panelContentWidth() - boxChrome
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
+// contentBox draws the border around a tab's content. No title: the tab bar
+// directly above it already names what is inside.
+func contentBox(width, height int, content string) string {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1).
+		Width(width).
+		Height(height).
+		MaxHeight(height).
+		Render(content)
+}
+
 func (m model) mainPanelHeight() int {
 	logH := m.logPanelHeight()
 	if logH > 0 {
@@ -1403,7 +1434,7 @@ func (m model) renderDetailPanel(width int, height int) string {
 	// so its artifact sub-tabs own the full width and their own key axis.
 	if m.level == levelChange {
 		if r, ok := m.selectedRow(); ok {
-			return m.renderChangeDetail(r, m.changeArtifactTab)
+			return m.renderChangeDetail(r, m.changeArtifactTab, width, height)
 		}
 	}
 
@@ -1428,22 +1459,38 @@ func (m model) renderDetailPanel(width int, height int) string {
 	b.WriteString(m.renderTabHeader(width))
 	b.WriteString("\n")
 
-	// Tab content (height minus header 4 lines (2 content + 2 padding) and tab header 1 line)
-	contentHeight := height - 5
-	if contentHeight < 1 {
-		contentHeight = 1
+	// The region below the tab bar, which is what the box is drawn at. The
+	// header takes four rows (two of content, two of padding) and the tab bar
+	// one.
+	boxHeight := height - 5
+
+	// The config tab names its file above the border. A line that says what the
+	// content is belongs with the tab bar; a line that reports on the content
+	// belongs inside. See openspec/specs/panel-layout.
+	if m.detailTab == tabConfig && info.ConfigFile != "" {
+		b.WriteString(dimStyle.Render("openspec/" + info.ConfigFile))
+		b.WriteString("\n\n")
+		boxHeight -= 2
 	}
 
+	if boxHeight < boxRows+1 {
+		boxHeight = boxRows + 1
+	}
+	inner := boxHeight - boxRows
+	w := m.contentBoxWidth()
+
+	var content string
 	switch m.detailTab {
 	case tabSpecs:
-		b.WriteString(m.renderSpecsTab(width, contentHeight))
+		content = m.renderSpecsTab(w, inner)
 	case tabChanges:
-		b.WriteString(m.renderChangesTab(width, contentHeight))
+		content = m.renderChangesTab(w, inner)
 	case tabConfig:
-		b.WriteString(m.renderConfigTab(width, contentHeight))
+		content = m.renderConfigTab(w, inner)
 	default:
-		b.WriteString(m.renderNotImplemented(width, contentHeight))
+		content = m.renderNotImplemented(w, inner)
 	}
+	b.WriteString(contentBox(width, boxHeight, content))
 
 	return b.String()
 }
@@ -1553,12 +1600,8 @@ func (m model) renderConfigTab(width int, height int) string {
 		return dimStyle.Render("No project configuration found")
 	}
 
-	// The source line stays put above the scrolling region.
-	var b strings.Builder
-	b.WriteString(dimStyle.Render("openspec/" + info.ConfigFile))
-	b.WriteString("\n\n")
-	b.WriteString(m.docViewport.View())
-	return b.String()
+	// The source line is drawn by renderDetailPanel, above the border.
+	return m.docViewport.View()
 }
 
 var (

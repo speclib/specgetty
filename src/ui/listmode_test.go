@@ -145,7 +145,7 @@ func TestNoModeIsSpelledOpenAnywhereTheUserLooks(t *testing.T) {
 
 	r := changeRow{ci: scanner.ChangeInfo{Name: "x"}}
 	m.level = levelChange
-	if got := m.renderChangeDetail(r, 0); strings.Contains(got, "(open)") {
+	if got := m.renderChangeDetail(r, 0, m.panelContentWidth(), m.mainPanelHeight()); strings.Contains(got, "(open)") {
 		t.Errorf("the open-change header still says (open):\n%s", got)
 	}
 }

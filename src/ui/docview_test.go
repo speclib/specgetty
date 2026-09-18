@@ -406,7 +406,7 @@ func TestResizeRewrapsAndClamps(t *testing.T) {
 	// Asked for rather than restated: the panel's content width is derived in
 	// one place, and a test that hardcodes the number has to be edited every
 	// time the panel's chrome changes, which tells you nothing when it fails.
-	if want := wide.panelContentWidth(); wide.docViewport.Width() != want {
+	if want := wide.contentBoxWidth(); wide.docViewport.Width() != want {
 		t.Errorf("viewport width %d, want %d after the resize", wide.docViewport.Width(), want)
 	}
 	if wide.docViewport.YOffset() > wide.docViewport.TotalLineCount() {
@@ -477,9 +477,27 @@ func TestConfigTabScrollsAndKeepsItsSourceLine(t *testing.T) {
 		t.Error("the config tab did not scroll")
 	}
 
-	out := m.renderConfigTab(m.width-2, m.mainPanelHeight())
-	if !strings.Contains(out, "openspec/project.md") {
-		t.Error("the file source line should stay above the scrolling region")
+	// The source line names the content, so it is drawn above the content's
+	// border rather than inside it. Asserted on the frame, because that is the
+	// only place both the line and the border exist.
+	var sawSource, sawBorder bool
+	for _, l := range strings.Split(m.renderFrame(), "\n") {
+		plain := ansi.Strip(l)
+		if strings.Contains(plain, "openspec/project.md") {
+			if sawBorder {
+				t.Error("the file source line is inside the content border, not above it")
+			}
+			sawSource = true
+		}
+		if strings.Contains(plain, "╭") && !strings.HasPrefix(plain, "╭") {
+			sawBorder = true
+		}
+	}
+	if !sawSource {
+		t.Error("the file source line is missing from the frame")
+	}
+	if !sawBorder {
+		t.Error("the content border is missing from the frame")
 	}
 }
 

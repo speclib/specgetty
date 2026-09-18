@@ -216,9 +216,9 @@ func TestEveryConsumerOfTheContentWidthAgrees(t *testing.T) {
 		t.Run("document in an open change", func(t *testing.T) {
 			m.level = levelChange
 			m.recalcLayout()
-			if w, _ := m.docRegion(); w != m.panelContentWidth() {
-				t.Errorf("docRegion is %d wide at terminal width %d, panel content is %d",
-					w, width, m.panelContentWidth())
+			if w, _ := m.docRegion(); w != m.contentBoxWidth() {
+				t.Errorf("docRegion is %d wide at terminal width %d, the content box is %d",
+					w, width, m.contentBoxWidth())
 			}
 			m.level = levelProject
 		})
@@ -226,7 +226,7 @@ func TestEveryConsumerOfTheContentWidthAgrees(t *testing.T) {
 		t.Run("document in the specs split", func(t *testing.T) {
 			m.detailTab = tabSpecs
 			m.recalcLayout()
-			_, want := specsSplit(m.panelContentWidth())
+			_, want := specsSplit(m.contentBoxWidth())
 			if w, _ := m.docRegion(); w != want {
 				t.Errorf("docRegion is %d wide at terminal width %d, the split's content half is %d",
 					w, width, want)
@@ -282,21 +282,29 @@ func TestTheHeaderAndTheRowsBelowItShareAColumn(t *testing.T) {
 	m := makeViewModel()
 	m.syncDocument()
 
-	var project, table int
+	var project, box, table int
 	for _, r := range panelRows(m.renderFrame()) {
 		col := len([]rune(r)) - len([]rune(strings.TrimLeft(r, "│ ")))
 		switch {
 		case strings.Contains(r, "/p") && project == 0:
 			project = col
+		case strings.Contains(r, "╭") && box == 0:
+			box = col
 		case strings.Contains(r, "name") && strings.Contains(r, "tasks") && table == 0:
 			table = col
 		}
 	}
-	if project == 0 || table == 0 {
-		t.Fatalf("did not find both rows (header %d, table %d)", project, table)
+	if project == 0 || box == 0 || table == 0 {
+		t.Fatalf("did not find all three rows (header %d, box %d, table %d)", project, box, table)
 	}
-	if project != table {
-		t.Errorf("the header starts at column %d and the table at %d; they must agree", project, table)
+	// The header and the content border are siblings under the panel, so they
+	// share a column. The table is inside that border, so it sits further in by
+	// exactly the border and its inset.
+	if project != box {
+		t.Errorf("the header starts at column %d and the content border at %d; they must agree", project, box)
+	}
+	if table != box+2 {
+		t.Errorf("the table starts at column %d, want %d: one for the border, one for its inset", table, box+2)
 	}
 
 	// The tab bar is measured separately and on the raw line. Its chips are
@@ -434,6 +442,133 @@ func TestWiderGapsShiftWhenColumnsAreDropped(t *testing.T) {
 				names[i] = d.header
 			}
 			t.Errorf("at width %d, %d columns survive (%v), want %d", tc.width, len(kept), names, tc.want)
+		}
+	}
+}
+
+// --- the content border ---
+
+// borderRow reports the index of the content border's top row, and -1 when
+// there is none. The panel's own top border starts the string, so a corner
+// anywhere else is the content box.
+func borderRow(frame string) int {
+	for i, l := range strings.Split(frame, "\n") {
+		p := ansi.Strip(l)
+		if strings.Contains(p, "╭") && !strings.HasPrefix(p, "╭") {
+			return i
+		}
+	}
+	return -1
+}
+
+func rowOf(frame, needle string) int {
+	for i, l := range strings.Split(frame, "\n") {
+		if strings.Contains(ansi.Strip(l), needle) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestTheContentBorderSitsDirectlyUnderTheTabBar(t *testing.T) {
+	// No blank row between them: the chips have to read as tabs belonging to
+	// the box, which is the whole point of drawing it.
+	m := makeViewModel()
+	m.syncDocument()
+	frame := m.renderFrame()
+
+	tabs := rowOf(frame, "changes")
+	box := borderRow(frame)
+	if tabs < 0 || box < 0 {
+		t.Fatalf("frame is missing the tab bar (%d) or the border (%d)", tabs, box)
+	}
+	if box != tabs+1 {
+		t.Errorf("the border is on row %d and the tab bar on row %d; want them adjacent", box, tabs)
+	}
+}
+
+func TestTheSearchPromptIsInsideTheBorder(t *testing.T) {
+	// It reports how many rows the box is showing, so it belongs to the box.
+	// The config tab's filename names the box instead, and goes above it; that
+	// pairing is what openspec/specs/panel-layout calls chrome and content.
+	m := makeViewModel()
+	m.searchInput.SetValue("alpha")
+	m.searchFocused = true
+	m.syncDocument()
+	frame := m.renderFrame()
+
+	box := borderRow(frame)
+	prompt := rowOf(frame, "shown")
+	if box < 0 || prompt < 0 {
+		t.Fatalf("frame is missing the border (%d) or the prompt (%d)", box, prompt)
+	}
+	if prompt < box {
+		t.Errorf("the search prompt is on row %d, above the border on row %d", prompt, box)
+	}
+}
+
+func TestAnOpenChangeBoxesItsArtifactAndNotItsHeader(t *testing.T) {
+	m := viewWithTasks(t, 4, 4)
+	m.level = levelChange
+	m.syncDocument()
+	frame := m.renderFrame()
+
+	name := rowOf(frame, "alpha")
+	box := borderRow(frame)
+	if name < 0 || box < 0 {
+		t.Fatalf("frame is missing the change name (%d) or the border (%d)", name, box)
+	}
+	if name > box {
+		t.Errorf("the change name is on row %d, inside the border on row %d", name, box)
+	}
+}
+
+func TestTheChangeTableKeepsItsColumnsInsideTheBorder(t *testing.T) {
+	// The border takes four columns off the table. At the narrowest terminal
+	// specgetty draws, that must not cost a column that used to fit.
+	m := makeViewModel()
+	m.width, m.height = 60, 20
+	m.recalcLayout()
+	m.syncDocument()
+
+	frame := m.renderFrame()
+	header := ""
+	for _, l := range strings.Split(frame, "\n") {
+		if p := ansi.Strip(l); strings.Contains(p, "name") && strings.Contains(p, "tasks") {
+			header = p
+			break
+		}
+	}
+	if header == "" {
+		t.Fatal("no table header in the frame at 60x20")
+	}
+	for _, col := range []string{"name", "tasks", "specs"} {
+		if !strings.Contains(header, col) {
+			t.Errorf("the %q column was dropped at 60 columns: %q", col, header)
+		}
+	}
+}
+
+func TestEveryViewFitsTheTerminalWithTheBorderDrawn(t *testing.T) {
+	for _, sz := range [][2]int{{100, 30}, {72, 24}, {60, 20}} {
+		for _, tab := range []int{tabChanges, tabSpecs, tabConfig} {
+			m := makeViewModel()
+			m.width, m.height = sz[0], sz[1]
+			m.detailTab = tab
+			m.focus = m.defaultFocus()
+			m.recalcLayout()
+			m.syncDocument()
+
+			lines := strings.Split(m.renderFrame(), "\n")
+			if len(lines) != m.height {
+				t.Errorf("tab %d at %dx%d is %d lines, want %d", tab, sz[0], sz[1], len(lines), m.height)
+			}
+			for i, l := range lines {
+				if w := lipgloss.Width(l); w != m.width {
+					t.Errorf("tab %d at %dx%d: line %d is %d columns, want %d", tab, sz[0], sz[1], i, w, m.width)
+					break
+				}
+			}
 		}
 	}
 }

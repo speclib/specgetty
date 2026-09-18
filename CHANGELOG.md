@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sit a single space from the value beside it. At narrow terminals a column is
   now dropped two columns sooner, since the wider gaps come out of the same
   budget.
+- The content of each tab is drawn in a border of its own, directly under the
+  tab bar, so the chips read as tabs belonging to what is below them. An open
+  change gets the same treatment around its artifact. The border costs two rows,
+  so a 20-row terminal shows nine changes where it showed eleven.
+- The config tab's filename now sits above that border rather than inside it,
+  with the tab bar. It names what is in the box, the same job the tab chips do.
 
 ## [0.5.0] - 2026-09-18
 

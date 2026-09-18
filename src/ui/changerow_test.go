@@ -468,7 +468,7 @@ func TestRenderChangeDetailShowsNameAndTabs(t *testing.T) {
 		t.Fatal("no change selected")
 	}
 
-	got := m.renderChangeDetail(r, 0)
+	got := m.renderChangeDetail(r, 0, m.panelContentWidth(), m.mainPanelHeight())
 	for _, want := range []string{"alpha", "active", "proposal", "tasks", "why this"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("detail missing %q, got:\n%s", want, got)
@@ -476,7 +476,7 @@ func TestRenderChangeDetailShowsNameAndTabs(t *testing.T) {
 	}
 
 	r.archived = true
-	if got := m.renderChangeDetail(r, 0); !strings.Contains(got, "archived") {
+	if got := m.renderChangeDetail(r, 0, m.panelContentWidth(), m.mainPanelHeight()); !strings.Contains(got, "archived") {
 		t.Errorf("archived change should say so, got:\n%s", got)
 	}
 }
