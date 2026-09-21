@@ -1,11 +1,11 @@
 ---
 # specgetty-1q1c
 title: extra view layer for Spec
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-09-21T15:56:05Z
-updated_at: 2026-09-21T18:08:39Z
+updated_at: 2026-09-21T18:22:47Z
 blocked_by:
     - specgetty-9xi9
 ---
@@ -105,3 +105,37 @@ Three lines to edit here once `9xi9` lands:
   card
 
 Nothing in `9xi9` refers to this change.
+
+
+## Summary of Changes
+
+Shipped as OpenSpec change `open-a-spec-in-detail`, commit `af367e7`.
+
+`enter` on the specs tab now opens the selected spec at a third navigation
+level: an outline of its requirements and scenarios on the left, a card showing
+whichever node the cursor is on at the right. `tab` moves the keyboard between
+the halves, `esc` returns to the list with the same spec selected.
+
+What was built:
+
+- `src/ui/specparse.go` parses a spec into Purpose, requirements and scenarios,
+  with each scenario's clauses split into keyword and text. It accepts all 24
+  live specs in this repository (148 requirements, 464 scenarios) and refuses a
+  file that yields no requirements or a requirement with no scenarios, so a spec
+  it cannot navigate reports why rather than opening empty.
+- `src/ui/specdetail.go` holds the split, the outline and the card. A label too
+  long for the outline wraps rather than being cut, and the cursor still moves
+  one node per keystroke however many rows that node occupies. Every row of the
+  selected node is highlighted, and the outline scrolls a whole node into view.
+- The card lays a clause out with its keyword on its own row and the text under
+  a hanging indent, which is the reading view the bean asked for. Backticked
+  spans are styled and their marks dropped.
+- Each node is remembered by path rather than by index, so a rescan that inserts
+  a scenario above the cursor leaves the cursor where it was.
+- Paging keys (`^f`, `^b`, `^d`, `^u`, `gg`, `G`) follow the keyboard between the
+  two halves, with the outline's page walking node heights until one pane of
+  rows is covered.
+
+Coverage: ui 87.0% (floor raised 85.8 to 86.8), total 88.9% (floor 88.0 to 88.7).
+The gate ran green; the revert check bit on the split agreement, on which half
+owns the vertical axis, and on the path-based cursor memory.
