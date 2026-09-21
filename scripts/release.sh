@@ -118,7 +118,15 @@ fi
 if ! grep -q "\[Unreleased\]" CHANGELOG.md; then
     error "CHANGELOG.md does not contain [Unreleased] section"
 fi
-success "CHANGELOG.md has [Unreleased] section"
+
+# The entry is what the release publishes, so an empty one is not a release
+# worth making. Checked here, beside the dirty working copy check and before
+# any file is edited: once the tag is pushed the workflow has started and a
+# release with empty notes already exists.
+if [[ -z "$(bash scripts/changelog-entry.sh Unreleased CHANGELOG.md | tr -d '[:space:]')" ]]; then
+    error "CHANGELOG.md's [Unreleased] section is empty; write the entry before releasing"
+fi
+success "CHANGELOG.md has an [Unreleased] entry to publish"
 
 # --- Read Current Version ---
 VERSION_FILE="src/VERSION"

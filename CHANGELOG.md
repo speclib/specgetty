@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A release publishes the changelog entry for the version it releases. The
+  notes were a list of commit hashes and subjects, bean bookkeeping included,
+  while the entry describing what actually changed sat in `CHANGELOG.md` where
+  nobody installing the tool looks. A release whose entry is empty now stops
+  before it changes anything, rather than publishing a heading with nothing
+  under it.
+
 ## [0.7.2] - 2026-09-22
 
 ### Added

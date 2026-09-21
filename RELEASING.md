@@ -6,6 +6,15 @@ This document describes the release process for specgetty.
 
 Releases are automated via GitHub Actions and goreleaser. When a `v*` tag is pushed to GitHub, the release workflow builds binaries for all supported platforms and creates a GitHub Release with the artifacts.
 
+The release notes are the entry you wrote. The workflow reads the section for
+the tag's version out of `CHANGELOG.md` and hands it to goreleaser, so what the
+release page says is what the changelog says, and nothing is assembled from
+commit subjects.
+
+Because of that, `./scripts/release.sh` stops before it changes anything if the
+`[Unreleased]` section is empty: a release with no entry would publish a heading
+with nothing under it. Write the entry, then run it again.
+
 ## Supported Platforms
 
 - Linux (amd64, arm64)
@@ -18,8 +27,11 @@ Before creating a release, ensure:
 - [ ] The gate passes: `nix flake check` (build, vet, tests, coverage ratchet)
 - [ ] All tests pass: `make test`
 - [ ] The application builds: `make build`
-- [ ] `CHANGELOG.md` is updated with the new version's changes
-- [ ] The `[Unreleased]` section has been moved to a versioned section
+- [ ] `CHANGELOG.md` is updated with the new version's changes. This is what
+      the release publishes, not a convenience: the script refuses to release an
+      empty `[Unreleased]` section
+- [ ] The `[Unreleased]` section has been moved to a versioned section. The
+      release script does this for you
 
 ## Creating a Release
 
@@ -39,8 +51,8 @@ This will interactively:
 
 ### Prerequisites
 
-- [gum](https://github.com/charmbracelet/gum) — interactive CLI prompts
-- [nix](https://nixos.org/) — optional, for vendorHash updates
+- [gum](https://github.com/charmbracelet/gum), for the interactive prompts
+- [nix](https://nixos.org/), optional, for vendorHash updates
 
 ## Manual Release
 

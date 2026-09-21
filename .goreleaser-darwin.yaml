@@ -28,12 +28,10 @@ archives:
 checksum:
   name_template: "checksums_darwin.txt"
 
+# The release notes are the changelog entry for the version being released,
+# passed in with --release-notes by the workflow. A commit-derived list beside
+# it would be a second account of the same release, written in another register,
+# and the two would disagree the first time a commit subject and a changelog
+# entry described one change differently.
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
-      - Merge pull request
-      - Merge branch
+  disable: true

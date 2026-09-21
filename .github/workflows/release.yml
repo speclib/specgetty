@@ -22,12 +22,22 @@ jobs:
         with:
           go-version: stable
 
+      - name: Extract the release notes from the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          bash scripts/changelog-entry.sh "$version" CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "CHANGELOG.md has no entry for $version" >&2
+            exit 1
+          fi
+          cat release-notes.md
+
       - name: Run GoReleaser (Linux)
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean -f .goreleaser-linux.yaml
+          args: release --clean -f .goreleaser-linux.yaml --release-notes=release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -45,11 +55,21 @@ jobs:
         with:
           go-version: stable
 
+      - name: Extract the release notes from the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          bash scripts/changelog-entry.sh "$version" CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "CHANGELOG.md has no entry for $version" >&2
+            exit 1
+          fi
+          cat release-notes.md
+
       - name: Run GoReleaser (Darwin)
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean -f .goreleaser-darwin.yaml
+          args: release --clean -f .goreleaser-darwin.yaml --release-notes=release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
