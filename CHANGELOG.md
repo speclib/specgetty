@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A spec is read by OpenSpec's own rules, transcribed from its parser: the
+  `## Requirements` section, `### Requirement:` inside it, any `#### ` heading
+  with content under it, headings inside code fences ignored, and a delta header
+  treated as the error it is in a main spec. A file that does not follow them now
+  opens as a report naming every reason and its line, with `E` to open it in your
+  editor, instead of opening as half an outline. The whole file stays readable as
+  markdown on the specs tab.
+
+### Fixed
+
+- Scenarios no longer show up empty. A scenario's content is now kept whatever
+  shape it is written in, rather than only the bulleted `- **WHEN**` form the
+  OpenSpec template shows. Across the 605 specs on the machine this was written
+  on, 254 scenario cards were blank and every one of them was content that had
+  been dropped.
+- `left` and `right` no longer do anything in the spec detail view. They moved
+  the project tab bar underneath it, which is not on screen there, and took the
+  keyboard off the card mid-read.
+
 ## [0.7.1] - 2026-09-21
 
 ### Added
@@ -20,9 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `left` and `right` no longer do anything in the spec detail view. They moved
-  the project tab bar underneath it, which is not on screen there, and took the
-  keyboard off the card mid-read.
 - In a project that keeps its specs in a store, toggling a task checkbox failed
   with `could not save: no such file or directory`, and `Y` copied a path that
   looked right and did not exist. Both built their path from the repository you

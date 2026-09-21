@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -156,14 +157,22 @@ func renderSpecCard(n specNode, width int) string {
 		writeProse(&b, n.body, left, inner)
 	default:
 		write(sectionHeaderStyle, "Scenario: "+n.title)
-		for _, c := range n.clauses {
+		for _, part := range n.parts {
 			b.WriteString("\n")
-			b.WriteString(left + specKeywordStyle.Render(c.keyword) + "\n")
+			if part.kind == partProse {
+				// Content in a shape the clause layout does not recognise is
+				// drawn as the prose it is, in its place among the clauses.
+				// Leaving it out would be the bug this view shipped with.
+				writeProse(&b, part.text, left, inner)
+				continue
+			}
+			b.WriteString(left + specKeywordStyle.Render(part.keyword) + "\n")
 			// A hanging indent, so every row after the first still reads as
 			// belonging to the keyword above it.
 			clauseIndent := left + "   "
-			for _, line := range strings.Split(ansi.Wrap(c.text, max(1, inner-3), " "), "\n") {
-				b.WriteString(clauseIndent + renderInlineMarkdown(line) + "\n")
+			wrapped := ansi.Wrap(renderInlineMarkdown(part.text), max(1, inner-3), " ")
+			for _, line := range strings.Split(wrapped, "\n") {
+				b.WriteString(clauseIndent + line + "\n")
 			}
 		}
 	}
@@ -177,8 +186,12 @@ func writeProse(b *strings.Builder, body, left string, inner int) {
 		if joined == "" {
 			continue
 		}
-		for _, line := range strings.Split(ansi.Wrap(joined, inner, " "), "\n") {
-			b.WriteString(left + renderInlineMarkdown(line) + "\n")
+		// Styled before it is wrapped. The other way round, a backticked span
+		// that happens to straddle the wrap is two halves with one backtick
+		// each, and neither half is a span any more: the marks stay on screen
+		// and the colour never arrives.
+		for _, line := range strings.Split(ansi.Wrap(renderInlineMarkdown(joined), inner, " "), "\n") {
+			b.WriteString(left + line + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -215,19 +228,72 @@ func (m model) openSelectedSpec() model {
 	}
 	name := info.SpecNames[m.specCursor]
 
-	tree, err := parseSpec(name, info.SpecContents[name])
-	if err != nil {
-		m.statusMsg = "Cannot open " + name + ": " + err.Error()
-		return m
-	}
-
+	// enter descends in every case. Whether the file can be structured is
+	// answered by the view it opens: a file usually fails in more than one way,
+	// and a transient line on the nav bar can hold neither the reasons nor the
+	// lines they sit on nor the key that opens an editor on them.
+	tree, problems := parseSpec(name, info.SpecContents[name])
 	m.specTree = tree
+	m.specProblems = problems
+	m.specName = name
 	m.specNode = 0
-	m.specNodePath = tree.nodes[0].path
+	m.specNodePath = ""
+	if len(tree.nodes) > 0 {
+		m.specNodePath = tree.nodes[0].path
+	}
 	m.level = levelSpec
 	m.focus = focusListPane
 	m.statusMsg = ""
 	return m
+}
+
+// renderSpecReport draws the reasons a file is not a spec.
+//
+// Every reason, each with the line it sits on, rather than the first: a file
+// that does not fit usually does not fit in more than one way, and naming one
+// sends the reader back for the next after each repair. It is fed through the
+// document viewport so a file with many faults can be scrolled rather than
+// clipped.
+func renderSpecReport(name string, problems []specProblem, width int) string {
+	pad := cardPadding(width)
+	inner := max(1, width-2*pad)
+	left := strings.Repeat(" ", pad)
+
+	var b strings.Builder
+	b.WriteString("\n")
+	for _, line := range strings.Split(
+		ansi.Wrap("specgetty cannot read "+name+" as a spec", inner, " "), "\n") {
+		b.WriteString(left + sectionHeaderStyle.Render(line) + "\n")
+	}
+	b.WriteString("\n")
+	for _, line := range strings.Split(ansi.Wrap(
+		"These are the rules openspec itself reads a spec by, so validate, "+
+			"list and archive cannot see this file either.", inner, " "), "\n") {
+		b.WriteString(left + dimStyle.Render(line) + "\n")
+	}
+
+	for _, p := range problems {
+		b.WriteString("\n")
+		if p.line > 0 {
+			b.WriteString(left + specKeywordStyle.Render(fmt.Sprintf("line %d", p.line)) + "\n")
+		}
+		for _, line := range strings.Split(ansi.Wrap(renderInlineMarkdown(p.text), inner, " "), "\n") {
+			b.WriteString(left + line + "\n")
+		}
+	}
+
+	b.WriteString("\n")
+	for _, line := range strings.Split(ansi.Wrap(
+		"E opens this file in your editor. esc returns to the specs tab, where "+
+			"the whole file is readable as markdown.", inner, " "), "\n") {
+		b.WriteString(left + dimStyle.Render(line) + "\n")
+	}
+	return b.String()
+}
+
+// specStructured reports whether the open spec could be read as one.
+func (m model) specStructured() bool {
+	return len(m.specTree.nodes) > 0
 }
 
 // renderSpecDetail draws the outline and the card, each in its own border, by
@@ -237,7 +303,7 @@ func (m model) renderSpecDetail(width, height int) string {
 	// The spec's name stays put above the two halves, so the view is never
 	// anonymous. It names the content, which is what keeps it outside the
 	// borders.
-	b.WriteString(headerStyle.Render(m.specTree.name))
+	b.WriteString(headerStyle.Render(m.specName))
 	b.WriteString("\n")
 
 	boxHeight := height - 1
@@ -247,6 +313,17 @@ func (m model) renderSpecDetail(width, height int) string {
 	rows := boxHeight - boxRows
 	if rows < 1 {
 		rows = 1
+	}
+
+	if !m.specStructured() {
+		// One panel, not two: there is no outline to put beside anything.
+		body := truncateContent(m.docViewport.View(), rows)
+		var fit []string
+		for _, line := range strings.Split(body, "\n") {
+			fit = append(fit, ansi.Truncate(line, max(1, width-boxChrome), ""))
+		}
+		b.WriteString(contentBox(width, boxHeight, true, strings.Join(fit, "\n")))
+		return b.String()
 	}
 
 	outlineOuter, cardOuter := specDetailSplit(width)
@@ -310,16 +387,24 @@ func (m *model) reparseOpenSpec() {
 		return
 	}
 	info := m.projects[key].Info
-	content, ok := info.SpecContents[m.specTree.name]
+	content, ok := info.SpecContents[m.specName]
 	if !ok {
 		return
 	}
-	tree, err := parseSpec(m.specTree.name, content)
-	if err != nil {
-		// A spec edited into a shape this view cannot navigate keeps the tree
+
+	tree, problems := parseSpec(m.specName, content)
+	if len(problems) == 0 {
+		// Including from the report state: a file repaired in an editor
+		// structures itself under the reader without them leaving the view.
+		m.specTree = tree
+		m.specProblems = nil
+		m.syncSpecNode()
+		return
+	}
+	if len(m.specTree.nodes) > 0 {
+		// A spec edited into a shape this view cannot structure keeps the tree
 		// it opened with rather than emptying the view mid-read.
 		return
 	}
-	m.specTree = tree
-	m.syncSpecNode()
+	m.specProblems = problems
 }

@@ -5,7 +5,7 @@ status: in-progress
 type: bug
 priority: high
 created_at: 2026-09-21T20:19:39Z
-updated_at: 2026-09-21T20:55:10Z
+updated_at: 2026-09-21T21:02:35Z
 ---
 
 check /home/pim/mipnix/openspec/specs/airplane-mode/spec.md

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -80,20 +81,198 @@ func TestEnterOpensTheSelectedSpec(t *testing.T) {
 	}
 }
 
-func TestEnterOnASpecThatCannotBeParsedReports(t *testing.T) {
+// TestEnterDescendsIntoAReport replaces the test that asserted the cursor
+// stayed put and the nav bar carried the reason. A file usually fails in more
+// than one way, and one transient line can hold neither the reasons nor the
+// lines they sit on nor the key that opens an editor on them.
+func TestEnterDescendsIntoAReport(t *testing.T) {
 	m := specDetailModel(t)
 	m.specCursor = 1 // "unparsable"
 	m.syncDocument()
 
 	after := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if after.level != levelProject {
-		t.Errorf("level = %d, want to stay on the specs tab", after.level)
+
+	if after.level != levelSpec {
+		t.Fatalf("level = %d, want the spec level", after.level)
 	}
-	if after.specCursor != 1 {
-		t.Errorf("the cursor moved to %d", after.specCursor)
+	if after.specStructured() {
+		t.Error("the file does not fit the grammar, so there is no outline")
 	}
-	if !strings.Contains(after.statusMsg, "unparsable") {
-		t.Errorf("status = %q, want it to name the spec", after.statusMsg)
+	if len(after.specProblems) == 0 {
+		t.Fatal("no reasons were given")
+	}
+	if after.specName != "unparsable" {
+		t.Errorf("the report is about %q", after.specName)
+	}
+	if after.statusMsg != "" {
+		t.Errorf("status = %q, want the nav bar left alone", after.statusMsg)
+	}
+}
+
+func TestTheReportNamesEveryReasonAndItsLine(t *testing.T) {
+	m := specDetailModel(t)
+	// A file that fails in three ways at once, which is the usual case: 102 of
+	// the local corpus carry a delta header, and most of those also lack a
+	// Purpose and a requirements section.
+	broken := "# thing\n\n## ADDED Requirements\n\n### Requirement: A\nIt SHALL.\n\n" +
+		"#### Scenario: S\n- **WHEN** a\n- **THEN** b\n"
+	info := m.projects["/p"].Info
+	info.SpecContents = map[string]string{"demo": twoReqSpec, "unparsable": broken}
+	m.projects["/p"] = scanner.ProjectStatus{Info: info}
+	m.specCursor = 1
+	m.syncDocument()
+
+	opened := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	opened.width, opened.height = 100, 30
+	opened.recalcLayout()
+	opened.syncDocument()
+
+	if len(opened.specProblems) < 2 {
+		t.Fatalf("got %d reasons, want every one: %v",
+			len(opened.specProblems), opened.specProblems)
+	}
+	frame := ansi.Strip(opened.renderFrame())
+	for _, want := range []string{"delta header", "Purpose", "unparsable"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("the report does not mention %q:\n%s", want, frame)
+		}
+	}
+	// The delta header is on line 3 of that string.
+	if !strings.Contains(frame, "line 3") {
+		t.Errorf("the report does not give the line:\n%s", frame)
+	}
+}
+
+func TestTheReportOffersTheEditor(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "nvim")
+	started := fakeEditor(t, nil)
+
+	m, _, root, _ := onDiskStoreModel(t, threeTasks)
+	info := m.projects[m.repoPaths[0]].Info
+	info.SpecContents = map[string]string{"some-capability": "# not a spec\n"}
+	m.projects[m.repoPaths[0]] = scanner.ProjectStatus{Info: info}
+	m.detailTab = tabSpecs
+	m.recalcLayout()
+	m.syncDocument()
+
+	opened := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if opened.specStructured() {
+		t.Fatal("the fixture should not structure")
+	}
+	opened.width = 240
+	if !strings.Contains(ansi.Strip(opened.renderNavBar()), "E edit") {
+		t.Errorf("the report should offer E:\n%s", ansi.Strip(opened.renderNavBar()))
+	}
+
+	press(opened, tea.KeyPressMsg{Code: 'E', Text: "E"})
+	if len(*started) != 1 {
+		t.Fatalf("%d processes started, want 1", len(*started))
+	}
+	c := (*started)[0]
+	want := filepath.Join(root, "openspec", "specs", "some-capability", "spec.md")
+	if got := c.Args[len(c.Args)-1]; got != want {
+		t.Errorf("opened %q, want the spec that would not structure %q", got, want)
+	}
+}
+
+func TestTheReportScrollsAndTheOutlineKeysAreInert(t *testing.T) {
+	m := specDetailModel(t)
+	m.specCursor = 1
+	m.syncDocument()
+	opened := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	opened.width, opened.height = 80, 20
+	opened.recalcLayout()
+	opened.syncDocument()
+
+	// One panel, so the vertical keys scroll it rather than moving an outline
+	// that is not there.
+	if !opened.docActive() {
+		t.Error("the report is one panel, so it owns the vertical keys")
+	}
+	if opened.splitTab() {
+		t.Error("there is no second half for tab to reach")
+	}
+	if opened.listPage() != 1 {
+		t.Errorf("listPage = %d, want no outline page", opened.listPage())
+	}
+
+	after := press(opened, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	if after.specNode != 0 {
+		t.Errorf("j moved an outline cursor to %d", after.specNode)
+	}
+	if after.docHasCursor() {
+		t.Error("a report has no task cursor")
+	}
+}
+
+func TestAFileRepairedWhileOpenStructuresItself(t *testing.T) {
+	m := specDetailModel(t)
+	m.specCursor = 1
+	m.syncDocument()
+	opened := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if opened.specStructured() {
+		t.Fatal("the fixture should open as a report")
+	}
+
+	// The reader fixes it in their editor; the rescan brings it back.
+	info := opened.projects["/p"].Info
+	info.SpecContents = map[string]string{"demo": twoReqSpec, "unparsable": twoReqSpec}
+	opened.projects["/p"] = scanner.ProjectStatus{Info: info}
+	opened.reparseOpenSpec()
+
+	if !opened.specStructured() {
+		t.Errorf("the repaired file should structure without leaving the view: %v",
+			opened.specProblems)
+	}
+	if len(opened.specProblems) != 0 {
+		t.Errorf("the reasons should be gone, got %v", opened.specProblems)
+	}
+}
+
+func TestEscFromAReportReturnsToTheSpecsTab(t *testing.T) {
+	m := specDetailModel(t)
+	m.specCursor = 1
+	m.syncDocument()
+	opened := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	back := press(opened, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if back.level != levelProject || back.detailTab != tabSpecs {
+		t.Errorf("level %d, tab %d, want the specs tab", back.level, back.detailTab)
+	}
+	if back.specCursor != 1 {
+		t.Errorf("the same spec must be selected, got %d", back.specCursor)
+	}
+	if len(back.specProblems) != 0 || back.specName != "" {
+		t.Error("the report is dropped on the way out")
+	}
+	// And the markdown is right there, which is why the report needs no
+	// fallback of its own.
+	if !strings.Contains(ansi.Strip(back.renderFrame()), "just prose") {
+		t.Error("the whole file should be readable as markdown on the tab")
+	}
+}
+
+func TestTheReportFitsTheFrame(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{60, 20}, {100, 30}, {200, 50}} {
+		m := specDetailModel(t)
+		m.specCursor = 1
+		m.syncDocument()
+		opened := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		opened.width, opened.height = size.w, size.h
+		opened.recalcLayout()
+		opened.syncDocument()
+
+		lines := strings.Split(opened.renderFrame(), "\n")
+		if len(lines) != size.h {
+			t.Errorf("%dx%d: %d rows, want %d", size.w, size.h, len(lines), size.h)
+		}
+		for _, l := range lines {
+			if w := ansi.StringWidth(l); w > size.w {
+				t.Errorf("%dx%d: a row is %d columns wide", size.w, size.h, w)
+				break
+			}
+		}
 	}
 }
 
@@ -160,9 +339,9 @@ func TestTheSplitLeavesBothHalvesUsable(t *testing.T) {
 // --- 4.2 to 4.5 the outline ---
 
 func TestALongLabelWrapsRatherThanBeingCut(t *testing.T) {
-	tree, err := parseSpec("demo", twoReqSpec)
-	if err != nil {
-		t.Fatal(err)
+	tree, problems := parseSpec("demo", twoReqSpec)
+	if len(problems) > 0 {
+		t.Fatal(problems)
 	}
 	rows := outlineRows(tree, 30)
 
@@ -185,9 +364,9 @@ func TestALongLabelWrapsRatherThanBeingCut(t *testing.T) {
 }
 
 func TestEveryRowOfTheSelectedNodeIsHighlighted(t *testing.T) {
-	tree, err := parseSpec("demo", twoReqSpec)
-	if err != nil {
-		t.Fatal(err)
+	tree, problems := parseSpec("demo", twoReqSpec)
+	if len(problems) > 0 {
+		t.Fatal(problems)
 	}
 	// Node 1 is the long requirement title, which wraps at this width.
 	rows := outlineRows(tree, 30)
@@ -205,9 +384,9 @@ func TestEveryRowOfTheSelectedNodeIsHighlighted(t *testing.T) {
 }
 
 func TestTheOutlineScrollsAWholeNodeIntoView(t *testing.T) {
-	tree, err := parseSpec("demo", twoReqSpec)
-	if err != nil {
-		t.Fatal(err)
+	tree, problems := parseSpec("demo", twoReqSpec)
+	if len(problems) > 0 {
+		t.Fatal(problems)
 	}
 	rows := outlineRows(tree, 30)
 
@@ -317,7 +496,7 @@ func TestTheCursorClampsWhenItsNodeIsGone(t *testing.T) {
 // --- 5.x the card ---
 
 func TestARequirementsCardExcludesItsScenarios(t *testing.T) {
-	tree, _ := parseSpec("demo", twoReqSpec)
+	tree, _ := mustParse(t, "demo", twoReqSpec)
 	card := ansi.Strip(renderSpecCard(tree.nodes[1], 60))
 
 	if !strings.Contains(card, "Its own prose") {
@@ -329,7 +508,7 @@ func TestARequirementsCardExcludesItsScenarios(t *testing.T) {
 }
 
 func TestAClauseWrapsWithAHangingIndent(t *testing.T) {
-	tree, _ := parseSpec("demo", twoReqSpec)
+	tree, _ := mustParse(t, "demo", twoReqSpec)
 	// The long GIVEN clause.
 	var scenario specNode
 	for _, n := range tree.nodes {
@@ -363,7 +542,7 @@ func TestAClauseWrapsWithAHangingIndent(t *testing.T) {
 }
 
 func TestTheCardStylesKeywordsAndCodeSpans(t *testing.T) {
-	tree, _ := parseSpec("demo", twoReqSpec)
+	tree, _ := mustParse(t, "demo", twoReqSpec)
 	card := renderSpecCard(tree.nodes[0], 60) // Purpose, which names a-thing in code
 
 	if !strings.Contains(card, mdCodeStyle.Render("a-thing")) {
@@ -380,7 +559,7 @@ func TestTheCardStylesKeywordsAndCodeSpans(t *testing.T) {
 }
 
 func TestTheCardFitsItsPaneAtAnyWidth(t *testing.T) {
-	tree, _ := parseSpec("demo", twoReqSpec)
+	tree, _ := mustParse(t, "demo", twoReqSpec)
 	for _, width := range []int{70, 80, 120} {
 		_, cardOuter := specDetailSplit(width - 4)
 		inner := cardOuter - boxChrome
@@ -465,7 +644,9 @@ func TestListPageWithEveryNodeOneRowTall(t *testing.T) {
 	// The page walks node heights, which with one-row nodes reduces to the row
 	// count, the same thing every other list does.
 	src := `## Purpose
-p
+Long enough a sentence to count as the purpose of a capability.
+
+## Requirements
 
 ### Requirement: r
 x
@@ -479,9 +660,9 @@ x
 - **THEN** y
 `
 	m := press(specDetailModel(t), tea.KeyPressMsg{Code: tea.KeyEnter})
-	tree, err := parseSpec("short", src)
-	if err != nil {
-		t.Fatal(err)
+	tree, problems := parseSpec("short", src)
+	if len(problems) > 0 {
+		t.Fatal(problems)
 	}
 	m.specTree = tree
 	m.width, m.height = 120, 24
@@ -584,9 +765,9 @@ func TestTheTreeIsParsedOnceNotPerRender(t *testing.T) {
 }
 
 func TestListPageWalksUnequalNodeHeights(t *testing.T) {
-	tree, err := parseSpec("demo", twoReqSpec)
-	if err != nil {
-		t.Fatal(err)
+	tree, problems := parseSpec("demo", twoReqSpec)
+	if len(problems) > 0 {
+		t.Fatal(problems)
 	}
 	// Narrow enough that the two long titles wrap and the short ones do not.
 	const width, rows = 28, 4
@@ -825,4 +1006,155 @@ func TestTheArrowsStillWorkWhereTheyBelong(t *testing.T) {
 			t.Errorf("left went to sub-tab %d, want 0", left.changeArtifactTab)
 		}
 	})
+}
+
+// mustParse is the two-value parse the detail tests want, since the shape of a
+// spec is specparse_test.go's subject rather than theirs.
+func mustParse(t *testing.T, name, content string) (specTree, []specProblem) {
+	t.Helper()
+	tree, problems := parseSpec(name, content)
+	if len(problems) > 0 {
+		t.Fatalf("%s: %v", name, problems)
+	}
+	return tree, nil
+}
+
+func TestASpanThatWrapsKeepsItsStyle(t *testing.T) {
+	// Styling used to run after wrapping, so a backticked span straddling the
+	// wrap became two halves with one backtick each: the marks stayed on screen
+	// and the colour never arrived.
+	n := specNode{kind: nodeScenario, title: "s", parts: []specPart{{
+		kind:    partClause,
+		keyword: "THEN",
+		text: "the value SHALL be written to " +
+			"`a/path/that/is/long/enough/to/straddle/the/wrap.yaml` and read back",
+	}}}
+
+	card := renderSpecCard(n, 46)
+	if strings.Contains(ansi.Strip(card), "`") {
+		t.Errorf("a backtick survived the wrap:\n%s", ansi.Strip(card))
+	}
+	if !strings.Contains(card, "\x1b[") {
+		t.Error("the span was not styled at all")
+	}
+}
+
+func TestTheReportStylesItsOwnSpans(t *testing.T) {
+	problems := []specProblem{{line: 3, text: "`## ADDED Requirements` is a delta " +
+		"header, and a main spec keeps its requirements under `## Requirements`."}}
+
+	out := renderSpecReport("thing", problems, 50)
+	if strings.Contains(ansi.Strip(out), "`") {
+		t.Errorf("the report shows its backticks:\n%s", ansi.Strip(out))
+	}
+	if !strings.Contains(ansi.Strip(out), "line 3") {
+		t.Errorf("the line is missing:\n%s", ansi.Strip(out))
+	}
+}
+
+// --- 3.x prose on the card ---
+
+func TestProseSitsWhereItWasWritten(t *testing.T) {
+	tree, _ := mustParse(t, "mixed", fixture(t, "mixed-parts"))
+	var n specNode
+	for _, node := range tree.nodes {
+		if node.title == "Clauses around a paragraph" {
+			n = node
+		}
+	}
+
+	card := ansi.Strip(renderSpecCard(n, 60))
+	first := strings.Index(card, "the first thing happens")
+	para := strings.Index(card, "Rationale")
+	last := strings.Index(card, "the second thing happens")
+	if first < 0 || para < 0 || last < 0 {
+		t.Fatalf("something is missing from the card:\n%s", card)
+	}
+	if !(first < para && para < last) {
+		t.Errorf("the paragraph is not between the clauses:\n%s", card)
+	}
+}
+
+func TestALongParagraphWraps(t *testing.T) {
+	long := strings.Repeat("a paragraph of prose that has to wrap somewhere. ", 5)
+	n := specNode{kind: nodeScenario, title: "s", parts: []specPart{
+		{kind: partProse, text: strings.TrimSpace(long)},
+	}}
+	if len(strings.TrimSpace(long)) < 229 {
+		t.Fatalf("the test needs a paragraph over 229 characters, got %d", len(long))
+	}
+
+	card := ansi.Strip(renderSpecCard(n, 60))
+	var rows int
+	for _, l := range strings.Split(card, "\n") {
+		if strings.Contains(l, "paragraph of prose") {
+			rows++
+		}
+		if len([]rune(l)) > 60 {
+			t.Errorf("a row is %d columns in a 60 pane: %q", len([]rune(l)), l)
+		}
+	}
+	if rows < 3 {
+		t.Errorf("the paragraph wrapped to %d rows, want several:\n%s", rows, card)
+	}
+}
+
+func TestACardOfMixedPartsFitsItsPane(t *testing.T) {
+	tree, _ := mustParse(t, "mixed", fixture(t, "mixed-parts"))
+	for _, width := range []int{70, 80, 120} {
+		_, cardOuter := specDetailSplit(width - 4)
+		inner := cardOuter - boxChrome
+		for i, n := range tree.nodes {
+			for _, l := range strings.Split(ansi.Strip(renderSpecCard(n, inner)), "\n") {
+				if len([]rune(l)) > inner {
+					t.Errorf("width %d, node %d: a row is %d columns in a %d pane: %q",
+						width, i, len([]rune(l)), inner, l)
+				}
+			}
+		}
+	}
+}
+
+func TestAScenarioInAnyShapeShowsSomething(t *testing.T) {
+	// The whole point of the change, asserted through the card rather than the
+	// parser: no shape in the corpus renders as a bare title.
+	for _, name := range []string{
+		"canonical", "bare-uppercase-clauses", "bold-title-clauses",
+		"prose-scenario", "mixed-parts", "heading-without-prefix", "heading-in-fence",
+	} {
+		tree, _ := mustParse(t, name, fixture(t, name))
+		for _, n := range tree.nodes {
+			if n.kind != nodeScenario {
+				continue
+			}
+			card := ansi.Strip(renderSpecCard(n, 56))
+			body := strings.TrimSpace(strings.Replace(card, "Scenario: "+n.title, "", 1))
+			if body == "" {
+				t.Errorf("%s: scenario %q renders as a bare title", name, n.title)
+			}
+		}
+	}
+}
+
+func TestTheReportsNavBarOffersOnlyWhatAReportCanDo(t *testing.T) {
+	m := specDetailModel(t)
+	m.specCursor = 1
+	m.syncDocument()
+	opened := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	opened.width = 240
+	opened.recalcLayout()
+	opened.syncDocument()
+
+	bar := ansi.Strip(opened.renderNavBar())
+	for _, want := range []string{"esc back to specs", "E edit", "scroll", "^f^b"} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("the report's nav bar is missing %q:\n%s", want, bar)
+		}
+	}
+	for _, unwanted := range []string{"tab focus", "navigate"} {
+		if strings.Contains(bar, unwanted) {
+			t.Errorf("the report's nav bar offers %q, which does nothing here:\n%s",
+				unwanted, bar)
+		}
+	}
 }

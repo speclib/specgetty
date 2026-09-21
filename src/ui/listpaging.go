@@ -18,6 +18,11 @@ package ui
 // twice, and the tests assert the pairing rather than the arithmetic.
 func (m model) listPage() int {
 	if m.level == levelSpec {
+		if !m.specStructured() {
+			// A report has no outline to page. Its own scrolling goes through
+			// the viewport, which docActive() routes to before this is asked.
+			return 1
+		}
 		// A page of the outline is a pane of rows, and a node can occupy more
 		// than one, so the page is however many nodes fit in that many rows.
 		// With every node one row tall this reduces to the row count.

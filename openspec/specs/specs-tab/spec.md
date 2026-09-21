@@ -133,28 +133,6 @@ the selected spec. The detail view it opens is described by `spec-detail-view`.
 - **WHEN** the user presses `enter` on the specs tab of a project with no specs
 - **THEN** nothing SHALL happen
 
-### Requirement: A spec that cannot be parsed reports rather than opening
-Not every `spec.md` follows the Purpose, requirements and scenarios shape that
-the detail view reads. When the selected spec does not, `enter` SHALL leave the
-cursor where it is and report why on the nav bar, in the transient one-line form
-the copy keys already use. The tab SHALL go on showing the whole file as
-markdown.
-
-#### Scenario: Enter on a spec that does not fit
-- **WHEN** the user presses `enter` on a spec whose file cannot be read as
-  requirements and scenarios
-- **THEN** the specs tab SHALL stay on screen with its cursor unmoved, and the
-  nav bar SHALL report that the spec has no requirements to show
-
-#### Scenario: The report is transient
-- **WHEN** that report is on the nav bar and the user presses any key
-- **THEN** the report SHALL be gone and the nav bar SHALL list the keys again
-
-#### Scenario: The markdown view is unaffected
-- **WHEN** a spec cannot be opened in the detail view
-- **THEN** the specs tab SHALL still render its whole file as markdown, so no
-  content becomes unreachable
-
 ### Requirement: Backticked spans are highlighted
 A span between backticks in a rendered markdown document SHALL be drawn
 distinctly from the prose around it, on the specs tab and in every other document
@@ -169,3 +147,26 @@ the same renderer draws.
 - **WHEN** a line contains a single backtick with no closing one
 - **THEN** the line SHALL be rendered unchanged rather than swallowing the rest
   of the document
+
+### Requirement: Enter descends whether or not the file fits the grammar
+`enter` SHALL descend into the selected spec in every case. Whether the file can
+be structured is answered by the view it opens and reported there, not on the
+nav bar, because a file usually has several faults and the nav bar holds one
+line. The tab SHALL go on showing the whole file as markdown, so the reader who
+descends into a report is one `esc` from the content.
+
+#### Scenario: Enter on a spec that does not fit
+- **WHEN** the user presses `enter` on a spec whose file cannot be read as
+  requirements and scenarios
+- **THEN** the spec view SHALL open and report why, rather than the cursor
+  staying put and the nav bar carrying the reason
+
+#### Scenario: The nav bar is not used for the reason
+- **WHEN** a spec cannot be structured
+- **THEN** no transient report SHALL be put on the nav bar, the reasons having a
+  place of their own
+
+#### Scenario: The markdown view is unaffected
+- **WHEN** a spec cannot be opened as an outline
+- **THEN** the specs tab SHALL still render its whole file as markdown, so no
+  content becomes unreachable

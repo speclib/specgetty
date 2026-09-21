@@ -247,7 +247,14 @@ type model struct {
 
 	// The spec open at levelSpec, parsed once when it is opened and dropped on
 	// the way out. Reparsing on every render would cost a parse per keystroke.
+	//
+	// The level has two states. A file that fits the grammar gives a tree and
+	// no problems; one that does not gives problems and no tree, and the view
+	// reports them. specName holds the spec either way, because a report has to
+	// name the file it is about.
 	specTree     specTree
+	specProblems []specProblem
+	specName     string
 	specNode     int
 	specNodePath string
 
@@ -606,6 +613,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailTab = tabSpecs
 				m.focus = focusListPane
 				m.specTree = specTree{}
+				m.specProblems = nil
+				m.specName = ""
 				m.specNode = 0
 				m.specNodePath = ""
 			} else if m.level == levelChange {
@@ -1700,8 +1709,9 @@ func (m model) renderDetailPanel(width int, height int) string {
 		return "\n" + dimStyle.Render("No project selected. Press p to pick one.")
 	}
 
-	// A spec fills the panel on its own, the way an open change does.
-	if m.level == levelSpec && len(m.specTree.nodes) > 0 {
+	// A spec fills the panel on its own, the way an open change does, whether
+	// it opened as an outline or as a report.
+	if m.level == levelSpec {
 		return m.renderSpecDetail(width, height)
 	}
 
@@ -1912,7 +1922,8 @@ func (m *model) enterTab() []tea.Cmd {
 // focus, borders and the vertical keys asks this rather than naming a tab.
 func (m model) splitTab() bool {
 	if m.level == levelSpec {
-		return len(m.specTree.nodes) > 0
+		// A report is one panel, so tab has nowhere to go in that state.
+		return m.specStructured()
 	}
 	if m.level != levelProject {
 		return false
@@ -2422,6 +2433,19 @@ func (m model) renderNavBar() string {
 	} else {
 		switch m.level {
 		case levelSpec:
+			if !m.specStructured() {
+				// A report offers what a report can do: read it, open the file,
+				// leave. None of the navigation keys apply.
+				keys = []struct{ key, action string }{
+					{"q", "quit"},
+					{"esc", "back to specs"},
+					{"jk/\u2191\u2193", "scroll"},
+					{"^f^b", "page"},
+					{"p", "projects"},
+					{"s", "scan"},
+				}
+				break
+			}
 			keys = []struct{ key, action string }{
 				{"q", "quit"},
 				{"esc", "back to specs"},

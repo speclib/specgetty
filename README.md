@@ -179,6 +179,56 @@ still moves one requirement or scenario per keystroke however many rows it
 occupies. The cursor stays on the same node across a rescan, so editing the
 file above it does not move it.
 
+A scenario's content is shown whatever shape it is written in. Clauses written
+as the OpenSpec template shows them get their keyword on a row of its own;
+anything else is shown as the prose it is, in the place it was written. Nothing
+is left out.
+
+### When a spec opens as a report instead
+
+`enter` always descends. If the file cannot be read as a spec, the view says why
+instead of showing an outline:
+
+```
+ +--------------------------------------------------------------+
+ |                                                              |
+ |    specgetty cannot read airplane-mode as a spec             |
+ |                                                              |
+ |    These are the rules openspec itself reads a spec by, so   |
+ |    validate, list and archive cannot see this file either.   |
+ |                                                              |
+ |    There is no ## Purpose section. Every spec needs one.     |
+ |                                                              |
+ |    line 3                                                    |
+ |    ## ADDED Requirements is a delta header. It belongs in    |
+ |    a change, under openspec/changes/<name>/specs/. A main    |
+ |    spec keeps its requirements under ## Requirements...      |
+ |                                                              |
+ +--------------------------------------------------------------+
+  esc back to specs   E edit   jk scroll
+```
+
+Every reason is listed, with the line it sits on. `E` opens the file in your
+editor, and `esc` returns to the specs tab where the whole file is readable as
+markdown. Fix the file and the next scan turns the report into an outline
+without you leaving the view.
+
+The rules are OpenSpec's own, transcribed from its parser rather than invented
+here, so a file specgetty will not structure is one `openspec validate` also
+rejects:
+
+| rule                                                  | why it matters             |
+| ----------------------------------------------------- | -------------------------- |
+| requirements live under one `## Requirements` heading | openspec parses only that section |
+| a `## Purpose` section                                | required of every spec     |
+| `### Requirement: <name>` inside that section         | outside it, it is invisible |
+| a `#### ` heading with content under it               | that is a scenario         |
+| no `## ADDED Requirements` and the like               | delta headers belong in a change |
+
+What OpenSpec does not define is how a scenario's content is written. Its own
+model for a scenario is raw text, so specgetty accepts whatever is there rather
+than requiring a convention no tool enforces.
+
 ### Keys in the change list
 
 | Key   | Action                                                |

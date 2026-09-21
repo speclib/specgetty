@@ -25,6 +25,11 @@ func (m model) docRegion() (width, height int) {
 	panelH := m.mainPanelHeight()
 
 	switch {
+	case m.level == levelSpec && !m.specStructured():
+		// A report fills the panel on its own: there is no outline beside it.
+		width = m.panelContentWidth() - boxChrome
+		height = panelH - 1 - boxRows
+
 	case m.level == levelSpec:
 		// The spec's name stays put above the two halves, and the card gets
 		// what is inside the right-hand border.
@@ -81,9 +86,14 @@ func (m model) docActive() bool {
 		return true
 	}
 	if m.level == levelSpec {
+		if !m.specStructured() {
+			// One panel, so the vertical keys scroll the report, the way they
+			// scroll an open change.
+			return len(m.specProblems) > 0
+		}
 		// Two halves, so the vertical keys belong to the card only while the
 		// card holds the keyboard.
-		return m.focus == focusContentPane && len(m.specTree.nodes) > 0
+		return m.focus == focusContentPane
 	}
 	if m.level != levelProject {
 		return false
@@ -209,10 +219,22 @@ func (m model) currentDoc() (document, bool) {
 	width, _ := m.docRegion()
 
 	switch {
-	case m.level == levelSpec:
-		if len(m.specTree.nodes) == 0 {
+	case m.level == levelSpec && !m.specStructured():
+		if len(m.specProblems) == 0 {
 			return document{}, false
 		}
+		// The report scrolls like any other document, so a file with many
+		// faults is reachable rather than clipped.
+		key := strings.Join([]string{project, "spec-report", m.specName}, docKeySep)
+		// The path is the file the report is about, so `E` opens it from here
+		// and the nav bar offers the key, both by the rule every other pane
+		// already follows: a document that came from one file names it.
+		return document{key: key,
+			content: renderSpecReport(m.specName, m.specProblems, width),
+			path:    filepath.Join(m.currentRoot(), "openspec", "specs", m.specName, "spec.md"),
+		}, true
+
+	case m.level == levelSpec:
 		n := m.specTree.nodes[m.selectedSpecNode()]
 		// Keyed by the node, so moving to another one is moving to another
 		// document and starts at the top.
