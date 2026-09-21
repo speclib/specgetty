@@ -141,35 +141,30 @@ func outlineRows(tree specTree, width int) []outlineRow {
 	return rows
 }
 
+// ownersOfRows marks which node each drawn row belongs to.
+//
+// The outline draws no chrome, so every row has an owner. It reads the same
+// shared arithmetic the change list and the properties list do.
+func ownersOfRows(rows []outlineRow) itemLines {
+	owners := make(itemLines, len(rows))
+	for i, r := range rows {
+		owners[i] = r.node
+	}
+	return owners
+}
+
 // rowRangeOfNode returns the first and last drawn row a node occupies.
 func rowRangeOfNode(rows []outlineRow, node int) (first, last int) {
-	first, last = -1, -1
-	for i, r := range rows {
-		if r.node != node {
-			continue
-		}
-		if first < 0 {
-			first = i
-		}
-		last = i
-	}
-	return
+	return ownersOfRows(rows).span(node)
 }
 
 // renderSpecOutline draws the outline, scrolled so the whole selected node is
 // visible.
 func renderSpecOutline(tree specTree, selected, width, height int, lit bool) string {
 	rows := outlineRows(tree, width)
-	first, last := rowRangeOfNode(rows, selected)
-
-	offset := 0
-	if last >= height {
-		offset = last - height + 1
-	}
-	// A node taller than the pane shows its top rather than its bottom.
-	if first >= 0 && first < offset {
-		offset = first
-	}
+	// A node taller than the pane shows its top rather than its bottom, which
+	// is what the shared offset does for every list that has one.
+	offset := ownersOfRows(rows).offsetFor(selected, height)
 	end := offset + height
 	if end > len(rows) {
 		end = len(rows)

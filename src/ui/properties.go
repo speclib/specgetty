@@ -23,9 +23,20 @@ const (
 	sectionStore         // where the content comes from
 )
 
+// The groups the rows are listed under. A header is drawn for each, the cursor
+// cannot land on one, and a group keeps its header when it holds nothing.
+const (
+	groupProject = "PROJECT"
+	groupSchemas = "SCHEMAS"
+)
+
+// propGroups is the order the groups are drawn in.
+var propGroups = []string{groupProject, groupSchemas}
+
 // propSection is one row of the properties list.
 type propSection struct {
 	label  string
+	group  string
 	kind   int
 	schema string // the schema this row reports, for sectionSchema
 	source string // the file it came from, for the document sections
@@ -39,19 +50,67 @@ type propSection struct {
 // reading `local`, because a row that says so teaches the concept where an
 // absent one teaches nothing.
 func propSections(info scanner.ProjectInfo) []propSection {
+	// Where the content comes from, together: the configuration that applies
+	// and the store it was read from are one question asked twice. The schemas
+	// follow under their own header, being a repeating row rather than a fact
+	// about the project.
 	sections := []propSection{{
-		label:  "project",
+		label:  "config",
+		group:  groupProject,
 		kind:   sectionConfig,
 		source: configSourceLabel(info),
 		md:     strings.HasSuffix(info.ConfigFile, ".md"),
+	}, {
+		label: "store",
+		group: groupProject,
+		kind:  sectionStore,
 	}}
 	for _, u := range info.SchemaUsage {
 		sections = append(sections, propSection{
-			label: u.Name, kind: sectionSchema, schema: u.Name,
+			label: u.Name, group: groupSchemas, kind: sectionSchema, schema: u.Name,
 		})
 	}
-	sections = append(sections, propSection{label: "store", kind: sectionStore})
 	return sections
+}
+
+// propertyLines lays the rows out under their headers.
+//
+// One entry per drawn line: the section that line belongs to, or lineOwner for
+// a header or the blank line between groups. It is what the renderer draws and
+// what the shared line arithmetic scrolls.
+type propertyLine struct {
+	header  string
+	section int // index into the sections, or lineOwner
+}
+
+func propertyLines(sections []propSection) []propertyLine {
+	var lines []propertyLine
+	for gi, g := range propGroups {
+		if gi > 0 {
+			// A blank line between groups, so the boundary reads as a break
+			// rather than as another row. The change list draws its groups the
+			// same way.
+			lines = append(lines, propertyLine{section: lineOwner})
+		}
+		// A group keeps its header when it holds nothing: "no schemas" is an
+		// answer, and an absent header cannot be told from one filtered away.
+		lines = append(lines, propertyLine{header: g, section: lineOwner})
+		for i, s := range sections {
+			if s.group == g {
+				lines = append(lines, propertyLine{section: i})
+			}
+		}
+	}
+	return lines
+}
+
+// ownersOfProperties marks which section each drawn line belongs to.
+func ownersOfProperties(lines []propertyLine) itemLines {
+	owners := make(itemLines, len(lines))
+	for i, l := range lines {
+		owners[i] = l.section
+	}
+	return owners
 }
 
 // configSourceLabel names the file the configuration was read from.

@@ -294,8 +294,11 @@ func TestTheThirdTabIsNamedProperties(t *testing.T) {
 	if !strings.Contains(out, "properties") {
 		t.Error("the tab bar must name it")
 	}
-	if strings.Contains(out, " config ") {
-		t.Error("the old name must be gone from the tab bar")
+	// Asked of the tab bar rather than of the whole frame: `config` is a row
+	// label in this tab's own list now, and the question is what the tab is
+	// called.
+	if bar := ansi.Strip(m.renderTabHeader(m.width)); strings.Contains(bar, "config") {
+		t.Errorf("the old name must be gone from the tab bar: %q", bar)
 	}
 }
 

@@ -1,11 +1,11 @@
 ---
 # specgetty-ve3m
 title: improve properties view laout
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-09-21T21:38:26Z
-updated_at: 2026-09-21T21:52:05Z
+updated_at: 2026-09-21T22:00:03Z
 ---
 
 the sidepanel is very small and we need sections with titles in the sidepanel:

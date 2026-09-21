@@ -378,21 +378,30 @@ The third tab reports what the project is and where its parts come from, as a
 list of rows beside their content:
 
 ```
- ╭─────────────╮ ╭────────────────────────────────────────╮
- │ project     │ │ schema: spec-driven                    │
- │ spec-driven │ │ default: yes                           │
- │ tinychange  │ │ changes: 26                            │
- │ store       │ │ source: package                        │
- ╰─────────────╯ │ artifacts:                             │
-                 │   proposal -> proposal.md              │
-                 ╰────────────────────────────────────────╯
+ ╭──────────────────╮ ╭────────────────────────────────────────╮
+ │ PROJECT          │ │ schema: spec-driven                    │
+ │   config         │ │ default: yes                           │
+ │   store          │ │ changes: 26                            │
+ │                  │ │ source: package                        │
+ │ SCHEMAS          │ │ artifacts:                             │
+ │   spec-driven    │ │   proposal -> proposal.md              │
+ │   tinychange     │ ╰────────────────────────────────────────╯
+ ╰──────────────────╯
 ```
 
-| Row       | Shows                                                          |
-| --------- | -------------------------------------------------------------- |
-| `project` | the one configuration that applies, and the file it came from   |
-| a schema  | one row per workflow schema the project's changes record        |
-| `store`   | where the content comes from, or `local`                        |
+The rows are grouped under headers the cursor skips over. A group keeps its
+header when it holds nothing, so a project with no recorded schema still says
+so.
+
+| Row        | Shows                                                         |
+| ---------- | ------------------------------------------------------------- |
+| `config`   | the one configuration that applies, and the file it came from  |
+| `store`    | where the content comes from, or `local`                       |
+| a schema   | one row per workflow schema the project's changes record       |
+
+The list takes twenty columns wherever the panel can spare them, and no more:
+its labels are short and fixed, so every column a wider terminal adds goes to
+the content beside it and the divider stays where your eye left it.
 
 `tab` moves between the list and the content, `j`/`k` move down the list.
 

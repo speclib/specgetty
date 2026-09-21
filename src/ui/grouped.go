@@ -81,15 +81,27 @@ func groupLines(groups []changeGroup, rows []filtered[changeRow]) []groupLine {
 	return lines
 }
 
+// ownersOf marks which change each drawn line belongs to, chrome included.
+//
+// This is what the shared line arithmetic reads. The spacer skip below stays in
+// the renderer: it needs to know that a line is a spacer rather than which
+// change it belongs to, which is the one thing that slice does not carry.
+func ownersOf(lines []groupLine) itemLines {
+	owners := make(itemLines, len(lines))
+	for i, l := range lines {
+		owners[i] = lineOwner
+		if l.kind == lineChange {
+			owners[i] = l.rowIndex
+		}
+	}
+	return owners
+}
+
 // lineOfRow returns the drawn line a change sits on, or -1 when the filter has
 // removed it.
 func lineOfRow(lines []groupLine, rowIndex int) int {
-	for i, l := range lines {
-		if l.kind == lineChange && l.rowIndex == rowIndex {
-			return i
-		}
-	}
-	return -1
+	first, _ := ownersOf(lines).span(rowIndex)
+	return first
 }
 
 // renderGroupedTable draws the column header, then the groups with their
@@ -139,11 +151,9 @@ func renderGroupedTable(groups []changeGroup, rows []filtered[changeRow],
 
 	// The offset is computed in drawn lines, not in change indices, because a
 	// header occupies a line the cursor cannot land on. This is where every
-	// off-by-one in grouping would live.
-	offset := 0
-	if at := lineOfRow(lines, cursor); at >= bodyHeight {
-		offset = at - bodyHeight + 1
-	}
+	// off-by-one in grouping would live, which is why the arithmetic is the
+	// shared one rather than this list's own.
+	offset := ownersOf(lines).offsetFor(cursor, bodyHeight)
 	// The pane never opens on a blank line. The offset puts the selected change
 	// on the last visible row, so moving the window down by one keeps it in
 	// range while dropping the spacer that would otherwise head the pane.

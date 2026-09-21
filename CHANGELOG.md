@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The properties tab's row list is grouped under headers: `PROJECT` holding the
+  configuration and the store, `SCHEMAS` holding one row per workflow schema.
+  The cursor skips the headers, and a group keeps its header when it holds
+  nothing. The row formerly labelled `project` is now `config`, the header it
+  sits under carrying the context the old label was doing.
+- That list now takes twenty columns wherever the panel can spare them rather
+  than only the width its labels need, so the divider stays put across a resize
+  and every extra column goes to the content.
+
 - A filesystem change that lands while a scan is already running now causes a
   further scan once that one finishes, rather than being discarded. The window
   was small but widened exactly when a project was being written to fast.

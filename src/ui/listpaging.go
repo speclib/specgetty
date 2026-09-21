@@ -171,19 +171,5 @@ func clampIndex(i, n int) int {
 // nodesInRows counts how many nodes starting at `from` fit in `rows` drawn
 // rows, which is what a page of the outline moves.
 func nodesInRows(tree specTree, width, from, rows int) int {
-	all := outlineRows(tree, width)
-	used, moved := 0, 0
-	for node := from; node < len(tree.nodes); node++ {
-		first, last := rowRangeOfNode(all, node)
-		if first < 0 {
-			continue
-		}
-		h := last - first + 1
-		if used+h > rows && moved > 0 {
-			break
-		}
-		used += h
-		moved++
-	}
-	return moved
+	return ownersOfRows(outlineRows(tree, width)).fit(from, rows)
 }

@@ -186,16 +186,21 @@ func TestSectionsAreTheSameShapeForEveryProject(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			sections := propSections(tc.m.projects[tc.m.currentKey()].Info)
 			if len(sections) != 3 {
-				t.Fatalf("got %d rows, want project, one schema and store", len(sections))
+				t.Fatalf("got %d rows, want config, store and one schema", len(sections))
 			}
-			if sections[0].label != "project" || sections[0].kind != sectionConfig {
+			// Where the content comes from first, under PROJECT, then the
+			// schemas under their own header.
+			if sections[0].label != "config" || sections[0].kind != sectionConfig ||
+				sections[0].group != groupProject {
 				t.Errorf("first row: %+v", sections[0])
 			}
-			if sections[1].kind != sectionSchema || sections[1].label != "spec-driven" {
-				t.Errorf("schema row: %+v", sections[1])
+			if sections[1].label != "store" || sections[1].kind != sectionStore ||
+				sections[1].group != groupProject {
+				t.Errorf("second row: %+v", sections[1])
 			}
-			if sections[2].label != "store" || sections[2].kind != sectionStore {
-				t.Errorf("last row: %+v", sections[2])
+			if sections[2].kind != sectionSchema || sections[2].label != "spec-driven" ||
+				sections[2].group != groupSchemas {
+				t.Errorf("schema row: %+v", sections[2])
 			}
 		})
 	}
@@ -210,14 +215,14 @@ func TestSectionsGrowWithTheSchemasInUse(t *testing.T) {
 	}
 	sections := propSections(info)
 	if len(sections) != 4 {
-		t.Fatalf("got %d rows, want project, two schemas and store", len(sections))
+		t.Fatalf("got %d rows, want config, store and two schemas", len(sections))
 	}
-	if sections[1].label != "spec-driven" || sections[2].label != "tinychange" {
+	if sections[2].label != "spec-driven" || sections[3].label != "tinychange" {
 		t.Errorf("schema rows: %+v", sections)
 	}
 }
 
-func TestTheProjectRowNamesTheFileItCameFrom(t *testing.T) {
+func TestTheConfigRowNamesTheFileItCameFrom(t *testing.T) {
 	plain := propSections(plainModel().projects["/work/specgetty"].Info)
 	if plain[0].source != "openspec/config.yaml" {
 		t.Errorf("got %q, want the filename", plain[0].source)
@@ -400,7 +405,7 @@ func TestSwitchingSectionChangesTheDocument(t *testing.T) {
 		t.Error("the declaring repo's configuration is inert and must not be shown as in force")
 	}
 
-	m.propSection = 2
+	m.propSection = 1 // the store row, which now sits beside config under PROJECT
 	m.syncDocument()
 	second, secondContent, _ := m.currentDocument()
 

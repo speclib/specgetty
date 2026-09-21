@@ -2055,24 +2055,41 @@ func (m model) renderPropertiesTab(width int, height int) string {
 	}
 
 	active := m.sectionIndex(sections)
-	var listB strings.Builder
-	offset := 0
-	if active >= rows {
-		offset = active - rows + 1
+	lines := propertyLines(sections)
+	offset := ownersOfProperties(lines).offsetFor(active, rows)
+	// The pane never opens on the blank line between two groups. The offset
+	// puts the selected row on the last visible line, so moving the window
+	// down by one keeps it in range while dropping the spacer that would
+	// otherwise head the pane. This is what the change list does with its own.
+	if offset < len(lines) && lines[offset].section == lineOwner &&
+		lines[offset].header == "" {
+		offset++
 	}
 	end := offset + rows
-	if end > len(sections) {
-		end = len(sections)
+	if end > len(lines) {
+		end = len(lines)
 	}
+
+	var listB strings.Builder
 	for i := offset; i < end; i++ {
 		if i > offset {
 			listB.WriteString("\n")
 		}
-		label := sections[i].label
+		l := lines[i]
+		if l.section == lineOwner {
+			// A header, or the blank line between two groups. The cursor
+			// cannot land on either.
+			if l.header != "" {
+				listB.WriteString(sectionHeaderStyle.Render(fitCell(l.header, listWidth)))
+			}
+			continue
+		}
+		// Rows sit under their header, which is what says they belong to it.
+		label := "  " + sections[l.section].label
 		switch {
-		case i == active && m.focus == focusListPane:
+		case l.section == active && m.focus == focusListPane:
 			listB.WriteString(selectedStyle.Width(listWidth).Render(label))
-		case i == active:
+		case l.section == active:
 			// Still the selected row, but the keys belong to the content now.
 			listB.WriteString(dimSelectedStyle.Width(listWidth).Render(label))
 		default:
@@ -2098,20 +2115,34 @@ func (m model) renderPropertiesTab(width int, height int) string {
 func (m model) propertiesSplit(width int) (listOuter, contentOuter int) {
 	widest := 0
 	for _, s := range m.currentSections() {
-		if n := len([]rune(s.label)); n > widest {
+		// Two for the indent every row is drawn at, so a label is never cut by
+		// the space that shows which group it belongs to.
+		if n := len([]rune(s.label)) + 2; n > widest {
 			widest = n
 		}
 	}
 	listOuter = widest + boxChrome
-	if min := 9 + boxChrome; listOuter < min {
-		listOuter = min
+
+	// A floor rather than a share. The labels are short and fixed, so a
+	// proportional split would hand fifty-eight columns to thirteen characters
+	// on a wide terminal. A floor keeps the list the same width on every
+	// terminal that can hold it, so the divider does not move under the eye
+	// after a resize, and every extra column goes to the content.
+	if listOuter < propertiesListFloor {
+		listOuter = propertiesListFloor
 	}
-	// Never let the list crowd out the content it exists to label.
+	// Never let the list crowd out the content it exists to label. This gives
+	// way before the floor does, so the two halves cannot collide.
 	if max := width / 3; listOuter > max {
 		listOuter = max
 	}
 	return listOuter, width - listOuter - 1
 }
+
+// propertiesListFloor is the width the row list takes wherever the panel can
+// spare it: enough for the longest label this list draws, its indent and its
+// border, with room for the schema names projects actually use.
+const propertiesListFloor = 20
 
 var (
 	mdHeaderStyle = lipgloss.NewStyle().
