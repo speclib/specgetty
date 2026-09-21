@@ -709,25 +709,42 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "left":
 			// Sub-tabs belong to an open change, the tab bar to the project.
 			// Neither spills into the other.
-			if m.level == levelChange {
+			//
+			// Switched on the level rather than chained, so a level added later
+			// has to say what these keys do there. The chain this replaced gave
+			// every level it did not name the project tab bar by omission,
+			// which is how the spec view came to move a tab bar it does not
+			// show.
+			switch m.level {
+			case levelSpec:
+				// One spec, no sibling to move to. Its two halves are reached
+				// with tab.
+			case levelChange:
 				if m.changeArtifactTab > 0 {
 					m.changeArtifactTab--
 				}
-			} else if m.detailTab > 0 {
-				m.detailTab--
-				m.focus = m.defaultFocus()
-				cmds = append(cmds, m.enterTab()...)
+			case levelProject:
+				if m.detailTab > 0 {
+					m.detailTab--
+					m.focus = m.defaultFocus()
+					cmds = append(cmds, m.enterTab()...)
+				}
 			}
 
 		case "right":
-			if m.level == levelChange {
+			switch m.level {
+			case levelSpec:
+				// As for left.
+			case levelChange:
 				if m.changeArtifactTab < m.changeArtifactTabCount()-1 {
 					m.changeArtifactTab++
 				}
-			} else if m.detailTab < len(tabNames)-1 {
-				m.detailTab++
-				m.focus = m.defaultFocus()
-				cmds = append(cmds, m.enterTab()...)
+			case levelProject:
+				if m.detailTab < len(tabNames)-1 {
+					m.detailTab++
+					m.focus = m.defaultFocus()
+					cmds = append(cmds, m.enterTab()...)
+				}
 			}
 
 		case "1", "2", "3":

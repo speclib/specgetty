@@ -5,7 +5,8 @@ status: draft
 type: task
 priority: normal
 created_at: 2026-09-21T16:47:36Z
-updated_at: 2026-09-21T18:21:06Z
+updated_at: 2026-09-21T20:55:00Z
+parent: specgetty-ab9u
 ---
 
 we want to show the core features of specgetty with nice demo movie

@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `left` and `right` no longer do anything in the spec detail view. They moved
+  the project tab bar underneath it, which is not on screen there, and took the
+  keyboard off the card mid-read.
 - In a project that keeps its specs in a store, toggling a task checkbox failed
   with `could not save: no such file or directory`, and `Y` copied a path that
   looked right and did not exist. Both built their path from the repository you

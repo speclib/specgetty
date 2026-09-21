@@ -716,3 +716,113 @@ func TestTheSpecLevelObeysTheMinimumTerminalSize(t *testing.T) {
 		}
 	}
 }
+
+// --- the arrow keys at the spec level ---
+
+func TestArrowKeysDoNothingInTheSpecView(t *testing.T) {
+	for _, key := range []tea.KeyPressMsg{
+		{Code: tea.KeyRight}, {Code: tea.KeyLeft},
+	} {
+		m := press(specDetailModel(t), tea.KeyPressMsg{Code: tea.KeyEnter})
+		before := m
+
+		after := press(m, key)
+
+		if after.detailTab != before.detailTab {
+			t.Errorf("%v moved the tab bar from %d to %d, and it is not on screen",
+				key, before.detailTab, after.detailTab)
+		}
+		if after.focus != before.focus {
+			t.Errorf("%v moved the keyboard from focus %d to %d",
+				key, before.focus, after.focus)
+		}
+		if after.level != levelSpec {
+			t.Errorf("%v left the level, now %d", key, after.level)
+		}
+		if after.specNode != before.specNode {
+			t.Errorf("%v moved the outline cursor to %d", key, after.specNode)
+		}
+	}
+}
+
+// TestTheCardKeepsTheKeyboardAcrossAnArrow is the symptom a reader sees: the
+// keyboard jumping back to the outline mid-read.
+func TestTheCardKeepsTheKeyboardAcrossAnArrow(t *testing.T) {
+	m := press(specDetailModel(t), tea.KeyPressMsg{Code: tea.KeyEnter})
+	onCard := press(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	if onCard.focus != focusContentPane {
+		t.Fatal("the test needs the card holding the keyboard")
+	}
+
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyRight}, {Code: tea.KeyLeft}} {
+		after := press(onCard, key)
+		if after.focus != focusContentPane {
+			t.Errorf("%v took the keyboard off the card", key)
+		}
+		// The lit border follows the focus, so it must not have moved either.
+		frame := ansi.Strip(after.renderFrame())
+		if frame != ansi.Strip(onCard.renderFrame()) {
+			t.Errorf("%v changed what is drawn", key)
+		}
+	}
+}
+
+func TestTheSpecsTabIsActiveAfterArrowsAndEsc(t *testing.T) {
+	// This passed before the fix, because esc forces the tab on the way out,
+	// which is what masked the defect. It must still pass.
+	m := press(specDetailModel(t), tea.KeyPressMsg{Code: tea.KeyEnter})
+	for i := 0; i < 4; i++ {
+		m = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		m = press(m, tea.KeyPressMsg{Code: tea.KeyLeft})
+	}
+
+	back := press(m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if back.detailTab != tabSpecs {
+		t.Errorf("tab = %d, want the specs tab", back.detailTab)
+	}
+	if back.level != levelProject {
+		t.Errorf("level = %d, want the project view", back.level)
+	}
+}
+
+func TestTheArrowsStillWorkWhereTheyBelong(t *testing.T) {
+	t.Run("the project tab bar", func(t *testing.T) {
+		m := specDetailModel(t)
+		m.detailTab = tabChanges
+		m.recalcLayout()
+		m.syncDocument()
+
+		right := press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		if right.detailTab != tabSpecs {
+			t.Errorf("right went to tab %d, want the next one", right.detailTab)
+		}
+		if left := press(right, tea.KeyPressMsg{Code: tea.KeyLeft}); left.detailTab != tabChanges {
+			t.Errorf("left went to tab %d, want back", left.detailTab)
+		}
+	})
+
+	t.Run("artifact sub-tabs in an open change", func(t *testing.T) {
+		// This fixture carries proposal.md and tasks.md, so there is somewhere
+		// for the keys to go.
+		m, _, _, _ := onDiskStoreModel(t, threeTasks)
+		m.level = levelChange
+		m.changeArtifactTab = 0
+		m.recalcLayout()
+		m.syncDocument()
+		r, ok := m.selectedRow()
+		if !ok {
+			t.Fatal("no change selected")
+		}
+		if n := len(r.artifactTabNames()); n < 2 {
+			t.Fatalf("the fixture has %d artifact tab(s); the test needs two", n)
+		}
+
+		right := press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		if right.changeArtifactTab != 1 {
+			t.Errorf("right went to sub-tab %d, want 1", right.changeArtifactTab)
+		}
+		if left := press(right, tea.KeyPressMsg{Code: tea.KeyLeft}); left.changeArtifactTab != 0 {
+			t.Errorf("left went to sub-tab %d, want 0", left.changeArtifactTab)
+		}
+	})
+}
