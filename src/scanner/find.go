@@ -151,7 +151,15 @@ func Walk(ctx context.Context, config *Config, results chan string, ignore_dir_e
 		if globPath == "" {
 			continue
 		}
-		completeIncludeList = append(completeIncludeList, globPath)
+
+		// A glob contributes what it expands to and nothing else. The pattern
+		// is not a directory: walking it failed on every scan, which was logged
+		// and swallowed while a log panel existed to swallow it, and which
+		// failed the whole scan outright when directory errors were not
+		// ignored.
+		if !strings.HasSuffix(globPath, "*") {
+			completeIncludeList = append(completeIncludeList, globPath)
+		}
 
 		if strings.HasSuffix(globPath, "*") {
 			parent := filepath.Dir(globPath)

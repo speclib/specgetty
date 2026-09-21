@@ -46,45 +46,6 @@ is active and the spec list holds the keyboard.
 - **WHEN** the spec content holds the keyboard and the user presses j or k
 - **THEN** the content SHALL scroll and the spec cursor SHALL NOT move
 
-### Requirement: The specs tab has a focus
-Either the spec list or the spec content SHALL hold the keyboard, and the user
-SHALL be able to move between them. Each SHALL be drawn in its own border, and
-the one holding the keyboard SHALL be the lit one.
-
-#### Scenario: Default focus
-- **WHEN** the user switches to the specs tab
-- **THEN** the spec list SHALL hold the keyboard
-
-#### Scenario: Moving focus to the content
-- **WHEN** the spec list holds the keyboard and the user presses `tab`
-- **THEN** the spec content SHALL hold the keyboard
-
-#### Scenario: Moving focus back
-- **WHEN** the spec content holds the keyboard, the log panel is closed, and the
-  user presses `tab`
-- **THEN** the spec list SHALL hold the keyboard
-
-#### Scenario: Cycling through the log panel
-- **WHEN** the log panel is open and the user presses `tab` repeatedly on the
-  specs tab
-- **THEN** the keyboard SHALL move through the spec list, the spec content and
-  the log panel in turn
-
-#### Scenario: Focus is visible
-- **WHEN** the spec list holds the keyboard
-- **THEN** the spec list's border SHALL be lit and the spec content's border
-  SHALL be dim, the selected spec SHALL be highlighted, and when the content
-  holds the keyboard instead the two borders SHALL swap and that highlight
-  SHALL be dimmed
-
-#### Scenario: Neither half has the keyboard
-- **WHEN** the log panel holds the keyboard while the specs tab is active
-- **THEN** both halves' borders SHALL be dim
-
-#### Scenario: Leaving and returning to the tab
-- **WHEN** the user switches away from the specs tab and back
-- **THEN** the spec list SHALL hold the keyboard again
-
 ### Requirement: The spec content is a document viewer
 When the spec content holds the keyboard, it SHALL behave as a document viewer,
 with the wrapping, scrolling, position reporting and position retention that
@@ -125,3 +86,25 @@ end, while it holds the keyboard.
 #### Scenario: The content still pages when it holds the keyboard
 - **WHEN** the spec content holds the keyboard and a page key is pressed
 - **THEN** the content SHALL scroll, as it always has
+
+### Requirement: The specs tab has two halves and one focus
+Either the spec list or the spec content SHALL hold the keyboard, and the user
+SHALL be able to move it between them. Of the two borders drawn, the one holding
+the keyboard SHALL be the lit one.
+
+#### Scenario: Default focus
+- **WHEN** the specs tab becomes active
+- **THEN** the spec list SHALL hold the keyboard
+
+#### Scenario: Moving the focus
+- **WHEN** the user presses `tab` on the specs tab
+- **THEN** the keyboard SHALL move to the other half
+
+#### Scenario: Moving it back
+- **WHEN** the user presses `tab` again
+- **THEN** the keyboard SHALL return to the half it came from, there being only
+  two places for it to be
+
+#### Scenario: The lit border
+- **WHEN** either half holds the keyboard
+- **THEN** that half's border SHALL be lit and the other's dim

@@ -2,7 +2,6 @@ package ui
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -146,26 +145,6 @@ func TestLineKeysStillWalkTheListRatherThanScroll(t *testing.T) {
 	}
 }
 
-// --- 2.4 the log still wins ---
-
-func TestTheLogPanelStillTakesThePagingKeys(t *testing.T) {
-	m := pagingModel(t, tabProperties)
-	m.logVisible = true
-	m.logContent = strings.Repeat("a log line\n", 200)
-	m.logViewport.SetContent(m.logContent)
-	m.recalcLayout()
-	m.focus = focusLog
-
-	before := m.docViewport.YOffset()
-	after := press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
-	if after.docViewport.YOffset() != before {
-		t.Error("the document must not move while the log holds the keyboard")
-	}
-	if after.logViewport.YOffset() == 0 {
-		t.Error("the log should have scrolled")
-	}
-}
-
 // --- 2.5 an open change is unaffected ---
 
 func TestAnOpenChangeStillPages(t *testing.T) {
@@ -206,10 +185,5 @@ func TestTheDocumentOwnsTheKeysOnlyWhileItHoldsTheKeyboard(t *testing.T) {
 	onContent := press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if !onContent.docActive() {
 		t.Error("it does once the content holds the keyboard")
-	}
-	onContent.logVisible = true
-	onContent.focus = focusLog
-	if onContent.docActive() {
-		t.Error("and does not once the log does")
 	}
 }

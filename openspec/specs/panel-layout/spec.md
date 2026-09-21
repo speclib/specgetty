@@ -12,8 +12,8 @@ panel, not to the views, so a view added later inherits it without doing
 anything.
 
 This applies to both tab bars, the change table and its search prompt, the specs
-list and its document, the config pane, the markdown documents, the change
-header line, the placeholder for an unimplemented tab, and the log panel.
+list and its document, the properties list and its content, the markdown
+documents, the change header line, and the placeholder for an unimplemented tab.
 
 #### Scenario: A list row under the cursor
 - **WHEN** a row of the change list is under the cursor
@@ -106,23 +106,27 @@ the border and its inset, and every view SHALL still fit the terminal exactly.
 - **THEN** the frame SHALL still be exactly 20 lines and 60 columns, with the
   border drawn and fewer content rows inside it
 
-### Requirement: A border is lit when the keyboard is inside it
+### Requirement: A border is lit when the keyboard is in the region it encloses
 Every border in the frame SHALL be drawn in the active colour when the region
 holding the keyboard lies inside it, and in the dim colour when it does not.
 Borders nest, so more than one may be lit at once, and the innermost lit border
 is the region actually receiving the keys.
 
-#### Scenario: A single-pane tab with the log panel closed
-- **WHEN** the changes or config tab is active and the log panel is closed
+#### Scenario: A single-pane tab
+- **WHEN** the changes tab is active
 - **THEN** the panel border and the content border SHALL both be lit, because
   the keyboard is inside both
-
-#### Scenario: The log panel takes the keyboard
-- **WHEN** the log panel is open and holds the keyboard
-- **THEN** the log panel's border SHALL be lit, and the panel border and the
-  content border SHALL both be dim
 
 #### Scenario: Two panes side by side
 - **WHEN** the content is split into panes and one of them holds the keyboard
 - **THEN** that pane's border SHALL be lit, every other pane's border SHALL be
   dim, and the panel border enclosing them SHALL be lit
+
+#### Scenario: An open change
+- **WHEN** a change is open
+- **THEN** the panel border and the artifact's border SHALL both be lit
+
+#### Scenario: A modal
+- **WHEN** a modal is awaiting an answer
+- **THEN** it replaces the frame rather than being drawn over it, so no border
+  underneath it is on screen to be lit or dimmed

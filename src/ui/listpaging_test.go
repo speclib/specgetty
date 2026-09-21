@@ -185,7 +185,7 @@ func TestListPageIsOneOutsideTheProjectLevel(t *testing.T) {
 // --- 5.1 the whole rule, as one table ---
 
 func TestTheKeysActOnWhateverHoldsTheKeyboard(t *testing.T) {
-	type moved struct{ list, doc, log bool }
+	type moved struct{ list, doc bool }
 
 	cases := []struct {
 		name  string
@@ -217,9 +217,6 @@ func TestTheKeysActOnWhateverHoldsTheKeyboard(t *testing.T) {
 			}
 			if gotDoc := after.docViewport.YOffset() != m.docViewport.YOffset(); gotDoc != tc.want.doc {
 				t.Errorf("document moved = %v, want %v", gotDoc, tc.want.doc)
-			}
-			if gotLog := after.logViewport.YOffset() != m.logViewport.YOffset(); gotLog != tc.want.log {
-				t.Errorf("log moved = %v, want %v", gotLog, tc.want.log)
 			}
 		})
 	}

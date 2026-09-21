@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -428,5 +429,28 @@ func TestRunAppTakesArgumentsEvenWhenTheConfigIsUnreadable(t *testing.T) {
 	mkProject(t, filepath.Join(base, "alpha"))
 	if err := newApp().Run([]string{"specgetty", "--config", path, "--debug", base}); err != nil {
 		t.Errorf("arguments override the configuration: %v", err)
+	}
+}
+
+func TestDebugStillLogs(t *testing.T) {
+	// `--debug` never enters the interface, so its logging is the one place
+	// this output is useful and correct. It must survive the panel's removal.
+	base := t.TempDir()
+	mkProject(t, filepath.Join(base, "alpha"))
+	cfg := writeConfigFile(t, base)
+
+	var buf strings.Builder
+	previous := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	if err := newApp().Run([]string{"specgetty", "--config", cfg, "--debug"}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"walkDuration", "scanDuration", "alpha"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("debug output lost %q:\n%s", want, out)
+		}
 	}
 }

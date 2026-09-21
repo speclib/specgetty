@@ -23,7 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   saying whether a change is active or archived is no longer a default, since
   the group header says it, and remains available in `change_fields`.
 
+### Removed
+
+- The log panel, its `l` key and its place in the focus ring. One scan wrote 35
+  lines into it, 30 of them per-project timings, and the three real errors it
+  could carry were buried under them in a panel that had to be asked for. Log
+  output is discarded while the interface is running; `--debug` prints exactly
+  what it always did.
+
 ### Fixed
+
+- A `scandirs.include` entry ending in `*` is no longer walked as a path in its
+  own right, only as what it expands to. The pattern is not a directory, so
+  walking it failed on every scan, and it failed the whole scan outright with
+  `--ignore_dir_errors=false`, which was therefore broken for any configuration
+  using a glob.
 
 - `pgup`, `pgdown`, `ctrl+f`, `ctrl+b`, `ctrl+d`, `ctrl+u`, `gg` and `G` now
   work in every list, not only in documents. They act on whatever holds the

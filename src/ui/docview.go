@@ -70,9 +70,6 @@ func (m model) docActive() bool {
 	if m.pickerOpen || m.askOpenPicker || m.searchFocused {
 		return false
 	}
-	if m.focus == focusLog {
-		return false
-	}
 	if m.level == levelChange {
 		return true
 	}

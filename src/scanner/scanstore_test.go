@@ -708,3 +708,133 @@ func TestRetiredKeysIn(t *testing.T) {
 		}
 	})
 }
+
+// --- a glob include contributes only what it expands to ---
+
+// walkStrict walks base without ignoring directory errors, which is what the
+// glob pattern used to fail.
+func walkStrict(t *testing.T, includes []string) ([]string, error) {
+	t.Helper()
+	cfg := &Config{}
+	cfg.ScanDirs.Include = includes
+	results := make(chan string, 64)
+	errCh := make(chan error, 1)
+	go func() { errCh <- Walk(context.Background(), cfg, results, false) }()
+	var found []string
+	for d := range results {
+		found = append(found, d)
+	}
+	sort.Strings(found)
+	return found, <-errCh
+}
+
+func TestGlobIncludeIsNotWalkedAsAPath(t *testing.T) {
+	// The pattern is not a directory. Walking it failed on every scan, and the
+	// failure was swallowed by a log panel nobody opened.
+	isolateStores(t)
+	base := t.TempDir()
+	one := mkRoot(t, filepath.Join(base, "gh.one"), "schema: spec-driven\n")
+	two := mkRoot(t, filepath.Join(base, "gh.two"), "schema: spec-driven\n")
+	mkRoot(t, filepath.Join(base, "other"), "schema: spec-driven\n")
+
+	found, err := walkStrict(t, []string{filepath.Join(base, "gh.*")})
+	if err != nil {
+		t.Fatalf("a glob include must not fail the walk: %v", err)
+	}
+	want := []string{one, two}
+	if len(found) != 2 || found[0] != want[0] || found[1] != want[1] {
+		t.Errorf("got %v, want %v: the matches are walked and the pattern is not", found, want)
+	}
+}
+
+func TestGlobIncludeThatMatchesNothing(t *testing.T) {
+	isolateStores(t)
+	base := t.TempDir()
+	mkRoot(t, filepath.Join(base, "other"), "schema: spec-driven\n")
+
+	found, err := walkStrict(t, []string{filepath.Join(base, "nomatch.*")})
+	if err != nil {
+		t.Fatalf("a glob that matches nothing must not fail the walk: %v", err)
+	}
+	if len(found) != 0 {
+		t.Errorf("got %v, want nothing walked for that include", found)
+	}
+}
+
+func TestPlainIncludeIsStillWalkedAsThePathItIs(t *testing.T) {
+	isolateStores(t)
+	base := t.TempDir()
+	only := mkRoot(t, filepath.Join(base, "plain"), "schema: spec-driven\n")
+
+	found, err := walkStrict(t, []string{only})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0] != only {
+		t.Errorf("got %v, want %q", found, only)
+	}
+}
+
+func TestAGlobCompletesAScanWithDirectoryErrorsNotIgnored(t *testing.T) {
+	// This is the case that failed outright: the pattern was walked, could not
+	// be stated, and the error was returned rather than swallowed.
+	isolateStores(t)
+	base := t.TempDir()
+	mkRoot(t, filepath.Join(base, "gh.one"), "schema: spec-driven\n")
+
+	if _, err := walkStrict(t, []string{filepath.Join(base, "gh.*")}); err != nil {
+		t.Errorf("got %v, want a completed scan", err)
+	}
+}
+
+func TestAnUnreadableGlobParentStillBehaves(t *testing.T) {
+	// The existing rule is about the parent, not the pattern, so it survives.
+	isolateStores(t)
+	missing := filepath.Join(t.TempDir(), "gone", "gh.*")
+
+	if _, err := walkStrict(t, []string{missing}); err == nil {
+		t.Error("an unreadable glob parent must still be returned when errors are not ignored")
+	}
+
+	cfg := &Config{}
+	cfg.ScanDirs.Include = []string{missing}
+	results := make(chan string, 8)
+	go func() {
+		if err := Walk(context.Background(), cfg, results, true); err != nil {
+			t.Error(err)
+		}
+	}()
+	for range results {
+	}
+}
+
+func TestAPlainIncludeThatDoesNotExist(t *testing.T) {
+	// Until the glob fix, the pattern itself was the thing that always failed
+	// here, which is what exercised this path. A plain include that is not
+	// there is now the only way to reach it, and it is the case the flag exists
+	// for.
+	isolateStores(t)
+	base := t.TempDir()
+	real := mkRoot(t, filepath.Join(base, "real"), "schema: spec-driven\n")
+	missing := filepath.Join(base, "not-here")
+
+	if _, err := walkStrict(t, []string{real, missing}); err == nil {
+		t.Error("with directory errors not ignored, an unwalkable include is returned")
+	}
+
+	cfg := &Config{}
+	cfg.ScanDirs.Include = []string{real, missing}
+	results := make(chan string, 8)
+	errCh := make(chan error, 1)
+	go func() { errCh <- Walk(context.Background(), cfg, results, true) }()
+	var found []string
+	for d := range results {
+		found = append(found, d)
+	}
+	if err := <-errCh; err != nil {
+		t.Errorf("with them ignored the scan carries on: %v", err)
+	}
+	if len(found) != 1 || found[0] != real {
+		t.Errorf("got %v, want the readable include alone", found)
+	}
+}

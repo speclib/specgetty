@@ -2,10 +2,14 @@ package ui
 
 import (
 	"errors"
+	"io"
+	"log"
+	"os"
 	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
@@ -111,20 +115,30 @@ func TestViewFillsTheTerminalExactly(t *testing.T) {
 	}
 }
 
-func TestViewIncludesTheLogPanelOnlyWhenVisible(t *testing.T) {
+func TestViewNeverDrawsALogPanel(t *testing.T) {
 	m := makeViewModel()
-	m.logContent = "a log line that is quite distinctive"
-	m.logViewport.SetContent(m.logContent)
-
-	if strings.Contains(viewOf(m), "Log") {
-		t.Error("the log panel should not be drawn while hidden")
-	}
-
-	m.logVisible = true
 	m.recalcLayout()
-	m.logViewport.SetContent(m.logContent)
-	if !strings.Contains(viewOf(m), "Log") {
-		t.Error("the log panel should be drawn once visible")
+	if strings.Contains(viewOf(m), "Log") {
+		t.Error("there is no log panel to draw")
+	}
+}
+
+func TestTheNavBarSitsDirectlyBelowThePanel(t *testing.T) {
+	// The log panel used to sit between them when it was open.
+	m := makeViewModel()
+	m.width, m.height = 100, 24
+	m.recalcLayout()
+	m.syncDocument()
+
+	lines := strings.Split(ansi.Strip(m.renderFrame()), "\n")
+	if n := len(lines); n != m.height {
+		t.Fatalf("frame is %d lines, want %d", n, m.height)
+	}
+	if !strings.Contains(lines[len(lines)-1], "quit") {
+		t.Errorf("the last line is the nav bar, got %q", lines[len(lines)-1])
+	}
+	if !strings.Contains(lines[len(lines)-2], "\u2570") {
+		t.Errorf("the line above it closes the panel, got %q", lines[len(lines)-2])
 	}
 }
 
@@ -431,5 +445,55 @@ func TestViewContentMatchesTheFrame(t *testing.T) {
 	m.syncDocument()
 	if m.View().Content != m.renderFrame() {
 		t.Error("View().Content should be exactly the frame renderFrame builds")
+	}
+}
+
+func TestTheFrameFitsWithoutALogPanel(t *testing.T) {
+	// A removed row shows up here as an off-by-one before it shows up anywhere
+	// a person would look.
+	for _, size := range []struct{ w, h int }{{60, 20}, {92, 30}, {120, 50}} {
+		m := makeViewModel()
+		m.width, m.height = size.w, size.h
+		m.recalcLayout()
+		m.syncDocument()
+
+		lines := strings.Split(m.renderFrame(), "\n")
+		if len(lines) != size.h {
+			t.Errorf("%dx%d: got %d rows, want %d", size.w, size.h, len(lines), size.h)
+		}
+		for _, l := range lines {
+			if w := lipgloss.Width(l); w > size.w {
+				t.Errorf("%dx%d: a row is %d columns wide", size.w, size.h, w)
+				break
+			}
+		}
+	}
+}
+
+func TestNothingIsWrittenToStderrWhileTheInterfaceRuns(t *testing.T) {
+	// The standard logger writes to stderr by default, and the scanner logs a
+	// line per project on every scan. Left alone, that draws over the frame.
+	previous := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() {
+		os.Stderr = previous
+		log.SetOutput(previous)
+	})
+
+	log.Println("a line the scanner would have written")
+	log.Printf("ERROR: %s", "and another")
+	w.Close()
+
+	var buf strings.Builder
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("got %q on stderr, want nothing while the interface is up", buf.String())
 	}
 }

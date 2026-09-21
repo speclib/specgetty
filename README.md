@@ -67,7 +67,6 @@ between them.
 | `<esc>`                    | Go one level back       |
 | `p`                        | Open the project picker |
 | `s`                        | Rescan the open project |
-| `l`                        | Toggle the log panel    |
 | `q` / `ctrl-C`             | Quit                    |
 
 ### Keys in a project
@@ -80,8 +79,7 @@ between them.
 
 ### Keys in the specs tab
 
-The specs tab has two halves and `tab` moves the keyboard between them, and on
-through the log panel when it is open.
+The specs tab has two halves and `tab` moves the keyboard between them.
 
 | Key     | Action                                             |
 | ------- | -------------------------------------------------- |
@@ -127,7 +125,6 @@ whatever holds the keyboard, by the same rule `j` and `k` follow:
 | the change list        | the selected change                   |
 | a list beside a pane   | the selection in that list            |
 | a document             | the document                          |
-| the log panel          | the log                               |
 | the project picker     | the selected project                  |
 
 A page is however many rows the thing is showing, so the keys mean the same at

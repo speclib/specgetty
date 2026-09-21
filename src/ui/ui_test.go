@@ -29,38 +29,6 @@ func TestMainPanelHeight(t *testing.T) {
 	}
 }
 
-func TestLogPanelHeight(t *testing.T) {
-	tests := []struct {
-		name   string
-		height int
-	}{
-		{"small terminal", 20},
-		{"medium terminal", 40},
-		{"large terminal", 80},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := model{height: tt.height, logVisible: true}
-			got := m.logPanelHeight()
-			if got < 1 {
-				t.Errorf("got %d, want >= 1", got)
-			}
-			if got > 10 {
-				t.Errorf("got %d, want <= 10", got)
-			}
-		})
-	}
-
-	t.Run("hidden log returns 0", func(t *testing.T) {
-		m := model{height: 40, logVisible: false}
-		got := m.logPanelHeight()
-		if got != 0 {
-			t.Errorf("got %d, want 0 when log hidden", got)
-		}
-	})
-}
-
 func TestProjectDisplayNames(t *testing.T) {
 	t.Run("unique basenames", func(t *testing.T) {
 		paths := []string{"/home/user/project-a", "/home/user/project-b"}
@@ -92,58 +60,28 @@ func TestProjectDisplayNames(t *testing.T) {
 	})
 }
 
-func TestTabOnlyMovesWhenTheLogPanelIsOpen(t *testing.T) {
-	t.Run("nowhere to go with the log hidden", func(t *testing.T) {
-		m := makeListModel()
-		m.logVisible = false
+func TestTabDoesNothingOnASinglePaneTab(t *testing.T) {
+	// The log panel was the only place tab could reach from a single-pane tab.
+	// With it gone there is nowhere else for the keyboard to be.
+	m := makeListModel()
+	before := m.focus
 
-		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-		if um := updated.(model); um.focus == focusLog {
-			t.Errorf("focus = %d, want it to stay out of the log", um.focus)
-		}
-	})
-
-	t.Run("toggles to the log and back", func(t *testing.T) {
-		m := makeListModel()
-		m.logVisible = true
-
-		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-		m = updated.(model)
-		if m.focus != focusLog {
-			t.Fatalf("focus = %d, want the log panel", m.focus)
-		}
-
-		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-		if um := updated.(model); um.focus == focusLog {
-			t.Errorf("focus = %d, want it back out of the log", um.focus)
-		}
-	})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := updated.(model).focus; got != before {
+		t.Errorf("focus = %d, want it unchanged at %d", got, before)
+	}
 }
 
-func TestRenderTabHeader(t *testing.T) {
-	t.Run("specs tab active", func(t *testing.T) {
-		m := model{detailTab: tabSpecs}
-		got := m.renderTabHeader(80)
-		if !strings.Contains(got, "specs") {
-			t.Error("output missing 'specs'")
-		}
-		if !strings.Contains(got, "changes") {
-			t.Error("output missing 'changes'")
-		}
-		if strings.Contains(got, "overview") {
-			t.Error("output should not contain 'overview'")
-		}
-	})
+func TestTheLogKeyDoesNothing(t *testing.T) {
+	m := makeListModel()
+	m.width, m.height = 100, 24
+	m.recalcLayout()
+	before := m.renderFrame()
 
-	t.Run("all tab names present", func(t *testing.T) {
-		m := model{detailTab: tabChanges}
-		got := m.renderTabHeader(80)
-		for _, name := range tabNames {
-			if !strings.Contains(got, name) {
-				t.Errorf("output missing tab %q", name)
-			}
-		}
-	})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	if got := updated.(model); got.renderFrame() != before {
+		t.Error("l must do nothing now that there is no log panel")
+	}
 }
 
 func TestStatsLineIncludesTasks(t *testing.T) {

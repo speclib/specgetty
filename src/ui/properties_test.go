@@ -367,18 +367,12 @@ func TestPropertiesBordersSayWhereTheKeyboardIs(t *testing.T) {
 	onList := count(m)
 	m.focus = focusContentPane
 	onContent := count(m)
-	m.logVisible = true
-	m.focus = focusLog
-	onLog := count(m)
 
 	if onList == 0 || onContent == 0 {
 		t.Errorf("one half is always lit: list %d, content %d", onList, onContent)
 	}
 	if onList != onContent {
 		t.Errorf("exactly one half is lit either way: list %d, content %d", onList, onContent)
-	}
-	if onLog >= onList {
-		t.Errorf("neither half is lit while the log holds the keyboard: got %d", onLog)
 	}
 }
 

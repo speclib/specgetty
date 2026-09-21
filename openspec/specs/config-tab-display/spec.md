@@ -209,8 +209,8 @@ half holds it.
 #### Scenario: Moving between the halves
 - **WHEN** the properties tab is active and the user presses the key that moves
   focus
-- **THEN** the keyboard SHALL move between the list and the content, and on
-  through the log panel when it is open, as it does on the specs tab
+- **THEN** the keyboard SHALL move between the list and the content, as it does
+  on the specs tab
 
 #### Scenario: Moving down the list
 - **WHEN** the list holds the keyboard
@@ -222,8 +222,7 @@ half holds it.
 
 #### Scenario: Which border is lit
 - **WHEN** either half holds the keyboard
-- **THEN** that half's border SHALL be lit and the other's dim, and both SHALL
-  be dim when the log panel holds the keyboard
+- **THEN** that half's border SHALL be lit and the other's dim
 
 #### Scenario: The list is sized to its labels
 - **WHEN** the tab is drawn

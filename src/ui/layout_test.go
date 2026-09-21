@@ -204,16 +204,6 @@ func TestEveryConsumerOfTheContentWidthAgrees(t *testing.T) {
 		m := makeViewModel()
 		m.width = width
 
-		t.Run("log viewport", func(t *testing.T) {
-			m.logVisible = true
-			m.recalcLayout()
-			if got := m.logViewport.Width(); got != m.panelContentWidth() {
-				t.Errorf("log viewport is %d wide at terminal width %d, panel content is %d",
-					got, width, m.panelContentWidth())
-			}
-			m.logVisible = false
-		})
-
 		t.Run("document in an open change", func(t *testing.T) {
 			m.level = levelChange
 			m.recalcLayout()
@@ -601,10 +591,9 @@ func litContentBorders(frame string) []bool {
 	return out
 }
 
-func specsFrame(t *testing.T, focus int, logOpen bool) string {
+func specsFrame(t *testing.T, focus int) string {
 	t.Helper()
 	m := makeSpecsModel(t, map[string]string{"alpha": numberedDoc(80), "beta": numberedDoc(60)})
-	m.logVisible = logOpen
 	m.focus = focus
 	m.recalcLayout()
 	m.syncDocument()
@@ -619,10 +608,9 @@ func TestTheLitBorderIsTheOneHoldingTheKeyboard(t *testing.T) {
 	}{
 		{"the spec list has it", focusListPane, []bool{true, false}},
 		{"the spec content has it", focusContentPane, []bool{false, true}},
-		{"the log panel has it", focusLog, []bool{false, false}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			frame := specsFrame(t, tc.focus, true)
+			frame := specsFrame(t, tc.focus)
 			inner := litContentBorders(frame)
 			if len(inner) != len(tc.wantInner) {
 				t.Fatalf("found %d content borders, want %d", len(inner), len(tc.wantInner))
@@ -637,8 +625,8 @@ func TestTheLitBorderIsTheOneHoldingTheKeyboard(t *testing.T) {
 }
 
 func TestTheTwoSpecsBordersAreNeverLitTogether(t *testing.T) {
-	for _, focus := range []int{focusListPane, focusContentPane, focusLog} {
-		inner := litContentBorders(specsFrame(t, focus, true))
+	for _, focus := range []int{focusListPane, focusContentPane} {
+		inner := litContentBorders(specsFrame(t, focus))
 		n := 0
 		for _, l := range inner {
 			if l {
@@ -651,26 +639,22 @@ func TestTheTwoSpecsBordersAreNeverLitTogether(t *testing.T) {
 	}
 }
 
-func TestThePanelBorderStillMeansWhatItAlwaysMeant(t *testing.T) {
-	// The one thing this change must not move. The panel is lit whenever the
-	// keyboard is anywhere in the detail area, which is what it did before the
-	// content had borders of its own.
-	for _, tc := range []struct {
-		focus int
-		want  bool
-	}{
-		{focusDetail, true},
-		{focusListPane, true},
-		{focusContentPane, true},
-		{focusLog, false},
-	} {
+func TestThePanelBorderIsAlwaysLit(t *testing.T) {
+	// The panel used to go dim when the log panel held the keyboard. With the
+	// log gone the keyboard is always somewhere inside the panel, so there is
+	// no state in which it is not lit.
+	const lit = "\x1b[32m"
+	for _, focus := range []int{focusDetail, focusListPane, focusContentPane} {
 		m := makeViewModel()
-		m.focus = tc.focus
-		if got := m.viewFocused(viewDetail); got != tc.want {
-			t.Errorf("with focus %d the detail panel reads lit=%v, want %v", tc.focus, got, tc.want)
-		}
-		if got := m.viewFocused(viewLog); got == tc.want && tc.focus != focusLog {
-			t.Errorf("with focus %d the log panel reads lit=%v, want the opposite", tc.focus, got)
+		m.focus = focus
+		m.recalcLayout()
+		m.syncDocument()
+		// The panel's top border carries the title, so the lit colour appears
+		// on the first line only if the whole border is drawn in it.
+		lines := strings.Split(m.renderFrame(), "\n")
+		bottom := lines[len(lines)-2]
+		if !strings.Contains(bottom, lit) {
+			t.Errorf("with focus %d the panel border is not lit:\n%q", focus, bottom)
 		}
 	}
 }

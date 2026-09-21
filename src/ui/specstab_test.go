@@ -91,7 +91,6 @@ func TestSpecsFocusResetsWhenLeavingTheTab(t *testing.T) {
 
 func TestTabCyclesTheSpecsHalves(t *testing.T) {
 	m := twoSpecs(t)
-	m.logVisible = false
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.focus != focusContentPane {
@@ -103,24 +102,22 @@ func TestTabCyclesTheSpecsHalves(t *testing.T) {
 	}
 }
 
-func TestTabCyclesThroughTheLogPanel(t *testing.T) {
+func TestTabHasNowhereBeyondTheTwoHalves(t *testing.T) {
+	// The log panel was the third stop on this ring. With it gone the ring is
+	// the two halves and nothing else.
 	m := twoSpecs(t)
-	m.logVisible = true
 	m.recalcLayout()
 
-	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus != focusContentPane {
-		t.Fatalf("first tab gave focus %d, want the content half", m.focus)
+	seen := map[int]int{}
+	for i := 0; i < 6; i++ {
+		m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
+		seen[m.focus]++
 	}
-
-	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus != focusLog {
-		t.Fatalf("second tab gave focus %d, want the log panel", m.focus)
+	if len(seen) != 2 {
+		t.Errorf("tab visited %d focus states in six presses, want the two halves", len(seen))
 	}
-
-	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus != focusListPane {
-		t.Errorf("third tab gave focus %d, want back to the spec list", m.focus)
+	if seen[focusListPane] != 3 || seen[focusContentPane] != 3 {
+		t.Errorf("got %v, want three visits each", seen)
 	}
 }
 

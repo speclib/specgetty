@@ -23,12 +23,10 @@ import (
 	"github.com/mipmip/specgetty/src/watcher"
 )
 
-// Focus. There is one main panel, so the only question is whether the optional
-// log panel has the keyboard.
-const (
-	viewDetail = 0
-	viewLog    = 1
-)
+// There is one panel, so the title it carries has no alternative to choose
+// between. The constant survives as the argument renderPanel takes, which keeps
+// its signature honest about drawing one named thing.
+const viewDetail = 0
 
 // Navigation depth. enter descends, esc ascends. levelProject is the floor:
 // the project list is an overlay now, not a level above it.
@@ -41,18 +39,17 @@ const (
 //
 // This used to be two fields, activeView and specsFocus, that every handler had
 // to move together. They could describe a state that means nothing, such as the
-// log panel holding the keyboard while the spec content also holds it, and the
-// only thing preventing it was a paired assignment in five places. Harmless
-// while nothing read the pair, which stopped being true once each border is
-// drawn lit or dim by asking where the keyboard is.
+// the list holding the keyboard while the content also holds it, and the only
+// thing preventing it was a paired assignment in five places. Harmless while
+// nothing read the pair, which stopped being true once each border is drawn lit
+// or dim by asking where the keyboard is.
 //
-// viewDetail and viewLog survive above, because which panel gets which title is
-// a different question from where the keyboard is.
+// viewDetail survives above, because which panel gets which title is a
+// different question from where the keyboard is.
 const (
 	focusDetail      = iota // the active tab's content, or an open change's artifact
 	focusListPane           // the list half of a split tab
 	focusContentPane        // the document half of a split tab
-	focusLog                // the log panel
 )
 
 // Changes lead, because that is what the tool is usually opened to look at.
@@ -92,20 +89,8 @@ type scanMsg struct {
 	err      error
 }
 
-type logMsg string
-
 // fsChangeMsg is sent when the filesystem watcher detects changes in the openspec directory.
 type fsChangeMsg struct{}
-
-// logWriter sends log output as tea messages to the program.
-type logWriter struct {
-	program *tea.Program
-}
-
-func (w logWriter) Write(p []byte) (n int, err error) {
-	w.program.Send(logMsg(string(p)))
-	return len(p), nil
-}
 
 // Styles
 
@@ -186,7 +171,7 @@ type model struct {
 	repoPaths         []string
 	displayNames      []string
 	cursor            int
-	focus             int // focusDetail, focusListPane, focusContentPane, focusLog
+	focus             int // focusDetail, focusListPane, focusContentPane
 	scanning          bool
 	err               error
 	spinner           spinner.Model
@@ -195,8 +180,6 @@ type model struct {
 	docLines          []sourceLine // source to screen mapping, when the document has a cursor
 	docCursor         int          // index into docLines
 	docPath           string       // the file a toggle writes back to
-	logViewport       viewport.Model
-	logContent        string
 	detailTab         int
 	specCursor        int
 	changeCursor      int
@@ -227,8 +210,6 @@ type model struct {
 	searchInput   textinput.Model
 	searchFocused bool
 	selectedKey   string // identifies the selected change across re-filter and rescan
-	logVisible    bool
-	logShownOnce  bool
 	pendingKey    string
 
 	// statusMsg is a transient one-line report shown in place of the nav bar.
@@ -282,7 +263,6 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		version:         version,
 		spinner:         s,
 		docViewport:     viewport.New(),
-		logViewport:     viewport.New(),
 		fields:          append([]string(nil), defaultFields...),
 		searchInput:     ti,
 		pickerInput:     pi,
@@ -542,8 +522,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingKey = ""
 			if key == "g" {
 				switch {
-				case m.focus == focusLog:
-					m.logViewport.GotoTop()
 				case m.docActive():
 					m.docViewport.GotoTop()
 				default:
@@ -603,37 +581,16 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.rescanCurrent())
 			}
 
-		case "l":
-			m.logVisible = !m.logVisible
-			if m.logVisible {
-				m.recalcLayout()
-				if !m.logShownOnce {
-					m.logShownOnce = true
-					m.logViewport.GotoBottom()
-				}
-			} else {
-				if m.focus == focusLog {
-					m.focus = m.defaultFocus()
-				}
-				m.recalcLayout()
-			}
-
 		case "tab":
 			// A split tab has two halves, so tab moves the keyboard between
-			// them, and on through the log panel when it is open. Both the
-			// specs tab and the properties tab are splits; elsewhere there is
-			// one main panel and tab only reaches the log.
-			switch {
-			case m.focus == focusLog:
-				m.focus = m.defaultFocus()
-			case m.splitTab() && m.focus == focusListPane:
-				m.focus = focusContentPane
-			case m.splitTab() && m.logVisible:
-				m.focus = focusLog
-			case m.splitTab():
-				m.focus = focusListPane
-			case m.logVisible:
-				m.focus = focusLog
+			// them. Both the specs tab and the properties tab are splits;
+			// elsewhere there is one panel and nowhere else for tab to go.
+			if m.splitTab() {
+				if m.focus == focusListPane {
+					m.focus = focusContentPane
+				} else {
+					m.focus = focusListPane
+				}
 			}
 
 		case "g":
@@ -641,8 +598,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "G":
 			switch {
-			case m.focus == focusLog:
-				m.logViewport.GotoBottom()
 			case m.docActive():
 				m.docViewport.GotoBottom()
 			default:
@@ -653,8 +608,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// A full page in a document, vim style. Lists keep halfPage(),
 			// which is how they have always moved.
 			switch {
-			case m.focus == focusLog:
-				m.logViewport.ScrollDown(m.halfPage())
 			case m.docActive():
 				m.docViewport.PageDown()
 			default:
@@ -663,8 +616,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "pgup", "ctrl+b":
 			switch {
-			case m.focus == focusLog:
-				m.logViewport.ScrollUp(m.halfPage())
 			case m.docActive():
 				m.docViewport.PageUp()
 			default:
@@ -676,7 +627,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.docActive():
 				m.docViewport.HalfPageDown()
-			case m.focus != focusLog:
+			default:
 				m.moveListCursor(max(1, m.listPage()/2))
 			}
 
@@ -684,7 +635,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.docActive():
 				m.docViewport.HalfPageUp()
-			case m.focus != focusLog:
+			default:
 				m.moveListCursor(-max(1, m.listPage()/2))
 			}
 
@@ -695,7 +646,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.changeArtifactTab > 0 {
 					m.changeArtifactTab--
 				}
-			} else if m.focus != focusLog && m.detailTab > 0 {
+			} else if m.detailTab > 0 {
 				m.detailTab--
 				m.focus = m.defaultFocus()
 				cmds = append(cmds, m.enterTab()...)
@@ -706,7 +657,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.changeArtifactTab < m.changeArtifactTabCount()-1 {
 					m.changeArtifactTab++
 				}
-			} else if m.focus != focusLog && m.detailTab < len(tabNames)-1 {
+			} else if m.detailTab < len(tabNames)-1 {
 				m.detailTab++
 				m.focus = m.defaultFocus()
 				cmds = append(cmds, m.enterTab()...)
@@ -715,16 +666,14 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "1", "2", "3":
 			// Number keys address the project tab bar, so they are inert while
 			// a change is open.
-			if m.level != levelChange && m.focus != focusLog {
+			if m.level != levelChange {
 				m.detailTab = int(key[0] - '1')
 				m.focus = m.defaultFocus()
 				cmds = append(cmds, m.enterTab()...)
 			}
 
 		case "up", "k":
-			if m.focus == focusLog {
-				m.logViewport.ScrollUp(1)
-			} else if m.docHasCursor() {
+			if m.docHasCursor() {
 				m.moveDocCursor(-1)
 			} else if m.docActive() {
 				m.docViewport.ScrollUp(1)
@@ -748,9 +697,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down", "j":
-			if m.focus == focusLog {
-				m.logViewport.ScrollDown(1)
-			} else if m.docHasCursor() {
+			if m.docHasCursor() {
 				m.moveDocCursor(1)
 			} else if m.docActive() {
 				m.docViewport.ScrollDown(1)
@@ -908,11 +855,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pickerSync()
 		}
 
-	case logMsg:
-		m.logContent += string(msg)
-		m.logViewport.SetContent(m.logContent)
-		m.logViewport.GotoBottom()
-
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -988,11 +930,6 @@ func (m *model) recalcLayout() {
 	m.docViewport.SetWidth(docW)
 	m.docViewport.SetHeight(docH)
 
-	logHeight := m.logPanelHeight()
-	if logHeight > 0 {
-		m.logViewport.SetWidth(m.panelContentWidth())
-		m.logViewport.SetHeight(logHeight)
-	}
 }
 
 // panelContentWidth is how many columns a view drawn inside the main panel has
@@ -1053,35 +990,20 @@ func contentBox(width, height int, lit bool, content string) string {
 		Render(content)
 }
 
+// mainPanelHeight is the panel's height: the terminal, less the nav bar, less
+// its own border. Nothing sits between the panel and the nav bar.
 func (m model) mainPanelHeight() int {
-	logH := m.logPanelHeight()
-	if logH > 0 {
-		logH += 2 // border
-	}
-	remaining := m.height - logH - 1 // -1 for nav bar
+	remaining := m.height - 1 // -1 for nav bar
 	if remaining < 5 {
 		return 3
 	}
 	return remaining - 2 // -border
 }
 
-func (m model) logPanelHeight() int {
-	if !m.logVisible {
-		return 0
-	}
-	return min(10, (m.height-6)/3)
-}
-
 func (m model) halfPage() int {
-	if m.focus == focusLog {
-		return max(1, m.logViewport.Height()/2)
-	}
 	return max(1, m.mainPanelHeight()/2)
 }
 
-// defaultFocus is where the keyboard lands when the active tab changes, or when
-// the log panel gives it back. The specs tab opens on its list; everything else
-// has one place for it to be.
 // defaultFocus is where the keyboard lands when a tab becomes active. A split
 // tab starts on its list, because that is what chooses what the content shows.
 func (m model) defaultFocus() int {
@@ -1089,16 +1011,6 @@ func (m model) defaultFocus() int {
 		return focusListPane
 	}
 	return focusDetail
-}
-
-// viewFocused answers renderPanel's question: does this panel hold the keyboard?
-// The panel is the coarse unit, so every focus inside the detail area counts as
-// the detail panel holding it.
-func (m model) viewFocused(view int) bool {
-	if view == viewLog {
-		return m.focus == focusLog
-	}
-	return m.focus != focusLog
 }
 
 func (m model) currentSpecNames() []string {
@@ -1516,13 +1428,7 @@ func (m model) renderFrame() string {
 	// Nav bar
 	navBar := m.renderNavBar()
 
-	var view string
-	if m.logVisible {
-		logPanel := m.renderPanel(viewLog, m.width, m.logPanelHeight(), m.logViewport.View())
-		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, logPanel, navBar)
-	} else {
-		view = lipgloss.JoinVertical(lipgloss.Left, mainRow, navBar)
-	}
+	view := lipgloss.JoinVertical(lipgloss.Left, mainRow, navBar)
 
 	// Each of these replaces the frame rather than being drawn over it, so the
 	// order below is precedence, not layering: whichever runs last is what the
@@ -1693,10 +1599,9 @@ func (m model) renderDetailPanel(width int, height int) string {
 	inner := boxHeight - boxRows
 	w := m.contentBoxWidth()
 
-	// The keyboard is inside the detail area unless the log panel has it, so
-	// that is what lights a single box. The specs tab has two and decides for
-	// itself which one is lit.
-	lit := m.focus != focusLog
+	// The panel always holds the keyboard, so a single box is always lit. A
+	// split tab has two and decides for itself which one is.
+	lit := true
 
 	switch m.detailTab {
 	case tabSpecs:
@@ -1777,7 +1682,7 @@ func specsSplit(width int) (listWidth, contentWidth int) {
 // are the whole region below the tab bar, because this function owns the chrome
 // rather than being handed the space inside it.
 func (m model) renderSpecsTab(width int, height int) string {
-	lit := m.focus != focusLog
+	const lit = true
 	if len(m.repoPaths) == 0 {
 		return contentBox(width, height, lit, "No project selected.")
 	}
@@ -1835,8 +1740,8 @@ func (m model) renderSpecsTab(width int, height int) string {
 	specList := truncateContent(listB.String(), rows)
 	specContentStr := truncateContent(m.docViewport.View(), rows)
 
-	// Each half says for itself whether the keyboard is in it. Both dim means
-	// the log panel has it.
+	// Each half says for itself whether the keyboard is in it. Exactly one of
+	// them always does, there being nowhere else for it to be.
 	leftBox := contentBox(listOuter, height, m.focus == focusListPane, specList)
 	rightBox := contentBox(contentOuter, height, m.focus == focusContentPane, specContentStr)
 
@@ -1900,7 +1805,7 @@ func (m model) sectionIndex(sections []propSection) int {
 // renderPropertiesTab draws the row list and the content beside it, each in its
 // own border, by the same split the specs tab uses.
 func (m model) renderPropertiesTab(width int, height int) string {
-	lit := m.focus != focusLog
+	const lit = true
 	sections := m.currentSections()
 	if len(sections) == 0 {
 		return contentBox(width, height, lit, dimStyle.Render("No project selected."))
@@ -2263,14 +2168,10 @@ func (m model) renderPanel(view int, width int, height int, content string) stri
 			}
 			title += indicator
 		}
-	case viewLog:
-		title = " Log "
 	}
 
-	borderColor := lipgloss.Color("240")
-	if m.viewFocused(view) {
-		borderColor = lipgloss.Color("2")
-	}
+	// The panel always holds the keyboard: there is nowhere else for it to be.
+	borderColor := lipgloss.Color("2")
 
 	border := lipgloss.RoundedBorder()
 	titleStyled := lipgloss.NewStyle().Foreground(borderColor).Bold(true).Render(title)
@@ -2356,7 +2257,6 @@ func (m model) renderNavBar() string {
 				{"gg/G", "ends"},
 				{"p", "projects"},
 				{"s", "scan"},
-				{"l", "log"},
 			}
 		case levelProject:
 			keys = []struct{ key, action string }{
@@ -2407,7 +2307,6 @@ func (m model) renderNavBar() string {
 			keys = append(keys,
 				struct{ key, action string }{"p", "projects"},
 				struct{ key, action string }{"s", "scan"},
-				struct{ key, action string }{"l", "log"},
 				struct{ key, action string }{"gg/G", "jump"},
 			)
 		}
@@ -2491,7 +2390,11 @@ func Run(config *scanner.Config, ignoreDirErrors bool, version string, startupPa
 	p := tea.NewProgram(m)
 
 	m.program = p
-	log.SetOutput(logWriter{program: p})
+	// Discarded rather than left alone. The standard logger writes to stderr by
+	// default, which under a full-screen interface means writing over the
+	// frame, and the scanner logs a line per project on every scan. `--debug`
+	// never reaches here, so it keeps the output it has always printed.
+	log.SetOutput(io.Discard)
 
 	_, err := p.Run()
 	return err
