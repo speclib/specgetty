@@ -641,6 +641,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.rescanCurrent())
 			}
 
+		case "E":
+			var cmd tea.Cmd
+			m, cmd = m.openInEditor()
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+
 		case "tab":
 			// A split tab has two halves, so tab moves the keyboard between
 			// them. Both the specs tab and the properties tab are splits;
@@ -820,7 +827,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "Y":
 			if r, ok := m.selectedRow(); ok && m.detailTab == tabChanges {
 				m.statusMsg = copyToClipboard("path",
-					changeDirPath(m.repoPaths[m.cursor], r))
+					changeDirPath(m.currentRoot(), r))
 			}
 
 		case "e":
@@ -865,6 +872,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.watcher != nil {
 				cmds = append(cmds, waitForFsChange(m.watcher))
 			}
+		}
+
+	case editorDoneMsg:
+		var cmd tea.Cmd
+		m, cmd = m.editorFinished(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 
 	case scanMsg:
@@ -2472,6 +2486,14 @@ func (m model) renderNavBar() string {
 				struct{ key, action string }{"s", "scan"},
 				struct{ key, action string }{"gg/G", "jump"},
 			)
+		}
+
+		// One rule for every level: the key is listed exactly where the pane is
+		// showing a file, which is the same fact the key itself asks. A pane
+		// showing several files or an assembled report has no path and gets no
+		// hint.
+		if m.docPath != "" {
+			keys = append(keys, struct{ key, action string }{"E", "edit"})
 		}
 	}
 

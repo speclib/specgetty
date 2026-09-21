@@ -121,6 +121,15 @@ func renderChangeArtifact(projectPath string, r changeRow, artifactTab, width in
 	var content strings.Builder
 	prefixRows := 0
 
+	// The file this artifact came from. Every artifact has one, whether or not
+	// anything writes to it: the path says where the content on screen lives,
+	// which is what an editor needs and what a toggle happens to need too.
+	dir := "changes"
+	if r.archived {
+		dir = filepath.Join("changes", "archive")
+	}
+	path := filepath.Join(projectPath, "openspec", dir, r.ci.DirName, filename)
+
 	if filename == "tasks.md" && r.ci.TasksTotal > 0 {
 		// Part of the document, so it scrolls away with the tasks it counts.
 		content.WriteString(sectionHeaderStyle.Render(
@@ -133,7 +142,9 @@ func renderChangeArtifact(projectPath string, r changeRow, artifactTab, width in
 	content.WriteString(body)
 
 	if filename != "tasks.md" {
-		return content.String(), nil, ""
+		// Only tasks.md maps its rows back to source lines, which is what gives
+		// a pane its cursor. The others are read, not edited in place.
+		return content.String(), nil, path
 	}
 
 	// The prefix occupies rows the source knows nothing about, so every mapped
@@ -142,13 +153,6 @@ func renderChangeArtifact(projectPath string, r changeRow, artifactTab, width in
 		lines[i].rowStart += prefixRows
 		lines[i].rowEnd += prefixRows
 	}
-
-	dir := "changes"
-	name := r.ci.DirName
-	if r.archived {
-		dir = filepath.Join("changes", "archive")
-	}
-	path := filepath.Join(projectPath, "openspec", dir, name, filename)
 
 	return content.String(), lines, path
 }
@@ -229,7 +233,10 @@ func (m model) currentDoc() (document, bool) {
 			tab = len(names) - 1
 		}
 		d := document{key: strings.Join([]string{project, "change", r.key(), names[tab]}, docKeySep)}
-		d.content, d.lines, d.path = renderChangeArtifact(project, r, tab, width)
+		// The resolved root, not the directory the user started in: in a
+		// store-backed project the change is in the store, and a path built
+		// from the starting directory points at nothing.
+		d.content, d.lines, d.path = renderChangeArtifact(m.currentRoot(), r, tab, width)
 		return d, true
 
 	case m.level == levelProject && m.detailTab == tabSpecs:
@@ -241,11 +248,14 @@ func (m model) currentDoc() (document, bool) {
 		// Keyed by spec name, so moving the cursor is moving to a different
 		// document and starts at the top, by the same rule as artifact sub-tabs.
 		key := strings.Join([]string{project, "spec", name}, docKeySep)
+		path := filepath.Join(m.currentRoot(), "openspec", "specs", name, "spec.md")
 		content, found := info.SpecContents[name]
 		if !found || content == "" {
+			// No path: there is no file to hand to an editor, which is what the
+			// message says.
 			return document{key: key, content: dimStyle.Render("No spec.md found")}, true
 		}
-		return document{key: key, content: renderMarkdown(content, width)}, true
+		return document{key: key, content: renderMarkdown(content, width), path: path}, true
 
 	case m.level == levelProject && m.detailTab == tabProperties:
 		sections := m.currentSections()
@@ -269,10 +279,11 @@ func (m model) currentDoc() (document, bool) {
 			// is the store's, and nothing else on screen would say so. The
 			// list beside it is the chrome that names the row.
 			head := dimStyle.Render("# "+sec.source) + "\n\n"
+			path := filepath.Join(m.currentRoot(), "openspec", info.ConfigFile)
 			if sec.md {
-				return document{key: key, content: head + renderMarkdown(info.ConfigContent, width)}, true
+				return document{key: key, content: head + renderMarkdown(info.ConfigContent, width), path: path}, true
 			}
-			return document{key: key, content: head + renderYAML(info.ConfigContent, width)}, true
+			return document{key: key, content: head + renderYAML(info.ConfigContent, width), path: path}, true
 		case sectionSchema:
 			body := renderSchemaSection(info, sec.schema, m.schemaStateOf(sec.schema))
 			return document{key: key, content: renderYAML(body, width)}, true

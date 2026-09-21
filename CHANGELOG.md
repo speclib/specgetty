@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `E` opens the file a pane is showing in your own editor, from a change's
+  artifacts, a spec, or the project configuration. The editor is `$VISUAL`, then
+  `$EDITOR`, and a value with arguments such as `code -w` works. With neither
+  set the key says so and does nothing rather than guessing. The interface
+  yields the terminal while the editor runs and reads the project again when it
+  exits.
+
+### Fixed
+
+- In a project that keeps its specs in a store, toggling a task checkbox failed
+  with `could not save: no such file or directory`, and `Y` copied a path that
+  looked right and did not exist. Both built their path from the repository you
+  started in rather than from the store the content was read from.
+
 ## [0.7.0] - 2026-09-21
 
 ### Changed

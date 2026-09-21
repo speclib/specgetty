@@ -60,7 +60,8 @@ and the selection SHALL be visible.
 
 ### Requirement: Space toggles the selected task
 Pressing `space` SHALL change the state of the checkbox on the selected line and
-persist it immediately.
+persist it immediately. The file written SHALL be the one under the root the
+project's content was resolved to.
 
 #### Scenario: Ticking a task
 - **WHEN** the selected line is an unchecked task and the user presses `space`
@@ -79,6 +80,12 @@ persist it immediately.
 - **WHEN** a task's state changes
 - **THEN** the task counts shown elsewhere SHALL come to agree with the file,
   without the user rescanning
+
+#### Scenario: A task in a store-backed project
+- **GIVEN** a change open in a project that declares a store
+- **WHEN** a task is toggled
+- **THEN** the `tasks.md` under the store SHALL be written, rather than a path
+  under the repository the user started in that holds no such file
 
 ### Requirement: A toggle never discards another writer's work
 The saved file SHALL be built from the contents of `tasks.md` as they are on
