@@ -1,11 +1,11 @@
 ---
 # specgetty-pimg
 title: left and right leak out of the spec detail view
-status: in-progress
+status: completed
 type: bug
 priority: normal
 created_at: 2026-09-21T20:37:21Z
-updated_at: 2026-09-21T21:00:12Z
+updated_at: 2026-09-21T21:02:33Z
 ---
 
 Pressing `left` or `right` in the spec detail view yanks the keyboard from
@@ -70,3 +70,30 @@ later has to state what these keys do rather than inheriting the project tab
 bar by omission. That shape is what let this through.
 
 Schema source: https://github.com/speclib/openspec-tinychange-schema
+
+
+## Summary of Changes
+
+Shipped as OpenSpec change `keep-the-arrows-in-the-spec-view`, commit `f4700a7`.
+
+`left` and `right` now do nothing at `levelSpec`. The view shows one spec with
+no sibling to move to, and its two halves are reached with `tab`.
+
+Both handlers switch on the level rather than chaining, which is task 1.2 and
+the more important half. The `else if` shape gave every level it did not name
+the project tab bar by omission, so a level added later inherited behaviour
+nobody chose for it. A `switch m.level` makes the next level state its answer.
+
+The revert check bit on exactly the two tests the tasks predicted: the
+unchanged-state assertion and the card keeping the keyboard. The build was
+confirmed clean before reverting, as task 2.5 asks.
+
+Task 2.4's second half nearly shipped as a skip: `taskModel` builds a change
+with one artifact, so there was nowhere for the keys to go and the subtest
+skipped rather than asserted. It now uses the fixture carrying `proposal.md` and
+`tasks.md`, and fails rather than skips if a fixture ever loses its second tab.
+
+Coverage: ui 87.6%, total 89.3%, floors unchanged. Gate green.
+
+Next: `follow-the-spec-grammar` gives this level a second state for a file that
+does not parse, and it is now written on top of arrow keys that behave.
