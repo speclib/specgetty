@@ -5,7 +5,7 @@ status: draft
 type: task
 priority: normal
 created_at: 2026-09-21T14:36:40Z
-updated_at: 2026-09-21T14:37:40Z
+updated_at: 2026-09-21T14:44:04Z
 ---
 
 ## currently: 
@@ -18,5 +18,3 @@ updated_at: 2026-09-21T14:37:40Z
     - project: syntax highlighted contents of config.yml
     - schema: single view with [which schema is set] and [details of schema configuration]
     - store: local or contents of what now is shown in store details
-
-
