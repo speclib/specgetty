@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `pgup`, `pgdown`, `ctrl+f`, `ctrl+b`, `ctrl+d`, `ctrl+u`, `gg` and `G` work on
+  the properties and specs tabs without pressing `tab` first. They act on the
+  document whenever one is displayed, which is what a document viewer has always
+  promised; only `j` and `k` still depend on which half holds the keyboard.
 - In the combined view, nothing indicated which rows were archived unless you
   had configured the `archived` column. Grouping makes it positional.
 - `spg --config <unparseable.yml> <dir>` crashed. Directory arguments replace

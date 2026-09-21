@@ -536,7 +536,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch {
 				case m.focus == focusLog:
 					m.logViewport.GotoTop()
-				case m.docActive():
+				case m.docDisplayed():
 					m.docViewport.GotoTop()
 				}
 				return m, nil
@@ -633,7 +633,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.focus == focusLog:
 				m.logViewport.GotoBottom()
-			case m.docActive():
+			case m.docDisplayed():
 				m.docViewport.GotoBottom()
 			}
 
@@ -643,7 +643,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.focus == focusLog:
 				m.logViewport.ScrollDown(m.halfPage())
-			case m.docActive():
+			case m.docDisplayed():
 				m.docViewport.PageDown()
 			}
 
@@ -651,18 +651,18 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.focus == focusLog:
 				m.logViewport.ScrollUp(m.halfPage())
-			case m.docActive():
+			case m.docDisplayed():
 				m.docViewport.PageUp()
 			}
 
 		// 5.3: half page, in a document only.
 		case "ctrl+d":
-			if m.docActive() {
+			if m.docDisplayed() {
 				m.docViewport.HalfPageDown()
 			}
 
 		case "ctrl+u":
-			if m.docActive() {
+			if m.docDisplayed() {
 				m.docViewport.HalfPageUp()
 			}
 

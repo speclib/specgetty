@@ -96,6 +96,42 @@ func (m model) docActive() bool {
 	return false
 }
 
+// docDisplayed reports whether a document is on screen at all, whichever half
+// of a split tab holds the keyboard.
+//
+// The paging and jump keys key on this rather than on docActive, because
+// `document-viewer` gives them to a document that is DISPLAYED. A list of three
+// rows, or of twenty-four, never needs paging, so those keys are unambiguously
+// a gesture at the document and work without moving the keyboard first. The
+// line keys stay with docActive: `j` and `k` have to choose between moving the
+// list and scrolling the document, and focus is what decides that.
+func (m model) docDisplayed() bool {
+	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
+		return false
+	}
+	if m.pickerOpen || m.askOpenPicker || m.searchFocused {
+		return false
+	}
+	if m.focus == focusLog {
+		return false
+	}
+	if m.level == levelChange {
+		return true
+	}
+	if m.level != levelProject {
+		return false
+	}
+
+	info := m.projects[m.repoPaths[m.cursor]].Info
+	switch m.detailTab {
+	case tabProperties:
+		return len(propSections(info)) > 0
+	case tabSpecs:
+		return m.specCursor < len(info.SpecNames)
+	}
+	return false
+}
+
 // renderChangeArtifact renders the scrolling part of an open change: the
 // selected artifact, or the change's specs.
 //
@@ -397,6 +433,9 @@ func (m model) docHasCursor() bool {
 // docScrollPercent reports how far down the document the viewport sits, or -1
 // when the whole document fits and there is nothing to report.
 func (m model) docScrollPercent() int {
+	// docActive, not docDisplayed: `specs-tab` says the position is reported
+	// only while the content holds the keyboard, and that is a deliberate
+	// behaviour nobody reported a problem with. Only the paging keys moved.
 	if !m.docActive() {
 		return -1
 	}

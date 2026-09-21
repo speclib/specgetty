@@ -29,7 +29,7 @@ floor_for() {
     # which made everything up to the terminal takeover reachable from a test.
     github.com/mipmip/specgetty/src)         echo "87.7" ;;
     github.com/mipmip/specgetty/src/scanner) echo "94.9" ;;
-    github.com/mipmip/specgetty/src/ui)      echo "83.9" ;;
+    github.com/mipmip/specgetty/src/ui)      echo "84.2" ;;
     # watcher measures anywhere from 84.6% to 90.2% depending on how its
     # inotify paths fall, so its floor tracks the lowest reading seen.
     github.com/mipmip/specgetty/src/watcher) echo "84.6" ;;
