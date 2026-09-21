@@ -487,6 +487,14 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pickerCursor = n - 1
 					m.pickerRemember()
 				}
+			case "pgdown", "ctrl+f":
+				m.movePickerCursor(m.pickerPage())
+			case "pgup", "ctrl+b":
+				m.movePickerCursor(-m.pickerPage())
+			case "ctrl+d":
+				m.movePickerCursor(max(1, m.pickerPage()/2))
+			case "ctrl+u":
+				m.movePickerCursor(-max(1, m.pickerPage()/2))
 			}
 			return m, tea.Batch(cmds...)
 		}
@@ -536,8 +544,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch {
 				case m.focus == focusLog:
 					m.logViewport.GotoTop()
-				case m.docDisplayed():
+				case m.docActive():
 					m.docViewport.GotoTop()
+				default:
+					m.gotoListEnd(false)
 				}
 				return m, nil
 			}
@@ -633,8 +643,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.focus == focusLog:
 				m.logViewport.GotoBottom()
-			case m.docDisplayed():
+			case m.docActive():
 				m.docViewport.GotoBottom()
+			default:
+				m.gotoListEnd(true)
 			}
 
 		case "pgdown", "ctrl+f":
@@ -643,27 +655,37 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.focus == focusLog:
 				m.logViewport.ScrollDown(m.halfPage())
-			case m.docDisplayed():
+			case m.docActive():
 				m.docViewport.PageDown()
+			default:
+				m.moveListCursor(m.listPage())
 			}
 
 		case "pgup", "ctrl+b":
 			switch {
 			case m.focus == focusLog:
 				m.logViewport.ScrollUp(m.halfPage())
-			case m.docDisplayed():
+			case m.docActive():
 				m.docViewport.PageUp()
+			default:
+				m.moveListCursor(-m.listPage())
 			}
 
 		// 5.3: half page, in a document only.
 		case "ctrl+d":
-			if m.docDisplayed() {
+			switch {
+			case m.docActive():
 				m.docViewport.HalfPageDown()
+			case m.focus != focusLog:
+				m.moveListCursor(max(1, m.listPage()/2))
 			}
 
 		case "ctrl+u":
-			if m.docDisplayed() {
+			switch {
+			case m.docActive():
 				m.docViewport.HalfPageUp()
+			case m.focus != focusLog:
+				m.moveListCursor(-max(1, m.listPage()/2))
 			}
 
 		case "left":

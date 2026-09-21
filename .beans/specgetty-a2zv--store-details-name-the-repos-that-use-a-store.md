@@ -1,10 +1,11 @@
 ---
 # specgetty-a2zv
 title: store details name the repos that use a store
-status: todo
+status: scrapped
 type: feature
+priority: normal
 created_at: 2026-09-18T16:34:14Z
-updated_at: 2026-09-18T16:34:14Z
+updated_at: 2026-09-21T17:05:43Z
 ---
 
 The store details sub-tab on the config tab reports id, root, origin, remote and git state. It does not say which other repos read from the same store.

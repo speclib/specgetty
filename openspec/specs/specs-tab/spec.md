@@ -109,17 +109,19 @@ capability describes.
 - **THEN** that line SHALL be wrapped to the width of that half, not to the width
   of the whole panel
 
-### Requirement: The specs tab pages from either half
-The spec content SHALL respond to the paging and jump keys whether the spec list
-or the spec content holds the keyboard. This is the same rule the properties tab
-follows, and it is what `document-viewer` has required all along.
+### Requirement: The spec list can be paged and jumped through
+The spec list SHALL move its cursor by a page, by half a page, and to either
+end, while it holds the keyboard.
 
-#### Scenario: Paging while the spec list holds the keyboard
-- **GIVEN** the specs tab is active and its list holds the keyboard
-- **WHEN** the user presses `pgdown` or `G`
-- **THEN** the selected spec's content SHALL scroll
+#### Scenario: Paging the spec list
+- **WHEN** the spec list holds the keyboard and a page or half-page key is
+  pressed
+- **THEN** the selected spec SHALL move, and the spec content SHALL NOT scroll
 
-#### Scenario: The reading position is unchanged
-- **GIVEN** the spec list holds the keyboard and the content is scrolled
-- **THEN** the panel title SHALL still report no position, which is what this
-  capability already requires and what nobody asked to change
+#### Scenario: Jumping the spec list
+- **WHEN** the spec list holds the keyboard and `gg` or `G` is pressed
+- **THEN** the selection SHALL move to the first or last spec
+
+#### Scenario: The content still pages when it holds the keyboard
+- **WHEN** the spec content holds the keyboard and a page key is pressed
+- **THEN** the content SHALL scroll, as it always has

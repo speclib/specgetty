@@ -34,9 +34,9 @@ func pagingModel(t *testing.T, tab int) model {
 	return press(m, tea.KeyPressMsg{Code: rune('1' + tab), Text: string(rune('1' + tab))})
 }
 
-// --- 2.1 and 2.2 paging from the list half ---
+// --- paging follows the keyboard ---
 
-func TestPagingWorksWhileTheListHoldsTheKeyboard(t *testing.T) {
+func TestPagingTheContentHalfScrollsTheDocument(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		tab  int
@@ -45,9 +45,9 @@ func TestPagingWorksWhileTheListHoldsTheKeyboard(t *testing.T) {
 		{"specs", tabSpecs},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := pagingModel(t, tc.tab)
-			if m.focus != focusListPane {
-				t.Fatalf("expected the list to hold the keyboard, got focus %d", m.focus)
+			m := press(pagingModel(t, tc.tab), tea.KeyPressMsg{Code: tea.KeyTab})
+			if m.focus != focusContentPane {
+				t.Fatalf("expected the content to hold the keyboard, got focus %d", m.focus)
 			}
 			if m.docViewport.TotalLineCount() <= m.docViewport.Height() {
 				t.Skip("the document fits; nothing to scroll")
@@ -64,7 +64,6 @@ func TestPagingWorksWhileTheListHoldsTheKeyboard(t *testing.T) {
 				}
 			}
 
-			// And to the end, then back to the top.
 			end := press(m, tea.KeyPressMsg{Code: 'G', Text: "G"})
 			if end.docViewport.YOffset() == 0 {
 				t.Error("G did not reach the end")
@@ -74,15 +73,50 @@ func TestPagingWorksWhileTheListHoldsTheKeyboard(t *testing.T) {
 			if top.docViewport.YOffset() != 0 {
 				t.Errorf("gg left the document at %d", top.docViewport.YOffset())
 			}
-			// And back up from the end.
+
 			atEnd := end.docViewport.YOffset()
-			up := press(end, tea.KeyPressMsg{Code: tea.KeyPgUp})
-			if up.docViewport.YOffset() >= atEnd {
+			if up := press(end, tea.KeyPressMsg{Code: tea.KeyPgUp}); up.docViewport.YOffset() >= atEnd {
 				t.Error("pgup did not scroll back")
 			}
-			halfUp := press(end, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
-			if halfUp.docViewport.YOffset() >= atEnd {
+			if halfUp := press(end, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}); halfUp.docViewport.YOffset() >= atEnd {
 				t.Error("ctrl+u did not scroll back")
+			}
+		})
+	}
+}
+
+func TestPagingTheListHalfMovesTheListNotTheDocument(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tab  int
+		of   func(model) int
+	}{
+		{"properties", tabProperties, func(m model) int { return m.propSection }},
+		{"specs", tabSpecs, func(m model) int { return m.specCursor }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := pagingModel(t, tc.tab)
+			if m.focus != focusListPane {
+				t.Fatalf("expected the list to hold the keyboard, got focus %d", m.focus)
+			}
+
+			end := press(m, tea.KeyPressMsg{Code: 'G', Text: "G"})
+			if tc.of(end) == tc.of(m) {
+				t.Error("G must move the list selection")
+			}
+			if end.docViewport.YOffset() != 0 {
+				t.Errorf("and must not scroll the document, offset %d", end.docViewport.YOffset())
+			}
+
+			back := press(press(end, tea.KeyPressMsg{Code: 'g', Text: "g"}),
+				tea.KeyPressMsg{Code: 'g', Text: "g"})
+			if tc.of(back) != 0 {
+				t.Errorf("gg must reach the first row, got %d", tc.of(back))
+			}
+
+			paged := press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+			if paged.docViewport.YOffset() != 0 {
+				t.Error("pgdown must not scroll the document while the list holds the keyboard")
 			}
 		})
 	}
@@ -158,33 +192,24 @@ func TestThePositionIsStillReportedOnlyWhileTheContentIsFocused(t *testing.T) {
 	if pct := m.docScrollPercent(); pct != -1 {
 		t.Errorf("the list holds the keyboard but a position of %d%% was reported", pct)
 	}
-	// Even after paging from the list half, which is the new behaviour.
-	paged := press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
-	if pct := paged.docScrollPercent(); pct != -1 {
-		t.Errorf("paging must not start reporting a position, got %d%%", pct)
-	}
-	focused := press(paged, tea.KeyPressMsg{Code: tea.KeyTab})
+	focused := press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	if pct := focused.docScrollPercent(); pct < 0 {
 		t.Error("the content holding the keyboard does report one")
 	}
 }
 
-func TestDocDisplayedAndDocActiveDifferOnlyByFocus(t *testing.T) {
+func TestTheDocumentOwnsTheKeysOnlyWhileItHoldsTheKeyboard(t *testing.T) {
 	m := pagingModel(t, tabProperties)
-	if !m.docDisplayed() {
-		t.Error("a document is on screen")
-	}
 	if m.docActive() {
-		t.Error("but the list holds the keyboard")
+		t.Error("the list holds the keyboard, so the document does not own the keys")
 	}
 	onContent := press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if !onContent.docDisplayed() || !onContent.docActive() {
-		t.Error("both hold once the content has the keyboard")
+	if !onContent.docActive() {
+		t.Error("it does once the content holds the keyboard")
 	}
-	// Neither, once the log does.
 	onContent.logVisible = true
 	onContent.focus = focusLog
-	if onContent.docDisplayed() || onContent.docActive() {
-		t.Error("the log takes precedence over both")
+	if onContent.docActive() {
+		t.Error("and does not once the log does")
 	}
 }

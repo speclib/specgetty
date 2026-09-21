@@ -1,10 +1,11 @@
 ---
 # specgetty-lexl
 title: support the remaining OpenSpec root resolution sources
-status: todo
+status: scrapped
 type: feature
+priority: normal
 created_at: 2026-09-18T16:34:14Z
-updated_at: 2026-09-18T16:34:14Z
+updated_at: 2026-09-21T17:05:52Z
 ---
 
 `follow-the-store` implements two of OpenSpec's four root sources: the nearest local root and a repo's `store:` declaration. Two are left.

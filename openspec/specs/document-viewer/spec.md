@@ -108,36 +108,41 @@ The reading position SHALL belong to the document being read, not to the pane.
 - **THEN** the document SHALL be re-wrapped to the new width and the position
   SHALL be clamped to the end of the re-wrapped document
 
-### Requirement: The paging keys do not wait for focus
-The keys that move by a page, by half a page, or to an end SHALL act on the
-document whenever one is displayed, whichever half of a split tab holds the
-keyboard.
+### Requirement: The paging keys act on whatever holds the keyboard
+`pgdown`, `pgup`, `ctrl+f`, `ctrl+b`, `ctrl+d`, `ctrl+u`, `gg` and `G` SHALL act
+on whichever list, document or panel holds the keyboard, by the same rule `j`
+and `k` already follow.
 
-A list is never paged: three rows or twenty-four, it is walked with the line
-keys. So these keys are unambiguously a gesture at the document, and asking the
-user to move the keyboard first buys nothing.
+One rule rather than one per surface. A list that cannot be paged is walked a
+row at a time however long it is, and a document that pages while a list holds
+the keyboard moves something the user is not looking at.
 
-The line keys are the exception, and stay with the keyboard. `j` and `k` have to
-choose between moving a list and scrolling a document, and where the keyboard is
-is what decides that.
+#### Scenario: A document that holds the keyboard
+- **WHEN** a document holds the keyboard and one of these keys is pressed
+- **THEN** the document SHALL scroll or jump
 
-#### Scenario: Paging while the list holds the keyboard
-- **GIVEN** a split tab whose list holds the keyboard
-- **WHEN** the user presses `pgdown`, `ctrl+f`, `pgup`, `ctrl+b`, `ctrl+d` or
-  `ctrl+u`
-- **THEN** the document beside the list SHALL scroll
+#### Scenario: A list that holds the keyboard
+- **WHEN** a list holds the keyboard and one of these keys is pressed
+- **THEN** the list's cursor SHALL move, and no document SHALL scroll
 
-#### Scenario: Jumping while the list holds the keyboard
-- **GIVEN** a split tab whose list holds the keyboard
-- **WHEN** the user presses `gg` or `G`
-- **THEN** the document SHALL move to its first or last row
+#### Scenario: The log panel
+- **WHEN** the log panel holds the keyboard
+- **THEN** it SHALL scroll, as it already does
 
-#### Scenario: The line keys stay with the keyboard
-- **GIVEN** a split tab whose list holds the keyboard
-- **WHEN** the user presses `j` or `k`
-- **THEN** the list selection SHALL move and the document SHALL NOT scroll
+### Requirement: A page is what the surface can show
+Moving by a page SHALL move by the number of rows the surface is currently
+showing, and by half that for the half-page keys, so that the keys mean the same
+thing at any terminal size.
 
-#### Scenario: The log panel still takes precedence
-- **GIVEN** the log panel holds the keyboard
-- **WHEN** any of these keys is pressed
-- **THEN** the log SHALL move and the document SHALL NOT
+#### Scenario: A page in a taller pane
+- **GIVEN** two terminal heights
+- **WHEN** a page key is pressed in each
+- **THEN** the taller one SHALL move further
+
+#### Scenario: Jumping to the ends
+- **WHEN** `gg` or `G` is pressed
+- **THEN** the surface SHALL go to its first or last row
+
+#### Scenario: Paging past an end
+- **WHEN** a page key would move beyond the first or last row
+- **THEN** it SHALL stop there rather than wrapping or going out of range

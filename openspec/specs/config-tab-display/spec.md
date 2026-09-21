@@ -260,21 +260,22 @@ report what that schema is and how much of the project runs on it.
 - **THEN** the content SHALL report the schema by name and the reason it could
   not be read, and the remaining rows SHALL be unaffected
 
-### Requirement: The properties tab pages from either half
-The properties tab's content SHALL respond to the paging and jump keys whether
-the row list or the content holds the keyboard.
+### Requirement: The properties rows can be paged and jumped through
+The properties row list SHALL move its selection by a page, by half a page, and
+to either end, while it holds the keyboard.
 
-Its list is a short fixed set of rows and the document beside it is what the tab
-is for, so requiring the keyboard to be moved before a page can be turned was
-the regression this restores.
+Its list is short, so the jumps matter more than the pages; both are there
+because every list in the application answers to the same keys.
 
-#### Scenario: Paging straight after opening the tab
-- **GIVEN** the properties tab has just been opened, so its row list holds the
-  keyboard
-- **WHEN** the user presses `pgdown`
-- **THEN** the row's content SHALL scroll
+#### Scenario: Jumping the row list
+- **WHEN** the row list holds the keyboard and `gg` or `G` is pressed
+- **THEN** the selection SHALL move to the first or last row, and the content
+  SHALL NOT scroll
 
-#### Scenario: Choosing a row still needs the list
-- **GIVEN** the properties tab's row list holds the keyboard
-- **WHEN** the user presses `j`
-- **THEN** the selected row SHALL move and the content SHALL NOT scroll
+#### Scenario: Paging a list shorter than a page
+- **WHEN** a page key is pressed and the list is shorter than a page
+- **THEN** the selection SHALL move to that end and stop
+
+#### Scenario: The content still pages when it holds the keyboard
+- **WHEN** the content holds the keyboard and a page key is pressed
+- **THEN** it SHALL scroll

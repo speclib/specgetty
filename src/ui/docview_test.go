@@ -287,11 +287,10 @@ func TestShortDocumentDoesNotScroll(t *testing.T) {
 
 // --- 8.5 the lists are unaffected ---
 
-func TestScrollKeysDoNotDisturbTheChangeList(t *testing.T) {
-	// The change list has no document, so the scroll keys must find nothing to
-	// move. Note that the half-page list paging the tasks mention belonged to
-	// the old project list panel and its dead file listing, both removed by
-	// project-picker; no list binds these keys any more.
+func TestScrollKeysMoveTheChangeListAndNoDocument(t *testing.T) {
+	// The change list has no document, so these keys move its cursor. This
+	// test used to assert the opposite, with a comment observing that no list
+	// bound these keys any more; that was the defect, not the design.
 	m := makeListModel()
 	m.width, m.height = 80, 30
 	m.recalcLayout()
@@ -304,11 +303,11 @@ func TestScrollKeysDoNotDisturbTheChangeList(t *testing.T) {
 		{Code: tea.KeyPgDown}, {Code: 'f', Mod: tea.ModCtrl}, {Code: 'd', Mod: tea.ModCtrl},
 	} {
 		got := press(m, k)
-		if got.changeCursor != m.changeCursor {
-			t.Errorf("a paging key moved the change cursor to %d", got.changeCursor)
+		if got.changeCursor == m.changeCursor {
+			t.Errorf("%v did not move the change cursor", k)
 		}
 		if got.docViewport.YOffset() != 0 {
-			t.Errorf("a paging key scrolled a document that is not displayed")
+			t.Errorf("%v scrolled a document that is not displayed", k)
 		}
 	}
 }

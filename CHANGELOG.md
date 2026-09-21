@@ -25,10 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `pgup`, `pgdown`, `ctrl+f`, `ctrl+b`, `ctrl+d`, `ctrl+u`, `gg` and `G` work on
-  the properties and specs tabs without pressing `tab` first. They act on the
-  document whenever one is displayed, which is what a document viewer has always
-  promised; only `j` and `k` still depend on which half holds the keyboard.
+- `pgup`, `pgdown`, `ctrl+f`, `ctrl+b`, `ctrl+d`, `ctrl+u`, `gg` and `G` now
+  work in every list, not only in documents. They act on whatever holds the
+  keyboard, by the same rule `j` and `k` follow, so the change list, the spec
+  list, the properties rows and the project picker can all be paged and jumped
+  through. The change list had thirty-eight rows and no way down it but `j`.
 - In the combined view, nothing indicated which rows were archived unless you
   had configured the `archived` column. Grouping makes it positional.
 - `spg --config <unparseable.yml> <dir>` crashed. Directory arguments replace

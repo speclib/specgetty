@@ -115,8 +115,24 @@ change.
 | `gg` / `G`              | Jump to the start or the end |
 
 The panel title shows how far down the document you are. No percentage means
-the whole thing fits, so there is nothing below. The config tab scrolls with the
-same keys.
+the whole thing fits, so there is nothing below.
+
+### The same keys everywhere
+
+`<pgdn>`/`<pgup>`, `ctrl-f`/`ctrl-b`, `ctrl-d`/`ctrl-u`, `gg` and `G` act on
+whatever holds the keyboard, by the same rule `j` and `k` follow:
+
+| The keyboard is on     | These keys move                       |
+| ---------------------- | ------------------------------------- |
+| the change list        | the selected change                   |
+| a list beside a pane   | the selection in that list            |
+| a document             | the document                          |
+| the log panel          | the log                               |
+| the project picker     | the selected project                  |
+
+A page is however many rows the thing is showing, so the keys mean the same at
+any terminal size. On the specs and properties tabs, `<tab>` moves the keyboard
+between the list and the content beside it.
 
 Sub-tabs stay inside the change: pressing `<right>` on the last one does not
 spill over into the project tab bar.
