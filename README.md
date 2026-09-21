@@ -73,8 +73,14 @@ between them.
 | `<esc>`                    | Go one level back       |
 | `E`                        | Open the file in your editor |
 | `p`                        | Open the project picker |
-| `s`                        | Rescan the open project |
 | `q` / `ctrl-C`             | Quit                    |
+
+There is no rescan key. The open project is watched and re-read whenever
+anything under its `openspec/` changes, and the two things that live outside
+that tree are covered too: the store registry is watched for a project that
+declares a store, and a store's git state is re-read whenever you enter the
+properties tab. To force a read anyway, press `p` and `<enter>` on the project
+you are already in, which re-resolves and re-reads it.
 
 ### Keys in a project
 
@@ -121,8 +127,8 @@ fallback to `vi`: guessing is worse than saying, and it guesses wrong on a
 machine that has no `vi`.
 
 The interface stops drawing while the editor has the terminal and resumes when
-it exits, then reads the project again, so your edit is on screen without
-pressing `s`. The file opens at its top; no position within it is passed,
+it exits, then reads the project again, so your edit is on screen without your
+asking for it. The file opens at its top; no position within it is passed,
 because the syntax for that differs per editor and would work for some people
 and silently do nothing for the rest.
 

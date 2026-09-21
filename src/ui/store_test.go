@@ -716,12 +716,16 @@ func TestWatchDirsCoversBothTreesForAStoreBackedProject(t *testing.T) {
 	m := storeBackedModel()
 	dirs := m.watchDirs(m.currentKey())
 
-	if len(dirs) != 2 {
-		t.Fatalf("got %v, want the store's tree and the repo's", dirs)
+	// The store's tree, the repo's, and the registry that decides which store
+	// the repo's declaration resolves to. The registry lives outside every
+	// openspec/ tree, so nothing else would notice a store being repointed.
+	if len(dirs) != 3 {
+		t.Fatalf("got %v, want the store's tree, the repo's and the registry", dirs)
 	}
 	want := map[string]bool{
 		filepath.Join("/stores/nivis-tunnel", "openspec"): true,
 		filepath.Join("/work/nivis-tunnel", "openspec"):   true,
+		filepath.Dir(scanner.RegistryPath()):              true,
 	}
 	for _, d := range dirs {
 		if !want[d] {
@@ -747,8 +751,51 @@ func TestWatchDirsIsOneTreeForAPlainProject(t *testing.T) {
 
 func TestWatchDirsIsOneTreeForAStoreOpenedDirectly(t *testing.T) {
 	m := storeItselfModel()
-	if got := m.watchDirs(m.currentKey()); len(got) != 1 {
-		t.Errorf("got %v, want one tree: there is no separate origin", got)
+	got := m.watchDirs(m.currentKey())
+	// One tree, there being no separate origin, plus the registry: a store
+	// opened directly is still resolved through it.
+	if len(got) != 2 {
+		t.Fatalf("got %v, want one tree and the registry", got)
+	}
+	if got[0] != filepath.Join("/stores/nivis-tunnel", "openspec") {
+		t.Errorf("got %q as the tree", got[0])
+	}
+	if got[1] != filepath.Dir(scanner.RegistryPath()) {
+		t.Errorf("got %q as the registry", got[1])
+	}
+}
+
+// TestWatchDirsLeavesTheRegistryOutOfAPlainProject is task 1.1: the registry
+// cannot change what a project holding its own content resolves to, so it is
+// not watched for one. An inotify watch per session for no behaviour is the
+// resource this application is likeliest to run out of.
+func TestWatchDirsLeavesTheRegistryOutOfAPlainProject(t *testing.T) {
+	m := plainModel()
+	for _, d := range m.watchDirs(m.currentKey()) {
+		if d == filepath.Dir(scanner.RegistryPath()) {
+			t.Error("a project declaring no store should not watch the registry")
+		}
+	}
+}
+
+// TestAnUnresolvedDeclarationStillWatchesTheRegistry is the case a reader is
+// most likely to be looking at: the store is named but not registered, and
+// registering it is the event worth noticing.
+func TestAnUnresolvedDeclarationStillWatchesTheRegistry(t *testing.T) {
+	m := plainModel()
+	key := m.currentKey()
+	st := m.projects[key]
+	st.Info.StoreProblem = &scanner.StoreProblem{Code: scanner.ProblemUnknownStore, ID: "nivis"}
+	m.projects[key] = st
+
+	var found bool
+	for _, d := range m.watchDirs(key) {
+		if d == filepath.Dir(scanner.RegistryPath()) {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a declaration that could not be resolved should watch the registry")
 	}
 }
 

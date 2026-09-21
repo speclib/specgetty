@@ -115,21 +115,6 @@ its state belong to the config tab.
 - **WHEN** the open project holds its own specs and changes
 - **THEN** the header SHALL carry no store mark, and SHALL read as it does today
 
-### Requirement: Rescan is scoped to the open project
-Pressing `s` SHALL rescan only the open project, reading from the root its
-content was resolved to.
-
-#### Scenario: Rescan
-- **WHEN** the user presses `s` in the project view
-- **THEN** only the open project SHALL be reread, and the configured scan
-  directories SHALL NOT be walked
-
-#### Scenario: Rescanning a store-backed project
-- **WHEN** the user presses `s` in a project resolved through a store
-  declaration
-- **THEN** the declaration SHALL be resolved again before reading, so that a
-  repointed `store:` key is picked up
-
 ### Requirement: Escape does not leave the project view
 The project view is the floor of the navigation stack, and `esc` SHALL NOT exit
 the application or reveal any view above it.

@@ -182,7 +182,10 @@ func TestOpeningADifferentProjectReadsAgain(t *testing.T) {
 	other.schemas = m.schemas
 	other.schemaFor = m.schemaFor
 
-	cmds := other.enterTab()
+	// Asked of the schema loader rather than of enterTab, which also refreshes
+	// a store's git state now and would make this a count of two unrelated
+	// things.
+	cmds := other.ensureSchemasLoaded()
 	if len(cmds) != 1 {
 		t.Fatalf("got %d reads for the new project, want one per schema it uses", len(cmds))
 	}

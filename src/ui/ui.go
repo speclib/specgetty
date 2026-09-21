@@ -258,6 +258,12 @@ type model struct {
 	watchedRoot       string
 	watchedDirs       []string
 
+	// Set when a filesystem change arrives while a scan is already running.
+	// The watcher's send is non-blocking and its channel holds one, so without
+	// this the second change would be dropped and the display would keep
+	// showing what the scan in flight had already read.
+	scanPending bool
+
 	// Which of a comparable node's three views its card is showing. Reset to
 	// the difference on every move, a choice being about one node.
 	cardView int
@@ -669,12 +675,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchInput.Focus()
 			}
 
-		case "s":
-			if len(m.repoPaths) > 0 {
-				m.scanning = true
-				cmds = append(cmds, m.rescanCurrent())
-			}
-
 		case "E":
 			var cmd tea.Cmd
 			m, cmd = m.openInEditor()
@@ -922,8 +922,15 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fsChangeMsg:
 		if m.level >= levelProject && len(m.repoPaths) > 0 {
-			m.scanning = true
-			cmds = append(cmds, m.rescanCurrent())
+			if m.scanning {
+				// A scan already in flight may have read the file before this
+				// change landed in it. Remembered rather than started now, so
+				// the two do not race, and run once the current one lands.
+				m.scanPending = true
+			} else {
+				m.scanning = true
+				cmds = append(cmds, m.rescanCurrent())
+			}
 			if m.watcher != nil {
 				cmds = append(cmds, waitForFsChange(m.watcher))
 			}
@@ -938,6 +945,16 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case scanMsg:
 		m.scanning = false
+		// A change that arrived while this scan was running. One further scan
+		// however many arrived: a scan reads the whole project, so a queue of
+		// them would be a queue of identical work.
+		if m.scanPending {
+			m.scanPending = false
+			if m.level >= levelProject && len(m.repoPaths) > 0 {
+				m.scanning = true
+				cmds = append(cmds, m.rescanCurrent())
+			}
+		}
 		if msg.err != nil {
 			m.err = msg.err
 		} else {
@@ -978,6 +995,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+
+	case storeGitMsg:
+		m.applyStoreGit(msg)
 
 	case schemaMsg:
 		// An answer for a project that is no longer open is dropped rather than
@@ -1355,7 +1375,31 @@ func (m model) watchDirs(key string) []string {
 	if key != root {
 		dirs = append(dirs, filepath.Join(key, "openspec"))
 	}
+	// The registry decides where a declared store resolves to, and it lives
+	// outside every openspec/ tree, so it changes without any watched file
+	// changing. A project that declares no store watches nothing extra: the
+	// registry cannot change what such a project reads, and an inotify watch
+	// per session for no behaviour is the resource this is likeliest to run
+	// out of.
+	if m.declaresStore(key) {
+		if reg := scanner.RegistryPath(); reg != "" {
+			dirs = append(dirs, filepath.Dir(reg))
+		}
+	}
 	return dirs
+}
+
+// declaresStore reports whether the project under key names a store.
+//
+// Whether the declaration resolved or not: a store registered while the project
+// is open is exactly the event worth noticing, and that is the case a reader is
+// most likely to be looking at.
+func (m model) declaresStore(key string) bool {
+	st, ok := m.projects[key]
+	if !ok {
+		return false
+	}
+	return st.Info.StoreID != "" || st.Info.StoreProblem != nil
 }
 
 // startDirOf returns the directory a project's resolution began at. That is the
@@ -1942,7 +1986,10 @@ func (m *model) enterTab() []tea.Cmd {
 	if m.level != levelProject || m.detailTab != tabProperties {
 		return nil
 	}
-	return m.ensureSchemasLoaded()
+	// Both of the tab's costs are paid here and nowhere else: the schema
+	// definitions, and the store's git state, which nothing under openspec/
+	// would have announced a change to.
+	return append(m.ensureSchemasLoaded(), m.refreshStoreGit()...)
 }
 
 // splitTab reports whether the active tab draws a list beside its content.
@@ -2499,7 +2546,6 @@ func (m model) renderNavBar() string {
 					{"jk/\u2191\u2193", "scroll"},
 					{"^f^b", "page"},
 					{"p", "projects"},
-					{"s", "scan"},
 				}
 				break
 			}
@@ -2525,8 +2571,7 @@ func (m model) renderNavBar() string {
 					struct{ key, action string }{"tab", "focus card"})
 			}
 			keys = append(keys,
-				struct{ key, action string }{"p", "projects"},
-				struct{ key, action string }{"s", "scan"})
+				struct{ key, action string }{"p", "projects"})
 		case levelChange:
 			keys = []struct{ key, action string }{
 				{"q", "quit"},
@@ -2537,7 +2582,6 @@ func (m model) renderNavBar() string {
 				{"^d^u", "half"},
 				{"gg/G", "ends"},
 				{"p", "projects"},
-				{"s", "scan"},
 			}
 		case levelProject:
 			keys = []struct{ key, action string }{
@@ -2587,7 +2631,6 @@ func (m model) renderNavBar() string {
 			}
 			keys = append(keys,
 				struct{ key, action string }{"p", "projects"},
-				struct{ key, action string }{"s", "scan"},
 				struct{ key, action string }{"gg/G", "jump"},
 			)
 		}

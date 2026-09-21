@@ -23,7 +23,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `E` opens the delta file a node belongs to. The specs sub-tab one level up
   still offers no key, showing several files at once.
 
+### Removed
+
+- The `s` rescan key. It existed to recover from four things the filesystem
+  watcher could not see, and three of them are fixed here: the store registry is
+  now watched for a project that declares a store, a store's git state is re-read
+  on entering the properties tab, and a change arriving while a scan is running
+  is no longer dropped. To force a read anyway, press `p` and `<enter>` on the
+  project you are already in.
+
 ### Changed
+
+- A filesystem change that lands while a scan is already running now causes a
+  further scan once that one finishes, rather than being discarded. The window
+  was small but widened exactly when a project was being written to fast.
+- A store's git state is read when you enter the properties tab, so a commit or
+  fetch made in another terminal shows up. It lives outside the watched
+  `openspec/` tree, and watching `.git/` instead would turn a fetch into a rescan
+  loop.
 
 - A spec is read by OpenSpec's own rules, transcribed from its parser: the
   `## Requirements` section, `### Requirement:` inside it, any `#### ` heading
