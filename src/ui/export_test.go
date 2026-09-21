@@ -53,7 +53,19 @@ func zipEntries(t *testing.T, path string) []string {
 
 func runExport(t *testing.T, project, dirName, semanticName string, archived bool) exportMsg {
 	t.Helper()
-	msg := doExportChange(project, dirName, semanticName, archived)()
+	// These tests set HOME and look for the zip there, which is where every
+	// export went before a directory could be chosen. The destination has its
+	// own tests; these are about what lands in the zip.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return runExportTo(t, project, dirName, semanticName, archived, home)
+}
+
+func runExportTo(t *testing.T, project, dirName, semanticName string, archived bool, dest string) exportMsg {
+	t.Helper()
+	msg := doExportChange(project, dirName, semanticName, archived, dest)()
 	got, ok := msg.(exportMsg)
 	if !ok {
 		t.Fatalf("got %T, want exportMsg", msg)
@@ -158,16 +170,16 @@ func TestExportOverwritesAnExistingZip(t *testing.T) {
 	if !got.ok {
 		t.Fatalf("export failed: %s", got.output)
 	}
-	// The spec requires an overwrite, so the stale file must be a real zip now.
+	// Replacing is now asked about in the interface; the command still replaces
+	// once told to, so the stale file must be a real zip after it runs.
 	if entries := zipEntries(t, dest); len(entries) != 3 {
 		t.Errorf("zip has %d entries, want 3: the existing file was not overwritten", len(entries))
 	}
 }
 
-func TestExportDestPath(t *testing.T) {
-	t.Setenv("HOME", "/home/someone")
-	got := exportDestPath("my-feature")
-	want := filepath.Join("/home/someone", "my-feature-"+time.Now().Format("2006-01-02")+".zip")
+func TestExportFileName(t *testing.T) {
+	got := exportFileName("my-feature")
+	want := "my-feature-" + time.Now().Format("2006-01-02") + ".zip"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -188,8 +200,8 @@ func TestExportKeyPassesTheDirectoryName(t *testing.T) {
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	um := updated.(model)
 
-	if um.exportState != exportConfirming {
-		t.Fatalf("exportState = %d, want exportConfirming", um.exportState)
+	if um.exportState != exportPrompting {
+		t.Fatalf("exportState = %d, want exportPrompting", um.exportState)
 	}
 	if um.exportChangeName != "my-feature" {
 		t.Errorf("exportChangeName = %q, want the display name", um.exportChangeName)

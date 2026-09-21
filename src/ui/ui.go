@@ -73,11 +73,15 @@ const (
 	discardResult     = 3
 )
 
+// The export asks where before it asks whether. The prompt is the confirmation:
+// `enter` exports, `esc` cancels, and what would have been confirmed is instead
+// editable. Replacing an existing file is the one thing still worth a yes or no.
 const (
-	exportIdle       = 0
-	exportConfirming = 1
-	exportRunning    = 2
-	exportResult     = 3
+	exportIdle      = 0
+	exportPrompting = 1
+	exportReplacing = 2
+	exportRunning   = 3
+	exportResult    = 4
 )
 
 var tabNames = []string{"changes", "specs", "properties"}
@@ -226,6 +230,8 @@ type model struct {
 	discardResultOk   bool
 	exportState       int
 	exportChangeName  string
+	exportDirInput    textinput.Model
+	exportProblem     string
 	exportDirName     string
 	exportResultMsg   string
 	exportResultOk    bool
@@ -257,6 +263,13 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 	pi.Prompt = ""
 	pi.Placeholder = ""
 
+	// The text input accepts suggestions and binds tab to them, so completing a
+	// path is a matter of handing it what is on disk.
+	ei := textinput.New()
+	ei.Prompt = ""
+	ei.Placeholder = ""
+	ei.ShowSuggestions = true
+
 	return model{
 		config:          config,
 		ignoreDirErrors: ignoreDirErrors,
@@ -266,6 +279,7 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		fields:          append([]string(nil), defaultFields...),
 		searchInput:     ti,
 		pickerInput:     pi,
+		exportDirInput:  ei,
 	}
 }
 
@@ -340,14 +354,42 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Export modal intercepts all keys
-		if m.exportState == exportConfirming {
+		// The export prompt intercepts all keys. Every printable one belongs to
+		// the field, so `a`, `d`, `e` and `q` type rather than act: a path
+		// called `~/archive` must not archive a change.
+		if m.exportState == exportPrompting {
+			switch msg.String() {
+			case "esc":
+				m.exportState = exportIdle
+				m.exportDirInput.Blur()
+			case "enter":
+				m, cmds = m.submitExport(cmds)
+			case "tab":
+				if s := scanner.CompleteDir(m.exportDirInput.Value()); len(s) > 0 {
+					m.exportDirInput.SetSuggestions(s)
+				}
+				var cmd tea.Cmd
+				m.exportDirInput, cmd = m.exportDirInput.Update(msg)
+				cmds = append(cmds, cmd)
+			default:
+				m.exportProblem = ""
+				var cmd tea.Cmd
+				m.exportDirInput, cmd = m.exportDirInput.Update(msg)
+				cmds = append(cmds, cmd)
+			}
+			return m, tea.Batch(cmds...)
+		}
+		if m.exportState == exportReplacing {
 			switch msg.String() {
 			case "y":
 				m.exportState = exportRunning
-				cmds = append(cmds, doExportChange(m.currentRoot(), m.exportDirName, m.exportChangeName, m.exportIsArchived))
+				cmds = append(cmds, doExportChange(m.currentRoot(), m.exportDirName,
+					m.exportChangeName, m.exportIsArchived, m.exportDir()))
 			case "n", "esc":
-				m.exportState = exportIdle
+				// Back to the prompt with the directory still in it, so another
+				// can be chosen rather than the whole export lost.
+				m.exportState = exportPrompting
+				m.exportDirInput.Focus()
 			}
 			return m, tea.Batch(cmds...)
 		}
@@ -758,7 +800,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.exportChangeName = r.ci.Name
 				m.exportDirName = r.ci.DirName
 				m.exportIsArchived = r.archived
-				m.exportState = exportConfirming
+				m.exportState = exportPrompting
+				m.exportProblem = ""
+				m.exportDirInput.SetValue(scanner.DefaultExportDir(m.config))
+				m.exportDirInput.SetSuggestions(nil)
+				m.exportDirInput.Focus()
+				m.exportDirInput.CursorEnd()
 			}
 		}
 
@@ -1314,13 +1361,36 @@ func doDiscardChange(projectPath string, changeName string) tea.Cmd {
 	}
 }
 
-func exportDestPath(semanticName string) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
+// exportFileName is the name of the zip, which is generated and never typed.
+// It strips an archived change's date prefix and stamps the export date, and
+// both do work that retyping would lose.
+func exportFileName(semanticName string) string {
+	return semanticName + "-" + time.Now().Format("2006-01-02") + ".zip"
+}
+
+// exportDir is the directory the prompt currently holds, expanded.
+func (m model) exportDir() string {
+	return scanner.ExpandPath(m.exportDirInput.Value())
+}
+
+// submitExport answers `enter` at the prompt: refuse what cannot be used, ask
+// before replacing, otherwise write.
+func (m model) submitExport(cmds []tea.Cmd) (model, []tea.Cmd) {
+	dir := m.exportDir()
+	if p := scanner.CheckExportDir(dir); p != nil {
+		// The typed text stays in the field to be corrected.
+		m.exportProblem = p.Detail
+		return m, cmds
 	}
-	dateStr := time.Now().Format("2006-01-02")
-	return filepath.Join(home, semanticName+"-"+dateStr+".zip")
+	if _, err := os.Stat(filepath.Join(dir, exportFileName(m.exportChangeName))); err == nil {
+		m.exportState = exportReplacing
+		m.exportDirInput.Blur()
+		return m, cmds
+	}
+	m.exportState = exportRunning
+	m.exportDirInput.Blur()
+	return m, append(cmds, doExportChange(m.currentRoot(), m.exportDirName,
+		m.exportChangeName, m.exportIsArchived, dir))
 }
 
 // doExportChange zips a change directory.
@@ -1329,7 +1399,7 @@ func exportDestPath(semanticName string) string {
 // its date prefix. semanticName is the display name, which does not, and which
 // names both the zip's root folder and the zip file itself. Passing the display
 // name as the source path is the defect this signature exists to prevent.
-func doExportChange(projectPath string, dirName string, semanticName string, isArchived bool) tea.Cmd {
+func doExportChange(projectPath string, dirName string, semanticName string, isArchived bool, destDir string) tea.Cmd {
 	return func() tea.Msg {
 		var srcDir string
 		if isArchived {
@@ -1342,7 +1412,7 @@ func doExportChange(projectPath string, dirName string, semanticName string, isA
 			return exportMsg{ok: false, output: fmt.Sprintf("Source not found: %s", srcDir)}
 		}
 
-		destPath := exportDestPath(semanticName)
+		destPath := filepath.Join(destDir, exportFileName(semanticName))
 
 		zipFile, err := os.Create(destPath)
 		if err != nil {
@@ -1439,19 +1509,19 @@ func (m model) renderFrame() string {
 	}
 
 	if m.askOpenPicker {
-		modal := modalStyle.Width(56 + modalChrome).Render(
+		modal := modalStyle.Width(modalWidth(m, 56)).Render(
 			"No OpenSpec project here.\n\nOpen the project picker? (y/n)")
 		view = modalFrame(m.width, m.height, modal)
 	}
 
 	// Modal overlays
 	if m.scanning {
-		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Scanning for OpenSpec sources...")
+		modal := modalStyle.Width(modalWidth(m, 40)).Render(m.spinner.View() + " Scanning for OpenSpec sources...")
 		view = modalFrame(m.width, m.height, modal)
 	}
 	if m.err != nil {
 		errText := fmt.Sprintf("Error: %v", m.err)
-		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(errText)
+		modal := modalStyle.Width(modalWidth(m, m.width*3/4)).Render(errText)
 		view = modalFrame(m.width, m.height, modal)
 	}
 
@@ -1467,10 +1537,10 @@ func (m model) renderFrame() string {
 				content = fmt.Sprintf("Archive \"%s\"? (y/n)", m.archiveChangeName)
 			}
 		}
-		modal := modalStyle.Width(50 + modalChrome).Render(content)
+		modal := modalStyle.Width(modalWidth(m, 50)).Render(content)
 		view = modalFrame(m.width, m.height, modal)
 	case archiveRunning:
-		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Archiving...")
+		modal := modalStyle.Width(modalWidth(m, 40)).Render(m.spinner.View() + " Archiving...")
 		view = modalFrame(m.width, m.height, modal)
 	case archiveResult:
 		var prefix string
@@ -1480,7 +1550,7 @@ func (m model) renderFrame() string {
 			prefix = "✗ "
 		}
 		content := prefix + m.archiveResultMsg + "\n\nPress any key to dismiss."
-		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
+		modal := modalStyle.Width(modalWidth(m, m.width*3/4)).Render(content)
 		view = modalFrame(m.width, m.height, modal)
 	}
 
@@ -1496,10 +1566,10 @@ func (m model) renderFrame() string {
 				content = fmt.Sprintf("Discard \"%s\"? (y/n)", m.discardChangeName)
 			}
 		}
-		modal := modalStyle.Width(50 + modalChrome).Render(content)
+		modal := modalStyle.Width(modalWidth(m, 50)).Render(content)
 		view = modalFrame(m.width, m.height, modal)
 	case discardRunning:
-		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Discarding...")
+		modal := modalStyle.Width(modalWidth(m, 40)).Render(m.spinner.View() + " Discarding...")
 		view = modalFrame(m.width, m.height, modal)
 	case discardResult:
 		var prefix string
@@ -1509,19 +1579,31 @@ func (m model) renderFrame() string {
 			prefix = "✗ "
 		}
 		content := prefix + m.discardResultMsg + "\n\nPress any key to dismiss."
-		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
+		modal := modalStyle.Width(modalWidth(m, m.width*3/4)).Render(content)
 		view = modalFrame(m.width, m.height, modal)
 	}
 
 	// Export modals
 	switch m.exportState {
-	case exportConfirming:
-		destPath := exportDestPath(m.exportChangeName)
-		content := fmt.Sprintf("Export \"%s\"?\n\n→ %s\n\n(y/n)", m.exportChangeName, destPath)
-		modal := modalStyle.Width(60 + modalChrome).Render(content)
+	case exportPrompting:
+		var b strings.Builder
+		b.WriteString(fmt.Sprintf("Export %q", m.exportChangeName))
+		b.WriteString("\n\n→ " + m.exportDirInput.View() + "/")
+		b.WriteString("\n  " + dimStyle.Render(exportFileName(m.exportChangeName)))
+		if m.exportProblem != "" {
+			b.WriteString("\n\n" + warnStyle.Render(m.exportProblem))
+		}
+		// A field implies no keys, so the modal names them.
+		b.WriteString("\n\n" + dimStyle.Render("tab completes   ⏎ export   esc cancel"))
+		modal := modalStyle.Width(modalWidth(m, 60)).Render(b.String())
+		view = modalFrame(m.width, m.height, modal)
+	case exportReplacing:
+		content := fmt.Sprintf("%s already exists.\n\nReplace it? (y/n)",
+			filepath.Join(m.exportDir(), exportFileName(m.exportChangeName)))
+		modal := modalStyle.Width(modalWidth(m, 60)).Render(content)
 		view = modalFrame(m.width, m.height, modal)
 	case exportRunning:
-		modal := modalStyle.Width(40 + modalChrome).Render(m.spinner.View() + " Exporting...")
+		modal := modalStyle.Width(modalWidth(m, 40)).Render(m.spinner.View() + " Exporting...")
 		view = modalFrame(m.width, m.height, modal)
 	case exportResult:
 		var prefix string
@@ -1531,7 +1613,7 @@ func (m model) renderFrame() string {
 			prefix = "✗ "
 		}
 		content := prefix + m.exportResultMsg + "\n\nPress any key to dismiss."
-		modal := modalStyle.Width(m.width*3/4 + modalChrome).Render(content)
+		modal := modalStyle.Width(modalWidth(m, m.width*3/4)).Render(content)
 		view = modalFrame(m.width, m.height, modal)
 	}
 
@@ -2357,6 +2439,23 @@ func (m model) renderNavBar() string {
 // on blank space. It does not draw over the view it replaces, and it never took
 // a background to draw over: it used to accept one and discard it, which read
 // as compositing to everyone who saw the call.
+// modalWidth is the width a modal asks for, clamped to what the terminal has.
+//
+// `modal-presentation` requires a modal never to push the frame out of shape,
+// and a fixed width does exactly that on a narrow terminal: the export prompt
+// asked for 66 columns and the startup question for 62, both wider than the
+// 60-column minimum.
+func modalWidth(m model, want int) int {
+	max := m.width - 2
+	if want+modalChrome > max {
+		if max < 20 {
+			max = 20
+		}
+		return max
+	}
+	return want + modalChrome
+}
+
 func modalFrame(width, height int, modal string) string {
 	return lipgloss.Place(
 		width, height,

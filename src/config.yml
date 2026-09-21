@@ -20,7 +20,13 @@ scandirs:
 # will traverse directories pointed to be symlinks
 followsymlinks: true
 
-edit_command: code %WORKING_DIRECTORY
+# where `e` writes the zip it exports
+#
+# `~` and environment variables are expanded. The prompt opens on this; edit it
+# there to redirect a single export without changing this file.
+#
+# default: your home directory
+#export_dir: ~/Downloads
 
 # which columns should the change list show, in order?
 #

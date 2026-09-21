@@ -1,11 +1,11 @@
 ---
 # specgetty-wxqm
 title: 'in change list show tip about using :'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-09-21T16:55:17Z
-updated_at: 2026-09-21T17:58:18Z
+updated_at: 2026-09-21T18:01:34Z
 ---
 
 use colons to search inside change artifacts
@@ -34,3 +34,15 @@ characters in a five-wide column. `group-the-change-list` made `date` a
 default, and it fills its ten-wide column exactly, so every `:` result now
 reads `2026-09-18design`. Folded in because a tip that leads people to a
 visibly broken column is worse than no tip.
+
+## Summary of Changes
+
+Shipped as `teach-the-search-sigils` (commit 1e35b56).
+
+- the prompt names `fuzzy name  'exact  :inside` while focused and empty, on
+  both the change list and the picker; dropped rather than wrapped when narrow
+- a failed name search suggests the same term with the contents sigil; a failed
+  contents search suggests nothing
+- the match hint is separated from the table by the column gap
+
+Coverage floors raised: ui 85.0 to 85.3, total 87.2 to 87.5.

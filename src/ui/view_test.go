@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -303,17 +304,44 @@ func TestViewDiscardModals(t *testing.T) {
 func TestViewExportModals(t *testing.T) {
 	t.Setenv("HOME", "/home/someone")
 
-	t.Run("confirming shows the destination", func(t *testing.T) {
+	t.Run("the prompt shows the destination and its keys", func(t *testing.T) {
 		m := makeViewModel()
-		m.exportState = exportConfirming
+		m.exportDirInput = textinput.New()
+		m.exportState = exportPrompting
 		m.exportChangeName = "alpha"
-		got := viewOf(m)
-		if !strings.Contains(got, `Export "alpha"?`) {
-			t.Errorf("missing the export confirmation:\n%s", got)
+		m.exportDirInput.SetValue("/home/someone")
+		got := ansi.Strip(viewOf(m))
+
+		if !strings.Contains(got, `Export "alpha"`) {
+			t.Errorf("missing the change name:\n%s", got)
 		}
-		// The spec requires the modal to show where the zip will land.
 		if !strings.Contains(got, "/home/someone") {
-			t.Errorf("the modal should show the destination path:\n%s", got)
+			t.Errorf("the prompt shows the directory:\n%s", got)
+		}
+		if !strings.Contains(got, "alpha-") || !strings.Contains(got, ".zip") {
+			t.Errorf("and the generated filename beside it:\n%s", got)
+		}
+		// A field implies no keys, so the modal names them.
+		for _, want := range []string{"tab", "export", "cancel"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("the modal must name %q:\n%s", want, got)
+			}
+		}
+	})
+
+	t.Run("replacing asks before it overwrites", func(t *testing.T) {
+		m := makeViewModel()
+		m.exportDirInput = textinput.New()
+		m.exportState = exportReplacing
+		m.exportChangeName = "alpha"
+		m.exportDirInput.SetValue("/home/someone")
+		got := ansi.Strip(viewOf(m))
+
+		if !strings.Contains(got, "already exists") {
+			t.Errorf("the question must say what is in the way:\n%s", got)
+		}
+		if !strings.Contains(got, "(y/n)") {
+			t.Errorf("and how to answer:\n%s", got)
 		}
 	})
 

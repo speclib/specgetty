@@ -101,6 +101,28 @@ change.
 | `d`   | Discard the selected change                           |
 | `e`   | Export the selected change as a zip                   |
 
+### Exporting a change
+
+`e` asks where to put the zip. The prompt opens on `export_dir` from your
+config, or your home directory when that is unset, and `tab` completes a path
+against the filesystem:
+
+```
+ ╭────────────────────────────────────────────╮
+ │  Export "follow-the-store"                 │
+ │                                            │
+ │  → ~/Downloads/                            │
+ │    follow-the-store-2026-09-21.zip         │
+ │                                            │
+ │  tab completes   ⏎ export   esc cancel     │
+ ╰────────────────────────────────────────────╯
+```
+
+You type a directory; the filename is generated from the change name and the
+date. Editing the directory redirects that one export and leaves your config
+alone. A directory that does not exist is refused rather than created, and an
+existing file is confirmed before it is replaced.
+
 ### Keys in an open change
 
 | Key                     | Action                       |

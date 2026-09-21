@@ -261,9 +261,10 @@ the top of its group. Neither order is selectable.
   being dropped or sorted unpredictably
 
 ### Requirement: A configuration setting that no longer applies is reported
-A `change_mode` key in the configuration file selected among filter modes that
-no longer exist. YAML ignores keys a program does not know, so such a key would
-otherwise sit in a configuration doing nothing. The application SHALL report it.
+A configuration file may still carry a setting a released version accepted and
+this one does not. YAML ignores keys a program does not know, so such a key
+would otherwise sit in a configuration doing nothing. The application SHALL
+report every one it finds, naming the key and why it no longer has an effect.
 
 #### Scenario: A configuration still naming a change mode
 - **WHEN** the configuration file carries a `change_mode` key
@@ -271,8 +272,17 @@ otherwise sit in a configuration doing nothing. The application SHALL report it.
   and SHALL start normally
 
 #### Scenario: A configuration without it
-- **WHEN** the configuration file carries no `change_mode` key
+- **WHEN** the configuration file carries no retired key
 - **THEN** nothing SHALL be reported
+
+#### Scenario: A configuration naming an edit command
+- **WHEN** the configuration file carries an `edit_command` key
+- **THEN** the application SHALL report it the same way, it being a setting that
+  shipped, was parsed, and was never read by anything
+
+#### Scenario: More than one at once
+- **WHEN** the configuration file carries several retired keys
+- **THEN** each SHALL be reported, in a stable order
 
 ### Requirement: The change list can be paged and jumped through
 The change list SHALL move its cursor by a page, by half a page, and to either

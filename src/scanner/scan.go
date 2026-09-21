@@ -136,7 +136,7 @@ type Config struct {
 		Exclude []string `yaml:"exclude"`
 	} `yaml:"scandirs"`
 	FollowSymlinks bool   `yaml:"followsymlinks"`
-	EditCommand    string `yaml:"edit_command"`
+	ExportDir      string `yaml:"export_dir"`
 	ChangeFields   string `yaml:"change_fields"`
 }
 
@@ -156,7 +156,8 @@ func DumpConfig(config *Config) error {
 // a working setting into a line that does nothing. The requirement this list
 // replaces said the opposite: an unusable setting is reported, not swallowed.
 var RetiredConfigKeys = map[string]string{
-	"change_mode": "active and archived changes are always both listed now, grouped, so there is no mode to choose",
+	"change_mode":  "active and archived changes are always both listed now, grouped, so there is no mode to choose",
+	"edit_command": "it was parsed and never read by anything, so it never had an effect to lose",
 }
 
 // RetiredKeysIn reports which retired settings a configuration file still

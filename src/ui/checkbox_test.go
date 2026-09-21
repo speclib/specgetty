@@ -487,7 +487,7 @@ func TestSpaceIsInertWhileAConfirmationIsUp(t *testing.T) {
 	for _, setup := range []func(*model){
 		func(mm *model) { mm.archiveState = archiveConfirming },
 		func(mm *model) { mm.discardState = discardConfirming },
-		func(mm *model) { mm.exportState = exportConfirming },
+		func(mm *model) { mm.exportState = exportPrompting },
 	} {
 		blocked := m
 		setup(&blocked)

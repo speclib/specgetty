@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `e` asks where to put the zip. The prompt opens on a new `export_dir` config
+  setting, or your home directory when it is unset, and `tab` completes a path.
+  You type a directory and the filename stays generated. A directory that does
+  not exist is refused rather than created, and an existing file is confirmed
+  before it is replaced, where it used to be overwritten silently.
 - The search prompt names its three matchers while it is focused and empty, so
   `'exact` and `:inside` stop being things you have to read the README to learn.
   It goes on the first keystroke and is dropped where the line is too narrow.
@@ -40,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `edit_command` from the config file. It was parsed and never read by anything,
+  so it never had an effect to lose. A config that still sets it is reported.
 - The log panel, its `l` key and its place in the focus ring. One scan wrote 35
   lines into it, 30 of them per-project timings, and the three real errors it
   could carry were buried under them in a panel that had to be asked for. Log
@@ -48,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- No modal can be wider than the terminal. The export prompt and the startup
+  question both had fixed widths that overflowed a 60-column terminal.
 - A `scandirs.include` entry ending in `*` is no longer walked as a path in its
   own right, only as what it expands to. The pattern is not a directory, so
   walking it failed on every scan, and it failed the whole scan outright with

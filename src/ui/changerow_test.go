@@ -284,8 +284,8 @@ func TestExportKeyWorksOnArchivedRow(t *testing.T) {
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	um := updated.(model)
-	if um.exportState != exportConfirming {
-		t.Fatalf("exportState = %d, want exportConfirming", um.exportState)
+	if um.exportState != exportPrompting {
+		t.Fatalf("exportState = %d, want exportPrompting", um.exportState)
 	}
 	if !um.exportIsArchived {
 		t.Error("exportIsArchived = false, want true for an archived row")

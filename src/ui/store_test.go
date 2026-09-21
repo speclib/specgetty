@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"charm.land/bubbles/v2/textinput"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -522,7 +523,7 @@ func TestExportReadsFromTheRoot(t *testing.T) {
 	}
 	t.Setenv("HOME", t.TempDir())
 
-	msg := doExportChange(store, "my-change", "my-change", false)()
+	msg := doExportChange(store, "my-change", "my-change", false, t.TempDir())()
 	res, ok := msg.(exportMsg)
 	if !ok || !res.ok {
 		t.Fatalf("export failed: %+v", msg)
@@ -981,9 +982,13 @@ func TestExportFromTheUIReadsTheStore(t *testing.T) {
 	}
 	m.recalcLayout()
 
+	// `e` opens the prompt, `enter` exports. The model is built by hand here, so
+	// the input has to be initialised the way newModel does it.
+	m.exportDirInput = textinput.New()
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	m = updated.(model)
-	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	m.exportDirInput.SetValue(t.TempDir())
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	var result *exportMsg
 	for _, msg := range runCmd(cmd) {
