@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING** The change list shows active and archived changes together,
+  grouped, with the active group first and each group counting its rows. The
+  three filter modes are gone with it: the `f` key, the `change_mode` config
+  setting and the `--change-mode` option no longer exist, because which changes
+  you are looking at is now said by the group a row sits in rather than by a
+  label in the nav bar. A configuration still carrying `change_mode` is reported
+  at startup.
+- Archived changes are ordered newest first. They were ordered oldest first, by
+  accident of the directory naming, so the change you had just archived sat at
+  the bottom of the list.
+- The archive date is a default column, blank on an active change. The column
+  saying whether a change is active or archived is no longer a default, since
+  the group header says it, and remains available in `change_fields`.
+
+### Fixed
+
+- In the combined view, nothing indicated which rows were archived unless you
+  had configured the `archived` column. Grouping makes it positional.
+- `spg --config <unparseable.yml> <dir>` crashed. Directory arguments replace
+  the configured scan directories, so a configuration that failed to parse is
+  now started from empty rather than dereferenced.
+
 ### Added
 
 - The config tab is now `properties`, and reports what a project is rather than

@@ -124,7 +124,6 @@ func TestPickerSelectionResetsChangeListState(t *testing.T) {
 	m.pickerOpen = true
 	m.pickerCursor = 1
 	m.searchInput.SetValue("alpha")
-	m.listMode = modeBoth
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	um := updated.(model)
@@ -132,8 +131,8 @@ func TestPickerSelectionResetsChangeListState(t *testing.T) {
 	if um.searchInput.Value() != "" {
 		t.Errorf("change filter = %q, want cleared when the project changes", um.searchInput.Value())
 	}
-	if um.listMode != modeActive {
-		t.Errorf("listMode = %d, want modeActive", um.listMode)
+	if um.changeCursor != 0 {
+		t.Errorf("changeCursor = %d, want the top of the new project's list", um.changeCursor)
 	}
 }
 
@@ -147,10 +146,10 @@ func TestPickerKeysOutrankTheChangeList(t *testing.T) {
 		t.Error("a reached the change list while the picker was open")
 	}
 
-	// 'f' cycles the change list mode; while the picker is open it must not.
-	updated, _ = m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
-	if um := updated.(model); um.listMode != modeActive {
-		t.Error("f reached the change list while the picker was open")
+	// 'd' discards in the change list; while the picker is open it must not.
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	if um := updated.(model); um.discardState != discardIdle {
+		t.Error("d reached the change list while the picker was open")
 	}
 }
 
@@ -424,7 +423,7 @@ func TestStartupPromptDeclineLeavesAUsableView(t *testing.T) {
 }
 
 func TestGenericTableRendersBothRowTypes(t *testing.T) {
-	changes := renderTable(wrap(buildRows(testInfo(), modeActive)),
+	changes := renderTable(wrap(buildGroups(testInfo())[0].rows),
 		changeFieldDefs(defaultFields), 0, 80, 6)
 	if !strings.Contains(changes, "alpha") {
 		t.Errorf("change table missing its rows, got:\n%s", changes)

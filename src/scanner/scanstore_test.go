@@ -655,3 +655,56 @@ func TestScanResolvedReportsAnUnreadableRoot(t *testing.T) {
 		t.Error("a root that cannot be listed is an error, not an empty project")
 	}
 }
+
+// --- settings a released version accepted and this one does not ---
+
+func TestRetiredKeysIn(t *testing.T) {
+	write := func(body string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "config.yml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("a configuration still carrying one", func(t *testing.T) {
+		got := RetiredKeysIn(write("scandirs:\n  include: [x]\nchange_mode: active\n"))
+		if len(got) != 1 || got[0] != "change_mode" {
+			t.Errorf("got %v, want change_mode", got)
+		}
+		if RetiredConfigKeys["change_mode"] == "" {
+			t.Error("a retired key must carry a reason to report")
+		}
+	})
+
+	t.Run("a configuration without it", func(t *testing.T) {
+		if got := RetiredKeysIn(write("scandirs:\n  include: [x]\n")); len(got) != 0 {
+			t.Errorf("got %v, want nothing", got)
+		}
+	})
+
+	t.Run("a file that is not there", func(t *testing.T) {
+		if got := RetiredKeysIn(filepath.Join(t.TempDir(), "gone.yml")); got != nil {
+			t.Errorf("got %v, want nothing", got)
+		}
+	})
+
+	t.Run("a file that is not YAML", func(t *testing.T) {
+		if got := RetiredKeysIn(write("scandirs: [unclosed\n")); got != nil {
+			t.Errorf("got %v, want nothing", got)
+		}
+	})
+
+	t.Run("the key is ignored by the parser either way", func(t *testing.T) {
+		// Which is the whole reason it has to be reported: YAML discards keys
+		// a program does not know, with no error.
+		cfg, err := ParseConfigFile(write("scandirs:\n  include: [x]\nchange_mode: active\n"), "")
+		if err != nil {
+			t.Fatalf("a retired key must not break parsing: %v", err)
+		}
+		if len(cfg.ScanDirs.Include) != 1 {
+			t.Errorf("the rest of the configuration must still load: %+v", cfg.ScanDirs)
+		}
+	})
+}

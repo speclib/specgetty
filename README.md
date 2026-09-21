@@ -54,8 +54,9 @@ There are two levels, and the project picker opens over either of them.
    change view          artifact sub-tabs: proposal | design | tasks | specs
 ```
 
-Active and archived changes share one list. The `f` key cycles which of them it
-shows, so there is no separate archive tab.
+Active and archived changes are shown together in one list, grouped, with the
+active group first. There is no separate archive tab and no filter to choose
+between them.
 
 ### Keys everywhere
 
@@ -252,29 +253,35 @@ spg --change-fields=name,tasks,specs,archived
 | `name`     | The change name. Takes the leftover width        |
 | `tasks`    | Task progress as `done/total`                    |
 | `specs`    | How many specs the change touches                |
-| `archived` | Whether the change is active or archived         |
+| `archived` | Whether the change is active or archived. Redundant against the group header, so not a default |
 | `date`     | The archive date, for archived changes           |
 
-The default is `name,tasks,specs`. On a narrow terminal, columns are dropped
-from the right rather than squeezing the name past readability.
+The default is `name,tasks,specs,date`. On a narrow terminal, columns are
+dropped from the right rather than squeezing the name past readability.
 
-## Which changes the list starts on
+## How the change list is grouped
 
-`f` cycles between active, archived and both. Where it starts, and where it
-returns to when you switch project, comes from `change_mode` in the config file,
-and `--change-mode` overrides that:
+Active and archived changes are grouped in one list, with the active group first
+and each group counting its rows:
 
-```bash
-spg --change-mode=active+archived
+```
+ name                              tasks    specs  archived
+ ACTIVE (1)
+ group-the-change-list             1/39     3
+ ARCHIVED (36)
+ list-the-repos-not-the-stores     28/28    3      2026-09-21
+ properties-tab                    47/47    5      2026-09-21
 ```
 
-| Mode              | Shows                         |
-| ----------------- | ----------------------------- |
-| `active`          | active changes only (default) |
-| `archived`        | archived changes only         |
-| `active+archived` | both, each row labelled       |
+Both groups are always shown, with a count of zero when one is empty, so
+"nothing in flight" is an answer rather than an absence. The archive date is a
+column, blank on an active change, and the archived group is ordered newest
+first while the active group is ordered by name. Neither order is selectable.
 
-These are the same names the nav bar shows, so what you see is what you write.
+Earlier versions put a filter in front of the list, cycled with `f` and
+configured with `change_mode`. The group a row sits in says what the filter
+said, so the key, the setting and the `--change-mode` option are all gone. A
+configuration still carrying `change_mode` is reported at startup.
 
 ## Development
 

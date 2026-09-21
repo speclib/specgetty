@@ -25,18 +25,12 @@ edit_command: code %WORKING_DIRECTORY
 # which columns should the change list show, in order?
 #
 # valid fields: archived, date, name, specs, tasks
-# default: name,tasks,specs
+# default: name,tasks,specs,date
+#
+# active and archived changes are always both listed, grouped, with the active
+# group first. The `archived` field is redundant against the group header and is
+# not a default, but remains available here.
 #
 # overridden by --change-fields on the command line
 #change_fields: name,tasks,specs,archived
 
-# which changes should the change list start on?
-#
-# valid modes: active, archived, active+archived
-# default: active
-#
-# the f key cycles between them; this is only where it starts, and where it
-# returns to when you switch project
-#
-# overridden by --change-mode on the command line
-#change_mode: active+archived

@@ -22,38 +22,33 @@ func testInfo() scanner.ProjectInfo {
 	}
 }
 
-func TestBuildRowsModes(t *testing.T) {
-	info := testInfo()
-
-	tests := []struct {
-		mode int
-		want []string
-	}{
-		{modeActive, []string{"alpha", "beta"}},
-		{modeArchived, []string{"gamma"}},
-		{modeBoth, []string{"alpha", "beta", "gamma"}},
+func TestBuildGroupsSplitsAndTagsThem(t *testing.T) {
+	groups := buildGroups(testInfo())
+	if len(groups) != 2 {
+		t.Fatalf("got %d groups, want active and archived", len(groups))
 	}
-	for _, tt := range tests {
-		got := plainNames(buildRows(info, tt.mode))
-		if !reflect.DeepEqual(got, tt.want) {
-			t.Errorf("mode %d = %v, want %v", tt.mode, got, tt.want)
+	if groups[0].label != groupActive || groups[1].label != groupArchived {
+		t.Errorf("active leads: %q then %q", groups[0].label, groups[1].label)
+	}
+	if got := plainNames(groups[0].rows); !reflect.DeepEqual(got, []string{"alpha", "beta"}) {
+		t.Errorf("active = %v", got)
+	}
+	if got := plainNames(groups[1].rows); !reflect.DeepEqual(got, []string{"gamma"}) {
+		t.Errorf("archived = %v", got)
+	}
+	for _, r := range groups[0].rows {
+		if r.archived {
+			t.Error("active changes must not be tagged archived")
 		}
 	}
-}
-
-func TestBuildRowsTagsArchived(t *testing.T) {
-	rows := buildRows(testInfo(), modeBoth)
-	if rows[0].archived || rows[1].archived {
-		t.Error("active changes must not be tagged archived")
-	}
-	if !rows[2].archived {
+	if !groups[1].rows[0].archived {
 		t.Error("archived change must be tagged archived")
 	}
 }
 
 func TestRowKeyDistinguishesArchivedFromActive(t *testing.T) {
 	// An archived change keeps the name it had while active, so the name alone
-	// is not unique in modeBoth.
+	// is not unique in a list that always holds both.
 	active := changeRow{ci: scanner.ChangeInfo{Name: "same"}}
 	archived := changeRow{ci: scanner.ChangeInfo{Name: "same"}, archived: true}
 	if active.key() == archived.key() {
@@ -62,7 +57,7 @@ func TestRowKeyDistinguishesArchivedFromActive(t *testing.T) {
 }
 
 func TestIndexOfKey(t *testing.T) {
-	rows := wrap(buildRows(testInfo(), modeBoth))
+	rows := wrap(allRowsOf(buildGroups(testInfo())))
 	if got := indexOfKey(rows, "open/beta"); got != 1 {
 		t.Errorf("indexOfKey(open/beta) = %d, want 1", got)
 	}
@@ -71,20 +66,6 @@ func TestIndexOfKey(t *testing.T) {
 	}
 	if got := indexOfKey(rows, "open/missing"); got != -1 {
 		t.Errorf("indexOfKey(open/missing) = %d, want -1", got)
-	}
-}
-
-func TestEmptyListMessageDiffersByMode(t *testing.T) {
-	seen := map[string]bool{}
-	for _, mode := range []int{modeActive, modeArchived, modeBoth} {
-		msg := emptyListMessage(mode)
-		if msg == "" {
-			t.Errorf("mode %d has no message", mode)
-		}
-		if seen[msg] {
-			t.Errorf("mode %d repeats an earlier message %q", mode, msg)
-		}
-		seen[msg] = true
 	}
 }
 
@@ -120,15 +101,10 @@ func makeListModel() model {
 	return m
 }
 
-func TestCurrentRowsAppliesModeAndQuery(t *testing.T) {
+func TestCurrentRowsHoldsBothGroupsAndAppliesTheQuery(t *testing.T) {
 	m := makeListModel()
-	if got := len(m.currentRows()); got != 2 {
-		t.Errorf("modeActive gave %d rows, want 2", got)
-	}
-
-	m.listMode = modeBoth
 	if got := len(m.currentRows()); got != 3 {
-		t.Errorf("modeBoth gave %d rows, want 3", got)
+		t.Errorf("got %d rows, want every change, active and archived", got)
 	}
 
 	m.searchInput.SetValue("gamma")
@@ -140,7 +116,6 @@ func TestCurrentRowsAppliesModeAndQuery(t *testing.T) {
 
 func TestSyncCursorFollowsSurvivingSelection(t *testing.T) {
 	m := makeListModel()
-	m.listMode = modeBoth
 	m.changeCursor = 2 // gamma
 	m.rememberSelection()
 
@@ -278,20 +253,22 @@ func TestNumberKeysSwitchTabsAtTheProjectLevel(t *testing.T) {
 	}
 }
 
-func TestFCyclesListMode(t *testing.T) {
+func TestFIsUnbound(t *testing.T) {
+	// The key that cycled the filter modes is gone with them.
 	m := makeListModel()
-	for _, want := range []int{modeArchived, modeBoth, modeActive} {
-		updated, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
-		m = updated.(model)
-		if m.listMode != want {
-			t.Fatalf("listMode = %d, want %d", m.listMode, want)
-		}
+	before := m.renderChangesTab(80, 10)
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	if got := updated.(model).renderChangesTab(80, 10); got != before {
+		t.Error("f must do nothing on the change list")
 	}
 }
 
 func TestArchiveKeyIgnoredOnArchivedRow(t *testing.T) {
 	m := makeListModel()
-	m.listMode = modeArchived // only gamma, which is archived
+	// gamma is the archived change, last in the list now that the archived
+	// group follows the active one.
+	m.changeCursor = len(m.allRows()) - 1
+	m.rememberSelection()
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if um := updated.(model); um.archiveState != archiveIdle {
@@ -301,7 +278,9 @@ func TestArchiveKeyIgnoredOnArchivedRow(t *testing.T) {
 
 func TestExportKeyWorksOnArchivedRow(t *testing.T) {
 	m := makeListModel()
-	m.listMode = modeArchived
+	// gamma is the archived change, last now that the archived group follows.
+	m.changeCursor = len(m.allRows()) - 1
+	m.rememberSelection()
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	um := updated.(model)
@@ -347,7 +326,7 @@ func TestEscapeClearsTheFilter(t *testing.T) {
 	if um.searchInput.Value() != "" {
 		t.Errorf("query = %q, want cleared", um.searchInput.Value())
 	}
-	if len(um.currentRows()) != 2 {
+	if len(um.currentRows()) != 3 {
 		t.Errorf("full list not restored: %v", names(um.currentRows()))
 	}
 }
@@ -418,18 +397,21 @@ func TestRenderChangesTabShowsNoMatchMessage(t *testing.T) {
 	}
 }
 
-func TestRenderChangesTabShowsModeSpecificEmptyMessage(t *testing.T) {
+func TestRenderChangesTabShowsBothGroupsWhenEmpty(t *testing.T) {
+	// "Nothing in flight" is an answer, and an absent header would be
+	// indistinguishable from a filter having hidden it.
 	m := makeListModel()
 	m.projects = scanner.ProjectMap{"/p": scanner.ProjectStatus{Info: scanner.ProjectInfo{}}}
-	m.listMode = modeArchived
 	got := m.renderChangesTab(80, 10)
-	if !strings.Contains(got, "No archived changes") {
-		t.Errorf("expected the archived empty message, got:\n%s", got)
+	for _, want := range []string{"ACTIVE (0)", "ARCHIVED (0)"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q, got:\n%s", want, got)
+		}
 	}
 }
 
 func TestRenderChangeTableShowsHeadersAndRows(t *testing.T) {
-	rows := buildRows(testInfo(), modeActive)
+	rows := buildGroups(testInfo())[0].rows
 	got := renderTable(wrap(rows), changeFieldDefs(defaultFields), 0, 80, 10)
 	for _, want := range []string{"name", "tasks", "specs", "alpha", "beta", "1/4"} {
 		if !strings.Contains(got, want) {

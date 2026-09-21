@@ -223,8 +223,6 @@ type model struct {
 	askOpenPicker bool
 
 	// Change list state.
-	listMode      int // modeActive, modeArchived, modeBoth
-	defaultMode   int // what listMode returns to when the project changes
 	fields        []string
 	searchInput   textinput.Model
 	searchFocused bool
@@ -285,8 +283,6 @@ func newModel(config *scanner.Config, ignoreDirErrors bool, version string) mode
 		spinner:         s,
 		docViewport:     viewport.New(),
 		logViewport:     viewport.New(),
-		listMode:        modeActive,
-		defaultMode:     modeActive,
 		fields:          append([]string(nil), defaultFields...),
 		searchInput:     ti,
 		pickerInput:     pi,
@@ -589,12 +585,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.level == levelProject && m.detailTab == tabChanges {
 				m.searchFocused = true
 				m.searchInput.Focus()
-			}
-
-		case "f":
-			if m.level == levelProject && m.detailTab == tabChanges {
-				m.listMode = (m.listMode + 1) % 3
-				m.syncCursor()
 			}
 
 		case "s":
@@ -1096,19 +1086,26 @@ func (m model) currentSpecNames() []string {
 	return m.projects[m.repoPaths[m.cursor]].Info.SpecNames
 }
 
-// allRows builds the merged, mode-filtered change list, before any search
-// narrows it.
-func (m model) allRows() []changeRow {
-	if len(m.repoPaths) == 0 {
+// currentGroups is the change list's two groups for the open project, before
+// any search narrows them.
+func (m model) currentGroups() []changeGroup {
+	key := m.currentKey()
+	if key == "" {
 		return nil
 	}
-	return buildRows(m.projects[m.repoPaths[m.cursor]].Info, m.listMode)
+	return buildGroups(m.projects[key].Info)
+}
+
+// allRows is every change in selection order, which is what the cursor indexes.
+// The groups decide that order; nothing downstream reorders it.
+func (m model) allRows() []changeRow {
+	return allRowsOf(m.currentGroups())
 }
 
 // currentRows is the single seam every consumer of the change list goes
 // through: the renderer, the actions, the confirm modals and the nav bar. The
-// active/archived merge, the mode filter and the search filter all apply here,
-// so nothing downstream has to know a filter exists.
+// grouping order and the search filter both apply here, so nothing downstream
+// has to know either exists.
 func (m model) currentRows() []filtered[changeRow] {
 	return filterRows(m.allRows(), parseQuery(m.searchInput.Value()))
 }
@@ -1176,7 +1173,6 @@ func (m *model) resetProjectState() {
 	m.changeArtifactTab = 0
 	m.propSection = 0
 	m.selectedKey = ""
-	m.listMode = m.defaultMode
 	m.searchFocused = false
 	m.searchInput.SetValue("")
 	m.searchInput.Blur()
@@ -1721,12 +1717,18 @@ func (m model) renderChangesTab(width int, height int) string {
 
 	var body string
 	switch {
-	case total == 0:
-		body = dimStyle.Render(emptyListMessage(m.listMode))
-	case len(rows) == 0:
-		body = dimStyle.Render(fmt.Sprintf("No changes match %q", m.searchInput.Value()))
+	case total == 0 && len(m.currentGroups()) == 0:
+		body = dimStyle.Render("No project selected.")
 	default:
-		body = renderTable(rows, changeFieldDefs(m.fields), m.changeCursor, width, tableHeight)
+		body = renderGroupedTable(m.currentGroups(), rows, changeFieldDefs(m.fields),
+			m.changeCursor, width, tableHeight)
+		// The groups stay, each counting zero, so the shape of the list does
+		// not change under a query. The message says why they are empty, which
+		// the counts alone do not.
+		if len(rows) == 0 && m.searchInput.Value() != "" {
+			body += "\n" + dimStyle.Render(
+				fmt.Sprintf("No changes match %q", m.searchInput.Value()))
+		}
 	}
 
 	if !showPrompt {
@@ -2368,7 +2370,6 @@ func (m model) renderNavBar() string {
 				keys = append(keys,
 					struct{ key, action string }{"\u23ce", "view"},
 					struct{ key, action string }{"/", "search"},
-					struct{ key, action string }{"f", "mode:" + listModeNames[m.listMode]},
 				)
 				if r, ok := m.selectedRow(); ok {
 					if !r.archived {
@@ -2445,13 +2446,11 @@ func modalFrame(width, height int, modal string) string {
 	)
 }
 
-func Run(config *scanner.Config, ignoreDirErrors bool, version string, startupPath string, startView string, fields []string, listMode int) error {
+func Run(config *scanner.Config, ignoreDirErrors bool, version string, startupPath string, startView string, fields []string) error {
 	m := newModel(config, ignoreDirErrors, version)
 	if len(fields) > 0 {
 		m.fields = fields
 	}
-	m.listMode = listMode
-	m.defaultMode = listMode
 	m.startupPath = startupPath
 	m.startView = startView
 

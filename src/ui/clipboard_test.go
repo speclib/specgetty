@@ -34,7 +34,7 @@ func fakeClipboard(t *testing.T, err error) *string {
 
 // copyModel puts a project with one active and one archived change on the
 // change list, backed by real directories so a copied path can be resolved.
-func copyModel(t *testing.T, mode int) (model, string) {
+func copyModel(t *testing.T) (model, string) {
 	t.Helper()
 	project := t.TempDir()
 
@@ -58,7 +58,6 @@ func copyModel(t *testing.T, mode int) (model, string) {
 			{Name: "old-thing", DirName: "2026-04-02-old-thing"},
 		},
 	}}}
-	m.listMode = mode
 	m.recalcLayout()
 	m.syncDocument()
 	return m, project
@@ -66,7 +65,7 @@ func copyModel(t *testing.T, mode int) (model, string) {
 
 func TestCopyNameCopiesTheDisplayName(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, _ := copyModel(t, modeActive)
+	m, _ := copyModel(t)
 
 	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 
@@ -80,7 +79,7 @@ func TestCopyNameCopiesTheDisplayName(t *testing.T) {
 
 func TestCopyPathOfAnActiveChangeResolves(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, project := copyModel(t, modeActive)
+	m, project := copyModel(t)
 
 	press(m, tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 
@@ -101,7 +100,11 @@ func TestCopyPathOfAnActiveChangeResolves(t *testing.T) {
 // rather than against a string, so it fails if the path is wrong for any reason.
 func TestCopyPathOfAnArchivedChangeResolves(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, project := copyModel(t, modeArchived)
+	m, project := copyModel(t)
+	// The archived change is in the archived group, which follows the active
+	// one, so the cursor is moved to it rather than a mode selecting it.
+	m.changeCursor = len(m.allRows()) - 1
+	m.rememberSelection()
 
 	press(m, tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 
@@ -120,7 +123,7 @@ func TestCopyPathOfAnArchivedChangeResolves(t *testing.T) {
 
 func TestCopyReportsAFailure(t *testing.T) {
 	fakeClipboard(t, errors.New("no clipboard tool found"))
-	m, _ := copyModel(t, modeActive)
+	m, _ := copyModel(t)
 
 	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 
@@ -134,7 +137,7 @@ func TestCopyReportsAFailure(t *testing.T) {
 
 func TestCopyDoesNothingWithoutASelection(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, _ := copyModel(t, modeActive)
+	m, _ := copyModel(t)
 	m.searchInput.SetValue("nothing-matches-this")
 	m.syncCursor()
 
@@ -151,7 +154,7 @@ func TestCopyDoesNothingWithoutASelection(t *testing.T) {
 
 func TestCopyIsInertOnOtherTabs(t *testing.T) {
 	got := fakeClipboard(t, nil)
-	m, _ := copyModel(t, modeActive)
+	m, _ := copyModel(t)
 
 	for _, tab := range []int{tabSpecs, tabProperties} {
 		m.detailTab = tab
@@ -168,7 +171,7 @@ func TestCopyIsInertOnOtherTabs(t *testing.T) {
 func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 	t.Run("picker open", func(t *testing.T) {
 		got := fakeClipboard(t, nil)
-		m, _ := copyModel(t, modeActive)
+		m, _ := copyModel(t)
 		m.pickerOpen = true
 		m.pickerAll = testProjectRows()
 		m.pickerLoaded = true
@@ -181,7 +184,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 
 	t.Run("search prompt focused", func(t *testing.T) {
 		got := fakeClipboard(t, nil)
-		m, _ := copyModel(t, modeActive)
+		m, _ := copyModel(t)
 		m.searchFocused = true
 		m.searchInput.Focus()
 
@@ -196,7 +199,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 
 	t.Run("confirmation modal up", func(t *testing.T) {
 		got := fakeClipboard(t, nil)
-		m, _ := copyModel(t, modeActive)
+		m, _ := copyModel(t)
 		m.archiveState = archiveConfirming
 
 		press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
@@ -210,7 +213,7 @@ func TestCopyIsInertWhileAnOverlayHoldsTheKeyboard(t *testing.T) {
 
 func TestStatusLineAppearsInTheViewAndThenClears(t *testing.T) {
 	fakeClipboard(t, nil)
-	m, _ := copyModel(t, modeActive)
+	m, _ := copyModel(t)
 
 	um := press(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 	if !strings.Contains(um.View().Content, "copied name") {
@@ -232,7 +235,7 @@ func TestStatusLineAppearsInTheViewAndThenClears(t *testing.T) {
 }
 
 func TestNavBarAdvertisesTheCopyKeys(t *testing.T) {
-	m, _ := copyModel(t, modeActive)
+	m, _ := copyModel(t)
 	m.width = 220 // wide enough that no hint is dropped
 	if !strings.Contains(m.renderNavBar(), "copy") {
 		t.Errorf("the nav bar should advertise the copy keys:\n%s", m.renderNavBar())

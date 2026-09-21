@@ -122,10 +122,6 @@ func appFlags() []cli.Flag {
 			Usage:   "OpenSpec project to open; implies --view=single",
 		},
 		&cli.StringFlag{
-			Name:  "change-mode",
-			Usage: "Which changes the list starts on: active, archived or active+archived (overrides change_mode in the config)",
-		},
-		&cli.StringFlag{
 			Name:  "change-fields",
 			Usage: "Comma-separated columns for the change list (overrides change_fields in the config)",
 		},
@@ -140,6 +136,13 @@ func runApp(c *cli.Context) error {
 	if c.Args().Len() > 0 {
 
 		fmt.Println("Arguments given, skipping config")
+		// A configuration that failed to parse leaves config nil, and the
+		// arguments replace its scan directories outright, so there is nothing
+		// to read from it. Assigning into the nil pointer was a crash:
+		// `spg --config broken.yml somedir` segfaulted.
+		if config == nil {
+			config = &scanner.Config{}
+		}
 		config.ScanDirs.Include = c.Args().Slice()
 
 	} else {
@@ -147,6 +150,14 @@ func runApp(c *cli.Context) error {
 			return err
 		}
 		expandScanDirs(config)
+	}
+
+	// A setting that no longer has an effect is reported rather than swallowed.
+	// YAML ignores keys it does not know, so without this a released config
+	// would keep a line that quietly does nothing.
+	for _, key := range scanner.RetiredKeysIn(c.String("config")) {
+		fmt.Printf("Note: %s in %s no longer has any effect: %s\n",
+			key, c.String("config"), scanner.RetiredConfigKeys[key])
 	}
 
 	if c.Bool("debug") {
@@ -173,12 +184,7 @@ func runApp(c *cli.Context) error {
 		return err
 	}
 
-	listMode, err := ui.ResolveListMode(c.String("change-mode"), config.ChangeMode)
-	if err != nil {
-		return err
-	}
-
-	return ui.Run(config, c.Bool("ignore_dir_errors"), version, startupPath, startView, fields, listMode)
+	return ui.Run(config, c.Bool("ignore_dir_errors"), version, startupPath, startView, fields)
 }
 
 // newApp builds the command-line application.

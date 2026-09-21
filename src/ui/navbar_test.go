@@ -16,31 +16,33 @@ func TestNavBarAtChangeListOffersActions(t *testing.T) {
 	m.width = 200 // wide enough that nothing is dropped
 
 	got := navBarFor(m)
-	// The mode hint is derived rather than spelled out, so a rename cannot
-	// leave the test asserting a word the UI no longer uses.
-	for _, want := range []string{"search", "mode:" + listModeNames[modeActive],
-		"archive", "discard", "export", "view"} {
+	for _, want := range []string{"search", "archive", "discard", "export", "view"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("change list nav bar missing %q, got:\n%s", want, got)
 		}
 	}
 }
 
-func TestNavBarShowsCurrentListMode(t *testing.T) {
+func TestNavBarNamesNoListMode(t *testing.T) {
+	// The three filter modes and the key that cycled them are gone: which
+	// changes are shown is said by the group a row sits in.
 	m := makeListModel()
 	m.width = 200
-	m.listMode = modeBoth
-
 	got := navBarFor(m)
-	if !strings.Contains(got, "mode:"+listModeNames[modeBoth]) {
-		t.Errorf("nav bar should show the active mode, got:\n%s", got)
+	if strings.Contains(got, "mode:") {
+		t.Errorf("the nav bar must name no mode, got:\n%s", got)
+	}
+	if strings.Contains(got, "f ") {
+		t.Errorf("the f key is unbound, got:\n%s", got)
 	}
 }
 
 func TestNavBarHidesArchiveOnArchivedRow(t *testing.T) {
 	m := makeListModel()
 	m.width = 200
-	m.listMode = modeArchived // gamma only, which is archived
+	// gamma is the archived change, and it sorts into the archived group.
+	m.changeCursor = len(m.allRows()) - 1
+	m.rememberSelection()
 
 	got := navBarFor(m)
 	// Match the action, not the mode label: "mode:archived" contains "archive".

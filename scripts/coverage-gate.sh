@@ -27,16 +27,16 @@ floor_for() {
   case "$1" in
     # Raised from 42.3 when the CLI action moved out of main() into runApp,
     # which made everything up to the terminal takeover reachable from a test.
-    github.com/mipmip/specgetty/src)         echo "85.9" ;;
-    github.com/mipmip/specgetty/src/scanner) echo "94.8" ;;
-    github.com/mipmip/specgetty/src/ui)      echo "83.3" ;;
+    github.com/mipmip/specgetty/src)         echo "87.7" ;;
+    github.com/mipmip/specgetty/src/scanner) echo "94.9" ;;
+    github.com/mipmip/specgetty/src/ui)      echo "83.9" ;;
     # watcher measures anywhere from 84.6% to 90.2% depending on how its
     # inotify paths fall, so its floor tracks the lowest reading seen.
     github.com/mipmip/specgetty/src/watcher) echo "84.6" ;;
-    # Measured at 86.3 in both environments. Held a fraction lower because
+    # Measured at 86.7 in both environments. Held a fraction lower because
     # watcher's flutter moves the total by a few tenths and a zero-margin
     # total would fail at random rather than for a real regression.
-    TOTAL)                                   echo "86.0" ;;
+    TOTAL)                                   echo "86.5" ;;
     *)                                       echo "" ;;
   esac
 }

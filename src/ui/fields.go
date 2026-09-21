@@ -50,7 +50,10 @@ var knownFields = map[string]fieldDef[changeRow]{
 	},
 }
 
-var defaultFields = []string{"name", "tasks", "specs"}
+// The archive date joins the defaults: it is blank on an active change, which
+// is what the field already renders for them, so one column set serves both
+// groups. The state column leaves them, because the group header says it.
+var defaultFields = []string{"name", "tasks", "specs", "date"}
 
 func validFieldNames() []string {
 	names := make([]string, 0, len(knownFields))
@@ -106,31 +109,4 @@ func changeFieldDefs(names []string) []fieldDef[changeRow] {
 		defs = append(defs, knownFields["name"])
 	}
 	return defs
-}
-
-// ResolveListMode picks the change list's starting filter: the command-line
-// flag wins over the config file, which wins over active only.
-//
-// The names accepted here are exactly the ones the nav bar shows, so what you
-// see is what you write. An unknown value is reported with the valid ones
-// rather than falling back silently, because a typo that quietly does nothing
-// looks identical to a setting that is being ignored.
-func ResolveListMode(flagValue, configValue string) (int, error) {
-	source := "--change-mode"
-	raw := strings.TrimSpace(flagValue)
-	if raw == "" {
-		source = "change_mode in the config file"
-		raw = strings.TrimSpace(configValue)
-	}
-	if raw == "" {
-		return modeActive, nil
-	}
-
-	for i, name := range listModeNames {
-		if raw == name {
-			return i, nil
-		}
-	}
-	return 0, fmt.Errorf("unknown mode %q in %s; valid modes are: %s",
-		raw, source, strings.Join(listModeNames, ", "))
 }

@@ -138,7 +138,6 @@ type Config struct {
 	FollowSymlinks bool   `yaml:"followsymlinks"`
 	EditCommand    string `yaml:"edit_command"`
 	ChangeFields   string `yaml:"change_fields"`
-	ChangeMode     string `yaml:"change_mode"`
 }
 
 func DumpConfig(config *Config) error {
@@ -148,6 +147,37 @@ func DumpConfig(config *Config) error {
 	}
 	fmt.Println(string(b))
 	return nil
+}
+
+// RetiredConfigKeys are settings a released version accepted and this one no
+// longer does.
+//
+// YAML ignores keys a program does not know, so removing a field silently turns
+// a working setting into a line that does nothing. The requirement this list
+// replaces said the opposite: an unusable setting is reported, not swallowed.
+var RetiredConfigKeys = map[string]string{
+	"change_mode": "active and archived changes are always both listed now, grouped, so there is no mode to choose",
+}
+
+// RetiredKeysIn reports which retired settings a configuration file still
+// carries, in a stable order.
+func RetiredKeysIn(filename string) []string {
+	b, err := os.ReadFile(filepath.Clean(filename))
+	if err != nil {
+		return nil
+	}
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(b, &raw); err != nil {
+		return nil
+	}
+	var found []string
+	for key := range RetiredConfigKeys {
+		if _, present := raw[key]; present {
+			found = append(found, key)
+		}
+	}
+	sort.Strings(found)
+	return found
 }
 
 func ParseConfigFile(filename, defaultConfig string) (*Config, error) {

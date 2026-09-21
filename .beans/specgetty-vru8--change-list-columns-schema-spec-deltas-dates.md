@@ -5,7 +5,7 @@ status: draft
 type: feature
 priority: normal
 created_at: 2026-09-15T13:45:03Z
-updated_at: 2026-09-21T16:35:53Z
+updated_at: 2026-09-21T16:45:07Z
 blocked_by:
     - specgetty-g4pa
 ---
@@ -67,3 +67,14 @@ A sortable column would additionally need a sort key per field: the rendered
 value sorts wrong, because `tasks` produces `9/12` and `10/12` and string
 order puts ten before nine. Recorded here because `group-the-change-list`
 considered sorting and deliberately left it to this bean.
+
+## Note from group-the-change-list (2026-09-21)
+
+Sorting was considered there and deliberately left here. The change list gained
+grouping and two fixed orders (active by name, archived newest first) instead,
+because what sorting was wanted for was seeing recent work first.
+
+A sortable column needs a sort key per field, not a comparator on the rendered
+value: `tasks` produces `9/12` and `10/12`, and string order puts ten before
+nine. `fieldDef` carries only `value func(T) string` today, and the project
+picker shares that type.

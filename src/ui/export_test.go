@@ -178,7 +178,6 @@ func TestExportDestPath(t *testing.T) {
 // hands it DirName rather than the display name.
 func TestExportKeyPassesTheDirectoryName(t *testing.T) {
 	m := makeListModel()
-	m.listMode = modeArchived
 	m.projects = scanner.ProjectMap{"/p": scanner.ProjectStatus{Info: scanner.ProjectInfo{
 		ArchivedChanges: []scanner.ChangeInfo{
 			{Name: "my-feature", DirName: "2026-04-02-my-feature"},

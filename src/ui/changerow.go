@@ -2,22 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/mipmip/specgetty/src/scanner"
 )
-
-// List modes for the merged change list. Active and archived changes live in
-// one list; this selects which of them it contains.
-const (
-	modeActive = iota
-	modeArchived
-	modeBoth
-)
-
-// The names of the three states, used on screen and accepted in configuration.
-// One spelling everywhere: what the nav bar shows is what you write in the
-// config file.
-var listModeNames = []string{"active", "archived", "active+archived"}
 
 // changeRow is one line of the change list. It wraps a ChangeInfo with the one
 // thing the list needs that the scanner does not record: whether the change came
@@ -37,34 +25,64 @@ func (r changeRow) key() string {
 	return "open/" + r.ci.Name
 }
 
-// buildRows merges the two slices the scanner produces into one list, in the
-// order the requested mode implies: active changes first, then archived.
-func buildRows(info scanner.ProjectInfo, mode int) []changeRow {
-	var rows []changeRow
-	if mode == modeActive || mode == modeBoth {
-		for _, ci := range info.Changes {
-			rows = append(rows, changeRow{ci: ci})
-		}
-	}
-	if mode == modeArchived || mode == modeBoth {
-		for _, ci := range info.ArchivedChanges {
-			rows = append(rows, changeRow{ci: ci, archived: true})
-		}
-	}
-	return rows
+// changeGroup is a run of rows under one heading.
+//
+// Active and archived changes are always both shown. The group a row sits in is
+// what says which it is, by position and permanently, where a filter mode said
+// it with a label somewhere else and could be entered without noticing.
+type changeGroup struct {
+	label string
+	rows  []changeRow
 }
 
-// emptyListMessage explains why the list is empty, which differs by mode. An
-// empty list with no explanation reads as a broken scan.
-func emptyListMessage(mode int) string {
-	switch mode {
-	case modeArchived:
-		return "No archived changes"
-	case modeBoth:
-		return "No changes, active or archived"
-	default:
-		return "No active changes"
+// Group labels. One spelling, used on screen and in the tests.
+const (
+	groupActive   = "ACTIVE"
+	groupArchived = "ARCHIVED"
+)
+
+// buildGroups turns what the scanner produced into the two groups, in the order
+// they are shown.
+//
+// Active changes lead, because they are what the developer is working on.
+// Within the groups the orders are fixed and different: active alphabetically,
+// archived most recent first, so that the work most recently finished is at the
+// top of its group rather than thirty rows down.
+func buildGroups(info scanner.ProjectInfo) []changeGroup {
+	active := make([]changeRow, 0, len(info.Changes))
+	for _, ci := range info.Changes {
+		active = append(active, changeRow{ci: ci})
 	}
+	sort.SliceStable(active, func(i, j int) bool {
+		return active[i].ci.Name < active[j].ci.Name
+	})
+
+	archived := make([]changeRow, 0, len(info.ArchivedChanges))
+	for _, ci := range info.ArchivedChanges {
+		archived = append(archived, changeRow{ci: ci, archived: true})
+	}
+	// Stable, so two changes archived on the same day keep the order the
+	// scanner read them in and two renders agree. A change whose directory
+	// carries no parsable date has the zero time, which sorts last here rather
+	// than first, so it lands after those that do.
+	sort.SliceStable(archived, func(i, j int) bool {
+		return archived[i].ci.ArchiveDate.After(archived[j].ci.ArchiveDate)
+	})
+
+	return []changeGroup{
+		{label: groupActive, rows: active},
+		{label: groupArchived, rows: archived},
+	}
+}
+
+// allRowsOf flattens the groups into the selection order, which is what the
+// cursor indexes and what the filter narrows.
+func allRowsOf(groups []changeGroup) []changeRow {
+	var rows []changeRow
+	for _, g := range groups {
+		rows = append(rows, g.rows...)
+	}
+	return rows
 }
 
 // artifactTabNames lists the sub-tabs for an open change: one per .md file,

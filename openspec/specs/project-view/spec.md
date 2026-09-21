@@ -35,6 +35,7 @@ working directory resolves to a store, the store's content SHALL be what opens.
 
 ### Requirement: Startup view selectable by flag
 The application SHALL accept a `--view` flag selecting which view opens first.
+Flags that selected a change list filter mode are gone with the modes.
 
 #### Scenario: Default
 - **WHEN** no `--view` flag is given
@@ -51,6 +52,10 @@ The application SHALL accept a `--view` flag selecting which view opens first.
 
 #### Scenario: The zoom flag is gone
 - **WHEN** the user runs `spg --zoom`
+- **THEN** the application SHALL report that the flag is not recognised
+
+#### Scenario: The change-mode flag is gone
+- **WHEN** the user runs `spg --change-mode=active`
 - **THEN** the application SHALL report that the flag is not recognised
 
 ### Requirement: Empty state when no project is selected

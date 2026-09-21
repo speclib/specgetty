@@ -293,17 +293,15 @@ func TestResolveStartupPath(t *testing.T) {
 	})
 }
 
-func TestChangeModeFlagExists(t *testing.T) {
-	found := false
+func TestChangeModeFlagIsGone(t *testing.T) {
+	// The three filter modes went with the grouping, and so did the flag that
+	// chose among them. Removed the way --zoom was removed: loudly.
 	for _, f := range appFlags() {
 		for _, name := range f.Names() {
 			if name == "change-mode" {
-				found = true
+				t.Errorf("the change-mode flag is still registered")
 			}
 		}
-	}
-	if !found {
-		t.Error("--change-mode is missing")
 	}
 }
 
@@ -360,11 +358,35 @@ func TestRunAppRejectsUnknownChangeFields(t *testing.T) {
 	}
 }
 
-func TestRunAppRejectsAnUnknownChangeMode(t *testing.T) {
+func TestRunAppRejectsTheChangeModeFlag(t *testing.T) {
 	cfg := writeConfigFile(t, t.TempDir())
-	err := newApp().Run([]string{"specgetty", "--config", cfg, "--change-mode", "sometimes"})
-	if err == nil || !strings.Contains(err.Error(), "sometimes") {
-		t.Errorf("got %v, want the unknown mode named", err)
+	err := newApp().Run([]string{"specgetty", "--config", cfg, "--change-mode=active"})
+	if err == nil || !strings.Contains(err.Error(), "change-mode") {
+		t.Errorf("got %v, want the flag reported as unrecognised", err)
+	}
+}
+
+func TestRunAppReportsARetiredConfigKey(t *testing.T) {
+	// YAML ignores keys a program does not know, so removing the field would
+	// otherwise leave a working setting quietly doing nothing.
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.yml")
+	body := "scandirs:\n  include:\n    - " + dir + "\n  exclude: []\nchange_mode: active\n"
+	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := scanner.RetiredKeysIn(cfg); len(got) != 1 || got[0] != "change_mode" {
+		t.Errorf("got %v, want change_mode reported", got)
+	}
+	if err := newApp().Run([]string{"specgetty", "--config", cfg, "--debug"}); err != nil {
+		t.Errorf("a retired key is a note, not a failure: %v", err)
+	}
+}
+
+func TestRunAppSaysNothingAboutAConfigWithoutIt(t *testing.T) {
+	cfg := writeConfigFile(t, t.TempDir())
+	if got := scanner.RetiredKeysIn(cfg); len(got) != 0 {
+		t.Errorf("got %v, want nothing reported", got)
 	}
 }
 
@@ -378,5 +400,33 @@ func TestNewAppCarriesTheFlagSurface(t *testing.T) {
 	}
 	if app.Action == nil {
 		t.Error("the app must have an action")
+	}
+}
+
+func TestRunAppReportsAnUnreadableConfig(t *testing.T) {
+	// With no directory arguments the configuration is what the scan is built
+	// from, so a file that cannot be parsed is a failure rather than something
+	// to carry on past.
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("scandirs: [unclosed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := newApp().Run([]string{"specgetty", "--config", path, "--debug"})
+	if err == nil {
+		t.Fatal("want an error for a configuration that is not YAML")
+	}
+}
+
+func TestRunAppTakesArgumentsEvenWhenTheConfigIsUnreadable(t *testing.T) {
+	// Directory arguments replace the configured scan directories outright, so
+	// a broken configuration does not stand in their way.
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("scandirs: [unclosed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	mkProject(t, filepath.Join(base, "alpha"))
+	if err := newApp().Run([]string{"specgetty", "--config", path, "--debug", base}); err != nil {
+		t.Errorf("arguments override the configuration: %v", err)
 	}
 }
