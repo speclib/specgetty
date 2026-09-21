@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-09-22
+# Tooling and fixtures. No requirement of the application changes: the demo
+# records what specgetty already does, and a recording that needed a behaviour
+# change would be a demo of something else.
+skip_specs: true
