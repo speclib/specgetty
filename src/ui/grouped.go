@@ -19,11 +19,20 @@ import (
 // key, the search filter, `g`, `G` and all three actions already work that way
 // and none of them should have to know a header exists. Only the arithmetic
 // below maps between the two.
+// What a drawn line is. A change, a group header, or the blank line that
+// separates one group from the one above it.
+const (
+	lineChange = iota
+	lineHeader
+	lineSpacer
+)
+
 type groupLine struct {
+	kind   int
 	header string
 	row    filtered[changeRow]
-	// rowIndex is the change's position in the filtered list, or -1 for a
-	// header. This is the whole mapping, in one field.
+	// rowIndex is the change's position in the filtered list, and is meaningful
+	// only for lineChange. This is the whole mapping, in one field.
 	rowIndex int
 }
 
@@ -54,12 +63,19 @@ func groupLines(groups []changeGroup, rows []filtered[changeRow]) []groupLine {
 
 	var lines []groupLine
 	for gi, g := range groups {
+		// Every group but the first is preceded by a blank line, whether or not
+		// either group has rows in it. A rule with no exception is one less
+		// thing on screen to explain.
+		if gi > 0 {
+			lines = append(lines, groupLine{kind: lineSpacer, rowIndex: -1})
+		}
 		lines = append(lines, groupLine{
+			kind:     lineHeader,
 			header:   fmt.Sprintf("%s (%d)", g.label, len(buckets[gi])),
 			rowIndex: -1,
 		})
 		for _, i := range buckets[gi] {
-			lines = append(lines, groupLine{row: rows[i], rowIndex: i})
+			lines = append(lines, groupLine{kind: lineChange, row: rows[i], rowIndex: i})
 		}
 	}
 	return lines
@@ -69,7 +85,7 @@ func groupLines(groups []changeGroup, rows []filtered[changeRow]) []groupLine {
 // removed it.
 func lineOfRow(lines []groupLine, rowIndex int) int {
 	for i, l := range lines {
-		if l.rowIndex == rowIndex {
+		if l.kind == lineChange && l.rowIndex == rowIndex {
 			return i
 		}
 	}
@@ -121,6 +137,12 @@ func renderGroupedTable(groups []changeGroup, rows []filtered[changeRow],
 	if at := lineOfRow(lines, cursor); at >= bodyHeight {
 		offset = at - bodyHeight + 1
 	}
+	// The pane never opens on a blank line. The offset puts the selected change
+	// on the last visible row, so moving the window down by one keeps it in
+	// range while dropping the spacer that would otherwise head the pane.
+	if offset < len(lines) && lines[offset].kind == lineSpacer {
+		offset++
+	}
 	end := offset + bodyHeight
 	if end > len(lines) {
 		end = len(lines)
@@ -130,7 +152,12 @@ func renderGroupedTable(groups []changeGroup, rows []filtered[changeRow],
 		b.WriteString("\n")
 		l := lines[i]
 
-		if l.rowIndex < 0 {
+		switch l.kind {
+		case lineSpacer:
+			// Nothing at all: no style, so no background is painted across the
+			// width of a line that is meant to read as a gap.
+			continue
+		case lineHeader:
 			b.WriteString(sectionHeaderStyle.Render(fitCell(l.header, width)))
 			continue
 		}

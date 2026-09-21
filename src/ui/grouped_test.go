@@ -113,7 +113,7 @@ func TestAGroupKeepsItsHeaderWhenEmpty(t *testing.T) {
 			lines := groupLines(groups, wrap(allRowsOf(groups)))
 			headers := 0
 			for _, l := range lines {
-				if l.rowIndex < 0 {
+				if l.kind == lineHeader {
 					headers++
 				}
 			}
@@ -133,7 +133,7 @@ func TestGroupHeadersCountTheirRows(t *testing.T) {
 
 	var headers []string
 	for _, l := range lines {
-		if l.rowIndex < 0 {
+		if l.kind == lineHeader {
 			headers = append(headers, l.header)
 		}
 	}
@@ -157,7 +157,7 @@ func TestGroupHeadersCountWhatAFilterLeft(t *testing.T) {
 
 	var headers []string
 	for _, l := range lines {
-		if l.rowIndex < 0 {
+		if l.kind == lineHeader {
 			headers = append(headers, l.header)
 		}
 	}
@@ -177,10 +177,11 @@ func TestLineOfRowCountsHeaders(t *testing.T) {
 	//   -     0     ACTIVE (2)
 	//   0     1     a
 	//   1     2     b
-	//   -     3     ARCHIVED (2)
-	//   2     4     x
-	//   3     5     y
-	for row, wantLine := range map[int]int{0: 1, 1: 2, 2: 4, 3: 5} {
+	//   -     3     (blank)
+	//   -     4     ARCHIVED (2)
+	//   2     5     x
+	//   3     6     y
+	for row, wantLine := range map[int]int{0: 1, 1: 2, 2: 5, 3: 6} {
 		if got := lineOfRow(lines, row); got != wantLine {
 			t.Errorf("change %d is drawn on line %d, want %d", row, got, wantLine)
 		}
@@ -356,15 +357,25 @@ func TestTheCursorStepsBetweenChangesAcrossTheBoundary(t *testing.T) {
 	}
 }
 
-func TestEveryDrawnRowIsAChangeOrAHeader(t *testing.T) {
+func TestEveryDrawnRowIsExactlyOneOfTheThreeKinds(t *testing.T) {
 	m := groupedListModel(t)
 	groups := m.currentGroups()
-	for _, l := range groupLines(groups, wrap(allRowsOf(groups))) {
-		if l.rowIndex < 0 && l.header == "" {
-			t.Error("a line is neither a change nor a header")
-		}
-		if l.rowIndex >= 0 && l.header != "" {
-			t.Error("a line is both a change and a header")
+	for i, l := range groupLines(groups, wrap(allRowsOf(groups))) {
+		switch l.kind {
+		case lineChange:
+			if l.rowIndex < 0 || l.header != "" {
+				t.Errorf("line %d is a change and something else: %+v", i, l)
+			}
+		case lineHeader:
+			if l.header == "" || l.rowIndex >= 0 {
+				t.Errorf("line %d is a header and something else: %+v", i, l)
+			}
+		case lineSpacer:
+			if l.header != "" || l.rowIndex >= 0 {
+				t.Errorf("line %d is a spacer and something else: %+v", i, l)
+			}
+		default:
+			t.Errorf("line %d has no kind: %+v", i, l)
 		}
 	}
 }
@@ -468,6 +479,127 @@ func TestNoMatchStillShowsBothGroupsAndSaysWhy(t *testing.T) {
 	for _, want := range []string{"ACTIVE (0)", "ARCHIVED (0)", `No changes match "zzzz"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// --- the blank line between groups ---
+
+func TestOneBlankLineSitsBetweenTheGroups(t *testing.T) {
+	m := groupedListModel(t)
+	m.recalcLayout()
+	lines := strings.Split(ansi.Strip(m.renderChangesTab(90, 20)), "\n")
+
+	activeAt, archivedAt := -1, -1
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "ACTIVE") {
+			activeAt = i
+		}
+		if strings.HasPrefix(strings.TrimSpace(l), "ARCHIVED") {
+			archivedAt = i
+		}
+	}
+	if activeAt < 0 || archivedAt < 0 {
+		t.Fatalf("both headers must be on screen:\n%s", strings.Join(lines, "\n"))
+	}
+	if strings.TrimSpace(lines[archivedAt-1]) != "" {
+		t.Errorf("the line above ARCHIVED is %q, want a blank one", lines[archivedAt-1])
+	}
+	if strings.TrimSpace(lines[activeAt-1]) == "" {
+		t.Errorf("the first group follows the column header directly, got a blank line above ACTIVE")
+	}
+}
+
+func TestTheBlankLineIsDrawnWhenAGroupIsEmpty(t *testing.T) {
+	spacers := func(info scanner.ProjectInfo, rows []filtered[changeRow]) int {
+		groups := buildGroups(info)
+		if rows == nil {
+			rows = wrap(allRowsOf(groups))
+		}
+		n := 0
+		for _, l := range groupLines(groups, rows) {
+			if l.kind == lineSpacer {
+				n++
+			}
+		}
+		return n
+	}
+
+	t.Run("no active changes", func(t *testing.T) {
+		if got := spacers(groupedInfo(nil, map[string]string{"x": "2026-01-01"}), nil); got != 1 {
+			t.Errorf("got %d spacers, want one", got)
+		}
+	})
+	t.Run("no archived changes", func(t *testing.T) {
+		if got := spacers(groupedInfo([]string{"a"}, nil), nil); got != 1 {
+			t.Errorf("got %d spacers, want one", got)
+		}
+	})
+	t.Run("neither", func(t *testing.T) {
+		if got := spacers(groupedInfo(nil, nil), nil); got != 1 {
+			t.Errorf("got %d spacers, want one", got)
+		}
+	})
+	t.Run("emptied by a filter", func(t *testing.T) {
+		info := groupedInfo([]string{"a"}, map[string]string{"x": "2026-01-01"})
+		if got := spacers(info, nil); got != 1 {
+			t.Errorf("got %d spacers, want one", got)
+		}
+		if got := spacers(info, []filtered[changeRow]{}); got != 1 {
+			t.Errorf("with everything filtered away, got %d spacers, want one", got)
+		}
+	})
+}
+
+func TestTheBlankLineIsCountedByTheScrollArithmetic(t *testing.T) {
+	// Stepping the cursor across the boundary in a pane too short to hold both
+	// groups is where a line nobody budgeted for would lose the selection.
+	archived := map[string]string{}
+	for i := 0; i < 12; i++ {
+		archived[fmt.Sprintf("arch-%02d", i)] = fmt.Sprintf("2026-01-%02d", i+1)
+	}
+	groups := buildGroups(groupedInfo([]string{"act-a", "act-b"}, archived))
+	rows := wrap(allRowsOf(groups))
+
+	const height = 8
+	for cursor := range rows {
+		out := renderGroupedTable(groups, rows, changeFieldDefs(defaultFields), cursor, 80, height)
+		body := strings.Split(ansi.Strip(out), "\n")[1:]
+
+		want := rows[cursor].row.ci.Name
+		var seen bool
+		for _, l := range body {
+			if strings.Contains(l, want) {
+				seen = true
+			}
+		}
+		if !seen {
+			t.Errorf("cursor %d (%s): the selected change is off screen:\n%s",
+				cursor, want, strings.Join(body, "\n"))
+		}
+	}
+}
+
+func TestThePaneNeverOpensOnABlankLine(t *testing.T) {
+	archived := map[string]string{}
+	for i := 0; i < 12; i++ {
+		archived[fmt.Sprintf("arch-%02d", i)] = fmt.Sprintf("2026-01-%02d", i+1)
+	}
+	groups := buildGroups(groupedInfo([]string{"act-a", "act-b"}, archived))
+	rows := wrap(allRowsOf(groups))
+
+	// Heights where the boundary can reach the top of the pane.
+	for _, height := range []int{5, 6, 7, 8, 9} {
+		for cursor := range rows {
+			out := renderGroupedTable(groups, rows, changeFieldDefs(defaultFields), cursor, 80, height)
+			body := strings.Split(ansi.Strip(out), "\n")[1:]
+			if len(body) == 0 {
+				continue
+			}
+			if strings.TrimSpace(body[0]) == "" {
+				t.Fatalf("height %d, cursor %d: the pane opens on a blank line:\n%s",
+					height, cursor, strings.Join(body, "\n"))
+			}
 		}
 	}
 }

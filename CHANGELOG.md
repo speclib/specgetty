@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   saying whether a change is active or archived is no longer a default, since
   the group header says it, and remains available in `change_fields`.
 
+### Changed
+
+- One blank line separates the active and archived groups in the change list, so
+  the boundary reads as a break rather than as another row. It is drawn whether
+  or not either group has rows in it.
+
 ### Removed
 
 - The log panel, its `l` key and its place in the focus ring. One scan wrote 35

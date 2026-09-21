@@ -1,11 +1,11 @@
 ---
 # specgetty-m3u5
 title: one line margin between active and archived changes
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-09-21T16:59:57Z
-updated_at: 2026-09-21T17:36:46Z
+updated_at: 2026-09-21T17:56:08Z
 ---
 
 One blank line between the ACTIVE and ARCHIVED groups in the change list.
