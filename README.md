@@ -138,6 +138,34 @@ The filter uses the same grammar as the change list, with one addition: `:`
 searches file paths as well as file contents, so you can look for a project by
 a filename it contains.
 
+### Projects that keep their specs in a store
+
+OpenSpec lets a repo keep no specs and no changes of its own and name a store
+instead, so that several repos can plan together:
+
+```
+  openspec/config.yaml          the store, registered on this machine
+    schema: spec-driven
+    store: nivis-tunnel  ---->  ~/openspec-stores/nivis-tunnel/openspec/
+    context: |                    specs/
+      ...                         changes/
+```
+
+`spg` follows that pointer. Such a repo opens on the store's specs and changes,
+its header carries a `store` mark, and the config tab gains sub-tabs: the repo's
+own configuration, the store's shared one, and a report on the store itself.
+
+The picker lists the repos you work in. A registered store is not listed on its
+own: it is where content lives rather than where work happens, and every repo
+reading from it already stands for it. The `store` column names the store a row
+reads from, so two repos sharing one are visibly sharing rather than looking
+like duplicates. To open a store directly, run `spg` inside it or pass
+`--path`.
+
+Resolution reads local files only. Nothing here clones or fetches, and the
+store's git state is reported from local refs, so an `ahead` count is against
+the last upstream ref you fetched.
+
 ### Why `r` exists
 
 Walking your disk to find projects is the slow part of specgetty, measured at

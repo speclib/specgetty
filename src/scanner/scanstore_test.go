@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -82,25 +83,88 @@ func TestParseProjectInfoReadsTheYmlSpelling(t *testing.T) {
 
 // --- 2.3 a repo that only points at a store is not a row of its own ---
 
-func TestWalkSkipsAPointerOnlyRepo(t *testing.T) {
-	// This is the property that makes the picker show stores rather than every
-	// repo that reads from one. It holds today by accident of the validity
-	// rule; this test makes it deliberate, and fails if that rule is loosened.
+func TestWalkListsPointerOnlyReposAndSkipsTheStore(t *testing.T) {
+	// The rule that decides what the picker is a list of. A repo declaring a
+	// store is where a person works, and is the only place that repo's own
+	// context and rules can be read from; the store is where content lives and
+	// already has a row for every repo reading it.
 	isolateStores(t)
 	base := t.TempDir()
 
 	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
 	mkStoreMetadata(t, store, "alpha")
-	mkPointer(t, filepath.Join(base, "repo-one"), "store: alpha\n")
-	mkPointer(t, filepath.Join(base, "repo-two"), "store: alpha\n")
+	registerStore(t, "alpha", store)
+	one := mkPointer(t, filepath.Join(base, "repo-one"), "store: alpha\n")
+	two := mkPointer(t, filepath.Join(base, "repo-two"), "store: alpha\n")
 
 	found := walkAll(t, base)
 
-	if len(found) != 1 {
-		t.Fatalf("got %v, want the store alone", found)
+	want := map[string]bool{one: true, two: true}
+	for _, d := range found {
+		if d == store {
+			t.Errorf("the registered store must not be listed: %q", d)
+		}
+		if !want[d] {
+			t.Errorf("unexpected row %q", d)
+		}
+		delete(want, d)
 	}
-	if found[0] != store {
-		t.Errorf("got %q, want the store %q", found[0], store)
+	for d := range want {
+		t.Errorf("missing row %q", d)
+	}
+}
+
+func TestWalkListsAStoreWhenNoRegistryConfirmsIt(t *testing.T) {
+	// A directory carrying an identity file the registry does not point at is
+	// an ordinary project, not a store, so nothing excludes it.
+	isolateStores(t)
+	base := t.TempDir()
+	leftover := mkRoot(t, filepath.Join(base, "leftover"), "schema: spec-driven\n")
+	mkStoreMetadata(t, leftover, "alpha")
+	writeRegistry(t, "version: 1\nstores:\n  alpha:\n    backend:\n      type: git\n      local_path: /somewhere/else\n")
+
+	found := walkAll(t, base)
+	if len(found) != 1 || found[0] != leftover {
+		t.Errorf("got %v, want the leftover listed as a project", found)
+	}
+}
+
+func TestWalkExcludesNothingWithNoRegistry(t *testing.T) {
+	isolateStores(t)
+	base := t.TempDir()
+	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+
+	found := walkAll(t, base)
+	if len(found) != 1 || found[0] != store {
+		t.Errorf("got %v, want discovery unaffected when no stores are registered", found)
+	}
+}
+
+func TestValidityUsesThePassedRegistryNotTheFile(t *testing.T) {
+	// Every candidate directory asks the same registry question, so the answer
+	// is fetched once for the walk and handed down. Deleting the file and
+	// passing the map proves the check does not go back to disk per candidate:
+	// if it did, the store would stop being recognised here.
+	isolateStores(t)
+	store := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+	registerStore(t, "alpha", store)
+
+	stores, _, err := LoadRegistry(RegistryPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(RegistryPath()); err != nil {
+		t.Fatal(err)
+	}
+
+	openspecDir := filepath.Join(store, "openspec")
+	if isValidOpenSpecDir(openspecDir, stores) {
+		t.Error("the store must be excluded from the registry handed in, with no file on disk")
+	}
+	if !isValidOpenSpecDir(openspecDir, nil) {
+		t.Error("with no registry at all nothing is excluded")
 	}
 }
 
@@ -143,11 +207,16 @@ func TestCacheRoundTripsOverATreeHoldingAStore(t *testing.T) {
 	base := t.TempDir()
 	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
 	mkStoreMetadata(t, store, "alpha")
-	mkPointer(t, filepath.Join(base, "repo"), "store: alpha\n")
+	registerStore(t, "alpha", store)
+	mkSpec(t, store, "shared-capability")
+	repo := mkPointer(t, filepath.Join(base, "repo"), "store: alpha\n")
 
 	cfg := &Config{}
 	cfg.ScanDirs.Include = []string{base}
 	paths := walkAll(t, base)
+	if len(paths) != 1 || paths[0] != repo {
+		t.Fatalf("got %v, want the repo alone", paths)
+	}
 
 	cachePath := filepath.Join(t.TempDir(), "cache.json")
 	if err := SaveCache(cachePath, cfg, paths, time.Now()); err != nil {
@@ -161,14 +230,19 @@ func TestCacheRoundTripsOverATreeHoldingAStore(t *testing.T) {
 		t.Fatalf("got %v, want %v", loaded, paths)
 	}
 
-	// A cached path is a root, so parsing it still labels the store.
+	// A cached path is a repo, and parsing it still follows the declaration,
+	// so the row carries the store's statistics rather than the nothing the
+	// repo holds itself.
 	projects := ScanPaths(loaded)
-	st, found := projects[store]
+	st, found := projects[repo]
 	if !found {
-		t.Fatalf("the store is missing from %v", loaded)
+		t.Fatalf("the repo is missing from %v", loaded)
 	}
 	if st.Info.StoreID != "alpha" {
-		t.Errorf("got %q, want alpha", st.Info.StoreID)
+		t.Errorf("store: got %q, want alpha", st.Info.StoreID)
+	}
+	if st.Info.SpecCount != 1 {
+		t.Errorf("specs: got %d, want the store's 1", st.Info.SpecCount)
 	}
 }
 
@@ -184,12 +258,17 @@ func TestScanResolvedReadsTheStoresContent(t *testing.T) {
 
 	repo := mkPointer(t, t.TempDir(), "schema: spec-driven\nstore: alpha\ncontext: |\n  repo only\n")
 
-	root, st, err := ScanResolved(repo)
+	key, st, err := ScanResolved(repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if root != store {
-		t.Fatalf("root: got %q, want the store %q", root, store)
+	// Filed under where the reading started, so that two repos sharing a store
+	// are two projects. Where it ended travels inside the info as Root.
+	if key != repo {
+		t.Fatalf("key: got %q, want the repo %q", key, repo)
+	}
+	if st.Info.Root != store {
+		t.Fatalf("root: got %q, want the store %q", st.Info.Root, store)
 	}
 
 	info := st.Info
@@ -226,12 +305,12 @@ func TestScanResolvedOnAProblemStillReportsTheProject(t *testing.T) {
 	isolateStores(t)
 	repo := mkPointer(t, t.TempDir(), "schema: spec-driven\nstore: missing\n")
 
-	root, st, err := ScanResolved(repo)
+	key, st, err := ScanResolved(repo)
 	if err != nil {
 		t.Fatalf("an unfollowed declaration is a report, not an error: %v", err)
 	}
-	if root != repo {
-		t.Errorf("root: got %q, want the repo %q", root, repo)
+	if key != repo {
+		t.Errorf("key: got %q, want the repo %q", key, repo)
 	}
 	if st.Info.StoreProblem == nil {
 		t.Fatal("expected the problem to travel with the project")
@@ -246,12 +325,12 @@ func TestScanResolvedOnAPlainProject(t *testing.T) {
 	dir := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
 	mkSpec(t, dir, "thing")
 
-	root, st, err := ScanResolved(dir)
+	key, st, err := ScanResolved(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if root != dir {
-		t.Errorf("got %q, want %q", root, dir)
+	if key != dir {
+		t.Errorf("got %q, want %q", key, dir)
 	}
 	if st.Info.FromStore() || st.Info.ResolvedElsewhere() {
 		t.Error("a plain project reads from itself")
@@ -266,12 +345,12 @@ func TestScanResolvedOnAPlainProject(t *testing.T) {
 
 func TestScanResolvedOutsideAnyProject(t *testing.T) {
 	isolateStores(t)
-	root, _, err := ScanResolved(t.TempDir())
+	key, _, err := ScanResolved(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if root != "" {
-		t.Errorf("got %q, want nothing outside a project", root)
+	if key != "" {
+		t.Errorf("got %q, want nothing outside a project", key)
 	}
 }
 
@@ -292,15 +371,15 @@ func TestScanResolvedFollowsARepointedDeclaration(t *testing.T) {
 		"\n  beta:\n    backend:\n      type: git\n      local_path: "+beta+"\n")
 
 	repo := mkPointer(t, t.TempDir(), "store: alpha\n")
-	root, st, _ := ScanResolved(repo)
-	if root != alpha || st.Info.SpecCount != 1 {
-		t.Fatalf("got root=%q specs=%d, want alpha with 1", root, st.Info.SpecCount)
+	_, st, _ := ScanResolved(repo)
+	if st.Info.Root != alpha || st.Info.SpecCount != 1 {
+		t.Fatalf("got root=%q specs=%d, want alpha with 1", st.Info.Root, st.Info.SpecCount)
 	}
 
 	writeConfig(t, repo, "config.yaml", "store: beta\n")
-	root, st, _ = ScanResolved(repo)
-	if root != beta {
-		t.Errorf("root: got %q, want beta %q after repointing", root, beta)
+	_, st, _ = ScanResolved(repo)
+	if st.Info.Root != beta {
+		t.Errorf("root: got %q, want beta %q after repointing", st.Info.Root, beta)
 	}
 	if st.Info.SpecCount != 2 {
 		t.Errorf("specs: got %d, want beta's 2", st.Info.SpecCount)
@@ -333,4 +412,246 @@ func mkSpec(t *testing.T, root, name string) {
 
 func contains(haystack, needle string) bool {
 	return strings.Contains(haystack, needle)
+}
+
+// --- what a discovered row carries ---
+
+func TestScanGivesAStoreBackedRepoTheStoresStatistics(t *testing.T) {
+	// A row reporting zero for a repo whose specs are one directory away would
+	// be worse than no row at all.
+	isolateStores(t)
+	base := t.TempDir()
+	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+	registerStore(t, "alpha", store)
+	mkSpec(t, store, "one")
+	mkSpec(t, store, "two")
+	mkChange(t, store, "a-change", "- [x] 1.1 done\n- [ ] 1.2 todo\n")
+	repo := mkPointer(t, filepath.Join(base, "repo"), "store: alpha\n")
+
+	cfg := &Config{}
+	cfg.ScanDirs.Include = []string{base}
+	projects, err := Scan(cfg, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st, ok := projects[repo]
+	if !ok {
+		t.Fatalf("the repo is missing from %v", keysOf(projects))
+	}
+	if st.Info.SpecCount != 2 {
+		t.Errorf("specs: got %d, want the store's 2", st.Info.SpecCount)
+	}
+	if len(st.Info.ActiveChanges) != 1 {
+		t.Errorf("changes: got %d, want the store's 1", len(st.Info.ActiveChanges))
+	}
+	if st.Info.TasksTotal != 2 || st.Info.TasksDone != 1 {
+		t.Errorf("tasks: got %d/%d, want 1/2", st.Info.TasksDone, st.Info.TasksTotal)
+	}
+	if st.Info.StoreID != "alpha" {
+		t.Errorf("store: got %q, want alpha", st.Info.StoreID)
+	}
+}
+
+func TestScanListsTheStoresFilesForAStoreBackedRepo(t *testing.T) {
+	// The `:` query searches a project's file paths and contents. Listing the
+	// repo's own openspec/ would make a search inside the project miss the
+	// specs the project shows.
+	isolateStores(t)
+	base := t.TempDir()
+	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+	registerStore(t, "alpha", store)
+	mkSpec(t, store, "findable-capability")
+	repo := mkPointer(t, filepath.Join(base, "repo"), "store: alpha\n")
+
+	cfg := &Config{}
+	cfg.ScanDirs.Include = []string{base}
+	projects, _ := Scan(cfg, true)
+
+	var joined string
+	for _, f := range projects[repo].Files {
+		joined += f.Path + "\n"
+	}
+	if !strings.Contains(joined, "findable-capability") {
+		t.Errorf("the listing must be the store's tree, got:\n%s", joined)
+	}
+}
+
+func TestScanReadsASharedStoreOncePerScan(t *testing.T) {
+	// Two repos on one store is the ordinary case now that repos are what get
+	// listed, so the scan must not cost twice as much for it. Removing the
+	// store's content between the two reads shows whether the second was
+	// served from the memo or went back to disk.
+	isolateStores(t)
+	base := t.TempDir()
+	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+	registerStore(t, "alpha", store)
+	mkSpec(t, store, "only-spec")
+	one := mkPointer(t, filepath.Join(base, "repo-one"), "store: alpha\n")
+	two := mkPointer(t, filepath.Join(base, "repo-two"), "store: alpha\n")
+
+	cache := newRootCache()
+	_, first, err := scanResolved(one, cache, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Info.SpecCount != 1 {
+		t.Fatalf("specs: got %d, want 1", first.Info.SpecCount)
+	}
+
+	if err := os.RemoveAll(filepath.Join(store, "openspec", "specs")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, second, err := scanResolved(two, cache, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Info.SpecCount != 1 {
+		t.Errorf("specs: got %d, want the memoised 1: the store was read twice", second.Info.SpecCount)
+	}
+	if second.Info.Origin != two {
+		t.Errorf("origin: got %q, want %q: the memo must not carry the first repo's identity", second.Info.Origin, two)
+	}
+}
+
+func TestTwoReposSharingAStoreKeepTheirOwnIdentity(t *testing.T) {
+	isolateStores(t)
+	base := t.TempDir()
+	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+	registerStore(t, "alpha", store)
+	one := mkPointer(t, filepath.Join(base, "repo-one"), "store: alpha\ncontext: one\n")
+	two := mkPointer(t, filepath.Join(base, "repo-two"), "store: alpha\ncontext: two\n")
+
+	cfg := &Config{}
+	cfg.ScanDirs.Include = []string{base}
+	projects, _ := Scan(cfg, true)
+
+	if len(projects) != 2 {
+		t.Fatalf("got %v, want a row per repo", keysOf(projects))
+	}
+	for path, want := range map[string]string{one: "one", two: "two"} {
+		st, ok := projects[path]
+		if !ok {
+			t.Fatalf("%q missing", path)
+		}
+		if st.Info.Origin != path {
+			t.Errorf("origin: got %q, want %q", st.Info.Origin, path)
+		}
+		if st.Info.Root != store {
+			t.Errorf("root: got %q, want the shared store", st.Info.Root)
+		}
+		if !strings.Contains(st.Info.OriginConfigContent, want) {
+			t.Errorf("%q carries the wrong repo configuration: %q", path, st.Info.OriginConfigContent)
+		}
+		if st.Info.Store == nil || st.Info.Store.Origin != path {
+			t.Errorf("%q shares a store record with its sibling", path)
+		}
+	}
+}
+
+func TestScanKeepsARepoWhoseDeclarationCannotBeFollowed(t *testing.T) {
+	isolateStores(t)
+	base := t.TempDir()
+	repo := mkPointer(t, filepath.Join(base, "orphan"), "store: nowhere\n")
+
+	cfg := &Config{}
+	cfg.ScanDirs.Include = []string{base}
+	projects, _ := Scan(cfg, true)
+
+	st, ok := projects[repo]
+	if !ok {
+		t.Fatalf("a repo with an unfollowable declaration is still a project: %v", keysOf(projects))
+	}
+	if st.Info.StoreProblem == nil {
+		t.Error("it must carry the problem rather than look empty")
+	}
+}
+
+func TestDiscoveryLeavesTheGitStateAlone(t *testing.T) {
+	// Several subprocesses per discovered store is what the picker cannot
+	// afford. The git state belongs to opening a project, not to finding one.
+	isolateStores(t)
+	base := t.TempDir()
+	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+	registerStore(t, "alpha", store)
+	repo := mkPointer(t, filepath.Join(base, "repo"), "store: alpha\n")
+
+	cfg := &Config{}
+	cfg.ScanDirs.Include = []string{base}
+	projects, _ := Scan(cfg, true)
+	if s := projects[repo].Info.Store; s == nil || s.Git != nil {
+		t.Errorf("discovery must not read git state: %+v", s)
+	}
+
+	_, opened, err := ScanResolved(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := opened.Info.Store; s == nil || s.Git == nil {
+		t.Errorf("opening a project does read it: %+v", s)
+	}
+}
+
+func keysOf(m ProjectMap) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestWalkExcludesNothingWhenTheRegistryCannotBeRead(t *testing.T) {
+	// Failing to list projects because the registry is broken would be worse
+	// than listing a store alongside them, so a bad registry excludes nothing.
+	isolateStores(t)
+	writeRegistry(t, "stores: [unclosed\n")
+	base := t.TempDir()
+	store := mkRoot(t, filepath.Join(base, "the-store"), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+
+	found := walkAll(t, base)
+	if len(found) != 1 || found[0] != store {
+		t.Errorf("got %v, want discovery to carry on", found)
+	}
+}
+
+func TestScanPathsSkipsAPathThatResolvesToNothing(t *testing.T) {
+	isolateStores(t)
+	good := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	gone := filepath.Join(t.TempDir(), "never-existed")
+
+	projects := ScanPaths([]string{good, gone})
+	if len(projects) != 1 {
+		t.Fatalf("got %v, want the readable path alone", keysOf(projects))
+	}
+	if _, ok := projects[good]; !ok {
+		t.Errorf("got %v, want %q", keysOf(projects), good)
+	}
+}
+
+func TestScanResolvedReportsAnUnreadableRoot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything")
+	}
+	isolateStores(t)
+	// The specs directory, not openspec/ itself: locking the latter would make
+	// the root stop qualifying and the walk would simply carry on upward,
+	// which is a different path from the one under test.
+	dir := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	specsDir := filepath.Join(dir, "openspec", "specs")
+	if err := os.Chmod(specsDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(specsDir, 0o755) })
+
+	if _, _, err := ScanResolved(dir); err == nil {
+		t.Error("a root that cannot be listed is an error, not an empty project")
+	}
 }

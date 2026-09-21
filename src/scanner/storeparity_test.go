@@ -101,7 +101,7 @@ func TestResolverAgreesWithTheOpenSpecCLI(t *testing.T) {
 
 			// Temp directories can sit behind a symlink, and the CLI
 			// canonicalises where specgetty does not. Compare resolved paths.
-			if !samePath(t, got.Root, cli.Root.Path) {
+			if !pathsMatch(t, got.Root, cli.Root.Path) {
 				t.Errorf("root: specgetty says %q, the CLI says %q", got.Root, cli.Root.Path)
 			}
 			if !tc.idIsSpecgettysOwn && got.StoreID != cli.Root.StoreID {
@@ -120,7 +120,7 @@ func TestResolverAgreesWithTheOpenSpecCLI(t *testing.T) {
 				t.Errorf("source: the CLI says %q, specgetty has origin=%q root=%q",
 					cli.Root.Source, got.Origin, got.Root)
 			}
-			if !samePath(t, tc.wantRoot, got.Root) {
+			if !pathsMatch(t, tc.wantRoot, got.Root) {
 				t.Errorf("root: got %q, want %q", got.Root, tc.wantRoot)
 			}
 			if got.StoreID != tc.wantID {
@@ -149,15 +149,9 @@ func TestBothSidesRefuseAnUnregisteredStore(t *testing.T) {
 	}
 }
 
-func samePath(t *testing.T, a, b string) bool {
+// pathsMatch is samePath with a test helper's signature; the production
+// comparison is exercised directly by the store identity tests.
+func pathsMatch(t *testing.T, a, b string) bool {
 	t.Helper()
-	ra, err := filepath.EvalSymlinks(a)
-	if err != nil {
-		ra = a
-	}
-	rb, err := filepath.EvalSymlinks(b)
-	if err != nil {
-		rb = b
-	}
-	return ra == rb
+	return samePath(a, b)
 }

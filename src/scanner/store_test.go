@@ -60,6 +60,13 @@ func writeConfig(t *testing.T, dir, name, body string) {
 	}
 }
 
+// registerStore records a store in the registry, which is what makes its
+// identity file mean anything.
+func registerStore(t *testing.T, id, root string) {
+	t.Helper()
+	writeRegistry(t, "version: 1\nstores:\n  "+id+":\n    backend:\n      type: git\n      local_path: "+root+"\n")
+}
+
 // mkStoreMetadata makes a root a store by giving it an identity file.
 func mkStoreMetadata(t *testing.T, root, id string) {
 	t.Helper()
@@ -409,6 +416,7 @@ func TestResolveRootNamesAStoreOpenedDirectly(t *testing.T) {
 	isolateStores(t)
 	store := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
 	mkStoreMetadata(t, store, "alpha")
+	registerStore(t, "alpha", store)
 
 	res, ok := ResolveRoot(store)
 	if !ok {
@@ -514,5 +522,137 @@ func TestReadStoreGitOnSomethingThatIsNotARepository(t *testing.T) {
 	}
 	if g.TrackingKnown || g.DirtyKnown {
 		t.Error("nothing is known about a directory that is not a repository")
+	}
+}
+
+// --- a store is what the registry says it is ---
+
+func TestStoreIdentityNeedsTheRegistryToAgree(t *testing.T) {
+	// An identity file is kept by a clone, and by a directory the registry has
+	// since moved on from. Trusting it alone let an unregistered leftover wear
+	// the registered store's name: gh.nivis-project/ospecs claims id `nivis`
+	// while the registered `nivis` is somewhere else entirely.
+	isolateStores(t)
+	registered := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	leftover := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	mkStoreMetadata(t, registered, "alpha")
+	mkStoreMetadata(t, leftover, "alpha")
+	registerStore(t, "alpha", registered)
+
+	if info := storeInfoAt(registered); info == nil || info.ID != "alpha" {
+		t.Errorf("the registered directory is the store: %+v", info)
+	}
+	if info := storeInfoAt(leftover); info != nil {
+		t.Errorf("a directory the registry points away from is not a store: %+v", info)
+	}
+}
+
+func TestStoreIdentityWithNoRegistryEntry(t *testing.T) {
+	isolateStores(t)
+	writeRegistry(t, "version: 1\nstores:\n  other:\n    backend:\n      type: git\n      local_path: /srv/other\n")
+	dir := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	mkStoreMetadata(t, dir, "alpha")
+
+	if info := storeInfoAt(dir); info != nil {
+		t.Errorf("an id the registry never mentions is not a store: %+v", info)
+	}
+}
+
+func TestStoreIdentityWithNoRegistryAtAll(t *testing.T) {
+	isolateStores(t)
+	dir := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	mkStoreMetadata(t, dir, "alpha")
+
+	if info := storeInfoAt(dir); info != nil {
+		t.Errorf("with no registry nothing is a store: %+v", info)
+	}
+}
+
+func TestStoreIdentityMatchesThroughASymlink(t *testing.T) {
+	// The registry records a canonicalised path while a walk reports whatever
+	// it descended through, so a plain string comparison would fail to match a
+	// store reached behind a link.
+	isolateStores(t)
+	real := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	mkStoreMetadata(t, real, "alpha")
+	registerStore(t, "alpha", real)
+
+	link := filepath.Join(t.TempDir(), "linked")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if info := storeInfoAt(link); info == nil {
+		t.Error("the same directory reached by a link is the same store")
+	}
+}
+
+func TestResolveRootStillFollowsADeclarationAfterTheIdentityChange(t *testing.T) {
+	// The declaration path already made the registry and the metadata agree.
+	// Tightening what counts as a store met head on must not disturb it.
+	isolateStores(t)
+	store := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	mkStoreMetadata(t, store, "alpha")
+	registerStore(t, "alpha", store)
+	repo := mkPointer(t, t.TempDir(), "store: alpha\n")
+
+	res, ok := ResolveRoot(repo)
+	if !ok || res.Root != store || res.StoreID != "alpha" || res.Problem != nil {
+		t.Errorf("got %+v, want the store followed", res)
+	}
+}
+
+func TestSamePath(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		{"identical strings", "/x/y", "/x/y", true},
+		{"different", "/x/y", "/x/z", false},
+		{"one empty", "", "/x", false},
+		{"both empty", "", "", true},
+		{"unclean but equal", dir, dir + "/.", true},
+		{"neither exists", "/no/such/a", "/no/such/b", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := samePath(tc.a, tc.b); got != tc.want {
+				t.Errorf("samePath(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStoreInfoAtWithAnUnreadableRegistry(t *testing.T) {
+	isolateStores(t)
+	writeRegistry(t, "stores: [unclosed\n")
+	dir := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	mkStoreMetadata(t, dir, "alpha")
+
+	if info := storeInfoAt(dir); info != nil {
+		t.Errorf("a registry that cannot be read confirms nothing: %+v", info)
+	}
+}
+
+func TestStoreInfoWithNilRegistry(t *testing.T) {
+	dir := mkRoot(t, t.TempDir(), "schema: spec-driven\n")
+	mkStoreMetadata(t, dir, "alpha")
+	if info := StoreInfoWith(nil, dir); info != nil {
+		t.Errorf("no registry confirms nothing: %+v", info)
+	}
+	if info := StoreInfoWith(map[string]StoreBackend{}, t.TempDir()); info != nil {
+		t.Errorf("a directory with no metadata is not a store: %+v", info)
+	}
+}
+
+func TestRegistryPathWithNoHomeAndNoXDG(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("HOME", "")
+	if got := DataDir(); got != "" {
+		t.Skipf("this platform still resolves a home directory: %q", got)
+	}
+	if got := RegistryPath(); got != "" {
+		t.Errorf("got %q, want empty when there is nowhere to look", got)
 	}
 }

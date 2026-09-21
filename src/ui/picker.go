@@ -58,15 +58,16 @@ var projectFields = []fieldDef[projectRow]{
 		value: func(r projectRow) string { return r.display },
 	},
 	{
-		// A store is not a project that happens to be called after its folder,
-		// and the row says so. Several stores commonly share one working copy,
-		// so without this the picker reads as a set of sibling projects.
-		id: "kind", header: "kind", width: 5,
+		// Two repos reading one store show the same specs, and without this
+		// column that reads as a duplicate rather than as the truth about the
+		// tree. Naming the store is also the only place the store's id appears
+		// in the list, now that a store has no row of its own.
+		id: "store", header: "store", width: 16,
 		value: func(r projectRow) string {
-			if r.info.StoreID != "" {
-				return "store"
+			if r.info.StoreProblem != nil {
+				return "unresolved"
 			}
-			return ""
+			return r.info.StoreID
 		},
 	},
 	{

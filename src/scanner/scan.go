@@ -316,66 +316,106 @@ func readProjectConfig(dir string) (name, content string) {
 // ScanResolved reads the project reached from startDir, following a store
 // declaration when there is one.
 //
-// It returns the root the content was read from, which is the key the caller
-// files the result under: every later read and every write goes there, while
-// the origin travels along inside the info so the header can name it.
+// It returns the key the result is filed under, which is where the reading
+// STARTED, not where it ended. A project is identified by the directory a
+// person stands in, so two repos sharing a store are two projects; the root
+// their content came from travels inside the info as Root, and every read and
+// every write goes there.
 func ScanResolved(startDir string) (string, ProjectStatus, error) {
+	return scanResolved(startDir, newRootCache(), true)
+}
+
+// rootCache memoises the content of a root within one scan.
+//
+// Two repos declaring the same store is the ordinary case now that a repo is
+// what gets listed, and the store's `changes/archive/` can hold ninety
+// directories. Reading it once per row rather than once per scan would make the
+// scan cost scale with how many repos share a store, which is the wrong thing
+// for it to scale with.
+type rootCache map[string]cachedRoot
+
+type cachedRoot struct {
+	files []FileEntry
+	info  ProjectInfo
+}
+
+func newRootCache() rootCache { return make(rootCache) }
+
+// scanResolved reads the project reached from startDir.
+//
+// withGit is false for discovery. The git state costs several subprocesses per
+// store and is only wanted for the project actually being opened.
+func scanResolved(startDir string, cache rootCache, withGit bool) (string, ProjectStatus, error) {
 	res, ok := ResolveRoot(startDir)
 	if !ok {
 		return "", ProjectStatus{}, nil
 	}
 
-	files, err := ListOpenSpecContents(res.Root)
-	if err != nil {
-		// A store whose registered path went missing between resolution and
-		// reading leaves nothing to list. The problem is the report, not the
-		// listing error.
-		if res.Problem == nil {
-			return "", ProjectStatus{}, err
+	cached, hit := cache[res.Root]
+	if !hit {
+		files, err := ListOpenSpecContents(res.Root)
+		if err != nil {
+			// A store whose registered path went missing between resolution
+			// and reading leaves nothing to list. The problem is the report,
+			// not the listing error.
+			if res.Problem == nil {
+				return "", ProjectStatus{}, err
+			}
+			files = nil
 		}
-		files = nil
+		cached = cachedRoot{files: files, info: ParseProjectInfo(res.Root)}
+		cache[res.Root] = cached
 	}
 
-	info := ParseProjectInfo(res.Root)
+	// The content is shared between every repo reading this root; everything
+	// below belongs to this one repo and is written onto a copy.
+	info := cached.info
 	info.Root = res.Root
 	info.Origin = res.Origin
 	info.StoreID = res.StoreID
 	info.StoreProblem = res.Problem
+	info.Store = nil
+
 	if res.Store != nil {
-		info.Store = res.Store
+		// Copied, not aliased: Origin and Git differ per repo, and two repos
+		// sharing a store must not write over each other's.
+		store := *res.Store
+		store.Origin = res.Origin
+		if withGit {
+			g := ReadStoreGit(store.Root)
+			store.Git = &g
+		}
+		info.Store = &store
 	}
 
 	if info.ResolvedElsewhere() {
 		info.OriginConfigFile, info.OriginConfigContent = readProjectConfig(res.Origin)
 	}
 
-	// The git state is read for the open project only. Doing it during a walk
-	// would mean several processes per discovered store, which is what the
-	// picker cannot afford.
-	if info.Store != nil {
-		info.Store.Origin = res.Origin
-		g := ReadStoreGit(info.Store.Root)
-		info.Store.Git = &g
-	}
-
-	return res.Root, ProjectStatus{Files: files, Info: info}, nil
+	return res.Origin, ProjectStatus{Files: cached.files, Info: info}, nil
 }
 
 // ScanPaths parses a known list of project paths without walking the
 // filesystem to discover them. It is what the cache enables: discovery is the
 // expensive half of a scan, parsing is the cheap half, so a cached list of
 // paths still gets fully current statistics.
+//
+// Each path is resolved, so a repo that declares a store arrives carrying that
+// store's specs, changes and file listing rather than the nothing it holds
+// itself. A row reporting zero for a project whose specs are one directory away
+// would be worse than no row.
 func ScanPaths(paths []string) ProjectMap {
 	results := make(ProjectMap, len(paths))
+	cache := newRootCache()
 	for _, d := range paths {
-		files, err := ListOpenSpecContents(d)
-		if err != nil {
+		_, st, err := scanResolved(d, cache, false)
+		if err != nil || st.Info.Root == "" {
 			continue
 		}
-		results[d] = ProjectStatus{
-			Files: files,
-			Info:  ParseProjectInfo(d),
-		}
+		// Keyed by the path that was asked for, not by the root: two repos
+		// sharing a store are two rows, and keying by root would collapse them
+		// into one.
+		results[d] = st
 	}
 	return results
 }
@@ -400,26 +440,28 @@ func Scan(config *Config, ignore_dir_errors bool) (ProjectMap, error) {
 	}()
 
 	results := make(ProjectMap)
+	cache := newRootCache()
 	totalScanDuration := time.Duration(0)
 	for d := range projects {
 		start := time.Now()
 
-		files, err := ListOpenSpecContents(d)
+		// Resolved, so a repo that declares a store arrives carrying that
+		// store's statistics and file listing. The cache means a store shared
+		// by several repos is read once for the scan.
+		_, st, err := scanResolved(d, cache, false)
 		if err != nil {
 			return nil, err
+		}
+		if st.Info.Root == "" {
+			continue
 		}
 
 		duration := time.Since(start)
 		log.Println(d, duration)
 
-		info := ParseProjectInfo(d)
-
 		totalScanDuration += duration
-		results[d] = ProjectStatus{
-			Files:    files,
-			Info:     info,
-			ScanTime: duration,
-		}
+		st.ScanTime = duration
+		results[d] = st
 	}
 
 	w := <-ch

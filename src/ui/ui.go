@@ -257,6 +257,7 @@ type model struct {
 	version           string
 	watcher           *watcher.Watcher
 	watchedRoot       string
+	watchedDirs       []string
 
 	// Which configuration the config tab is showing. A project reading from a
 	// store has more than one, so the tab is a set of panes rather than a
@@ -568,11 +569,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "p":
-			// The cursor opens on the row whose root holds what is on screen.
-			// For a project that reads from a store that is the store's row,
-			// because the repo the user started in has no row of its own.
-			if len(m.repoPaths) > 0 && m.cursor < len(m.repoPaths) {
-				m.pickerKey = m.repoPaths[m.cursor]
+			// The cursor opens on the open project's own row. A project is
+			// listed under the directory it was resolved from, which is what
+			// the key is, so this matches without translation. A store opened
+			// by path has no row: the lookup misses and the cursor stays put,
+			// rather than landing on some unrelated project.
+			if key := m.currentKey(); key != "" {
+				m.pickerKey = key
 			}
 			m.pickerOpen = true
 			m.pickerSync()
@@ -857,15 +860,18 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// that resolved to a different root, which is what editing a
 			// `store:` key does, moves the watch with it rather than leaving
 			// it on a tree nothing is read from any more.
-			if len(m.repoPaths) > 0 {
-				root := m.repoPaths[m.cursor]
-				if m.watcher == nil {
-					if cmd := m.startWatcher(root); cmd != nil {
+			if key := m.currentKey(); key != "" {
+				switch {
+				case m.watcher == nil:
+					if cmd := m.startWatcher(key); cmd != nil {
 						cmds = append(cmds, cmd)
 					}
-				} else if m.watchedRoot != root {
+				case m.watchedRoot != key || !sameDirs(m.watchedDirs, m.watchDirs(key)):
+					// A rescan that resolved elsewhere, which is what editing a
+					// `store:` key does, moves the watch with it rather than
+					// leaving it on a tree nothing is read from any more.
 					m.stopWatcher()
-					if cmd := m.startWatcher(root); cmd != nil {
+					if cmd := m.startWatcher(key); cmd != nil {
 						cmds = append(cmds, cmd)
 					}
 				}
@@ -905,15 +911,21 @@ func projectDisplayNames(paths []string) []string {
 
 // projectDisplayNamesFor names each row the way the user should read it.
 //
-// A store is named by the id it declares for itself, not by the folder it
-// happens to sit in: several stores commonly share one working copy, and the
-// id is the name every other OpenSpec surface uses for it.
+// A repo is named by its own directory, never by the store it reads from: the
+// directory is where the work happens and what the user will look for. Only a
+// store opened on its own account, by path rather than from the list, is named
+// by the id it declares, because there is no repo to name it after.
 func projectDisplayNamesFor(paths []string, projects scanner.ProjectMap) []string {
 	preferred := make([]string, len(paths))
 	for i, p := range paths {
-		if st, ok := projects[p]; ok && st.Info.StoreID != "" {
-			preferred[i] = st.Info.StoreID
+		st, ok := projects[p]
+		if !ok || st.Info.StoreID == "" {
+			continue
 		}
+		if st.Info.ResolvedElsewhere() {
+			continue
+		}
+		preferred[i] = st.Info.StoreID
 	}
 	return disambiguate(paths, preferred)
 }
@@ -1193,10 +1205,11 @@ func (m model) doScanSingle(startDir string) tea.Cmd {
 // rescanCurrent rereads the open project from where its resolution started, so
 // that the store declaration is followed again rather than assumed.
 func (m model) rescanCurrent() tea.Cmd {
-	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
+	key := m.currentKey()
+	if key == "" {
 		return nil
 	}
-	return m.doScanSingle(m.startDirOf(m.repoPaths[m.cursor]))
+	return m.doScanSingle(m.startDirOf(key))
 }
 
 // currentRoot is the directory every filesystem operation on the open project
@@ -1208,34 +1221,67 @@ func (m model) rescanCurrent() tea.Cmd {
 // whose actions reached for the origin instead would create a discarded/
 // directory under a repo that holds no changes at all.
 func (m model) currentRoot() string {
+	key := m.currentKey()
+	if key == "" {
+		return ""
+	}
+	if st, ok := m.projects[key]; ok && st.Info.Root != "" {
+		return st.Info.Root
+	}
+	return key
+}
+
+// sameDirs reports whether two watch sets are the same list in the same order,
+// which is how a re-resolution that moved the store is noticed.
+func sameDirs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// currentKey identifies the open project: the directory it was resolved from,
+// which is what the picker lists and what the header names. It is the root only
+// when no store declaration was followed.
+func (m model) currentKey() string {
 	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
 		return ""
 	}
 	return m.repoPaths[m.cursor]
 }
 
-// watchDirs is every tree the open project depends on.
+// watchDirs is every tree the project under key depends on.
 //
 // One for an ordinary project. Two when the content comes from a store: the
 // store's, where specs and changes move, and the originating repo's, which
 // holds a single file whose `store:` key decides which store is read at all.
 // Watching only the first would show stale content with no sign that anything
 // had happened.
-func (m model) watchDirs(root string) []string {
+func (m model) watchDirs(key string) []string {
+	root := key
+	if st, ok := m.projects[key]; ok && st.Info.Root != "" {
+		root = st.Info.Root
+	}
 	dirs := []string{filepath.Join(root, "openspec")}
-	if origin := m.startDirOf(root); origin != root {
-		dirs = append(dirs, filepath.Join(origin, "openspec"))
+	if key != root {
+		dirs = append(dirs, filepath.Join(key, "openspec"))
 	}
 	return dirs
 }
 
-// startDirOf returns the directory a project's resolution began at, which is
-// the project itself unless a store declaration was followed.
-func (m model) startDirOf(root string) string {
-	if info, ok := m.projects[root]; ok && info.Info.Origin != "" {
-		return info.Info.Origin
+// startDirOf returns the directory a project's resolution began at. That is the
+// key itself now that projects are filed under where the reading started, and
+// the lookup survives only for a map that predates a scan.
+func (m model) startDirOf(key string) string {
+	if st, ok := m.projects[key]; ok && st.Info.Origin != "" {
+		return st.Info.Origin
 	}
-	return root
+	return key
 }
 
 func waitForFsChange(w *watcher.Watcher) tea.Cmd {
@@ -1253,14 +1299,15 @@ func waitForFsChange(w *watcher.Watcher) tea.Cmd {
 // That is one tree for an ordinary project, and two when the content comes
 // from a store: the store's, where specs and changes move, and the originating
 // repo's, which holds the declaration that decides which store is read at all.
-func (m *model) startWatcher(root string) tea.Cmd {
-	w, err := watcher.New(m.watchDirs(root)...)
+func (m *model) startWatcher(key string) tea.Cmd {
+	w, err := watcher.New(m.watchDirs(key)...)
 	if err != nil {
 		log.Printf("watcher: failed to start: %v", err)
 		return nil
 	}
 	m.watcher = w
-	m.watchedRoot = root
+	m.watchedRoot = key
+	m.watchedDirs = m.watchDirs(key)
 	return waitForFsChange(w)
 }
 
@@ -1270,6 +1317,7 @@ func (m *model) stopWatcher() {
 		m.watcher = nil
 	}
 	m.watchedRoot = ""
+	m.watchedDirs = nil
 }
 
 type archiveMsg struct {

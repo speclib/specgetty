@@ -37,7 +37,7 @@ func skip(needle string, haystack []string) bool {
 }
 
 // walkone descends a single directory tree looking for OpenSpec projects
-func walkone(ctx context.Context, dir string, config *Config, results chan string) error {
+func walkone(ctx context.Context, dir string, config *Config, stores map[string]StoreBackend, results chan string) error {
 	err := godirwalk.Walk(dir, &godirwalk.Options{
 		Unsorted:            true,
 		ScratchBuffer:       make([]byte, godirwalk.MinimumScratchBufferSize),
@@ -79,7 +79,7 @@ func walkone(ctx context.Context, dir string, config *Config, results chan strin
 				return nil
 			}
 
-			if !isValidOpenSpecDir(path) {
+			if !isValidOpenSpecDir(path, stores) {
 				return nil
 			}
 
@@ -90,15 +90,19 @@ func walkone(ctx context.Context, dir string, config *Config, results chan strin
 	return err
 }
 
-// isValidOpenSpecDir checks whether an openspec/ directory contains the required
-// markers: (config.yaml OR config.yml OR project.md) AND (specs/ OR changes/).
+// isValidOpenSpecDir checks whether an openspec/ directory belongs to a
+// directory worth listing.
 //
-// The second half is what keeps a store-backed repo out of the project list.
-// Such a repo has a configuration naming a store and no content of its own, so
-// it fails here and the store it points at is discovered on its own account.
-// That is deliberate: the repo is an entry point to a root, not a root, and
-// listing both would show the same specs twice under two names.
-func isValidOpenSpecDir(path string) bool {
+// A configuration is required and content is not. A repo declaring a `store:`
+// keeps neither `specs/` nor `changes/`, and it is still a project: it is where
+// a person works, and it is the only place that repo's own context and rules
+// can be read from. The store it reads from is excluded instead, because a
+// store is where content lives rather than where work happens, and every repo
+// reading from one already stands for it in the list.
+//
+// stores is the registry, read once for the whole walk. A nil or empty map
+// excludes nothing, which is what a machine with no stores should see.
+func isValidOpenSpecDir(path string, stores map[string]StoreBackend) bool {
 	hasConfig := false
 	for _, name := range []string{"config.yaml", "config.yml", "project.md"} {
 		if _, err := os.Stat(filepath.Join(path, name)); err == nil {
@@ -110,16 +114,7 @@ func isValidOpenSpecDir(path string) bool {
 		return false
 	}
 
-	hasStructure := false
-	if info, err := os.Stat(filepath.Join(path, "specs")); err == nil && info.IsDir() {
-		hasStructure = true
-	}
-	if !hasStructure {
-		if info, err := os.Stat(filepath.Join(path, "changes")); err == nil && info.IsDir() {
-			hasStructure = true
-		}
-	}
-	return hasStructure
+	return StoreInfoWith(stores, filepath.Dir(path)) == nil
 }
 
 // Walk finds all OpenSpec projects in the directories specified in config
@@ -130,6 +125,17 @@ func Walk(ctx context.Context, config *Config, results chan string, ignore_dir_e
 	// Every return path has to close the channel. A caller ranging over it
 	// blocks forever otherwise, and the error paths below return early.
 	defer close(results)
+
+	// The registry decides which discovered directories are stores, and every
+	// candidate asks the same question, so it is read once here rather than
+	// once per candidate. A registry that cannot be read excludes nothing:
+	// failing to list projects because of it would be worse than listing a
+	// store alongside them.
+	stores, _, err := LoadRegistry(RegistryPath())
+	if err != nil {
+		log.Printf("ERROR: store registry: %v", err)
+		stores = nil
+	}
 
 	// Copied rather than aliased: the expansion below appends to this list, and
 	// appending to config.ScanDirs.Include would reach into the caller's config.
@@ -178,7 +184,7 @@ func Walk(ctx context.Context, config *Config, results chan string, ignore_dir_e
 		globPath := completeIncludeList[j]
 
 		errors.Go(func() error {
-			err := walkone(ctx, globPath, config, results)
+			err := walkone(ctx, globPath, config, stores, results)
 			if err == filepath.SkipDir {
 				cancel()
 			} else if err != nil {

@@ -327,18 +327,63 @@ func FindRoot(startDir string) string {
 // The registry is only read once the identity file has been found, so an
 // ordinary project costs one failed stat rather than a registry parse.
 func storeInfoAt(root string) *StoreInfo {
+	if _, ok := ReadStoreMetadata(root); !ok {
+		return nil
+	}
+	stores, _, err := LoadRegistry(RegistryPath())
+	if err != nil {
+		return nil
+	}
+	return StoreInfoWith(stores, root)
+}
+
+// StoreInfoWith describes a directory when the given registry makes it a store.
+//
+// An identity file is not enough on its own. A clone, or a directory the
+// registry has since moved on from, keeps its copy of that file, and trusting
+// it would let a leftover wear the registered store's name. The declaration
+// path already demanded that the registry key and the metadata id agree; this
+// applies the same test to a directory met head on, so the two cannot disagree
+// about what a store is.
+//
+// The registry is passed in rather than read, because discovery asks this of
+// every candidate directory and reads the registry once for the whole walk.
+func StoreInfoWith(stores map[string]StoreBackend, root string) *StoreInfo {
 	md, ok := ReadStoreMetadata(root)
 	if !ok {
 		return nil
 	}
-	si := &StoreInfo{ID: md.ID, Root: root, Canonical: md.Remote}
-	if stores, _, err := LoadRegistry(RegistryPath()); err == nil {
-		if be, found := stores[md.ID]; found {
-			si.Remote = be.Remote
-			si.Branch = be.Branch
-		}
+	backend, found := stores[md.ID]
+	if !found || !samePath(backend.LocalPath, root) {
+		return nil
 	}
-	return si
+	return &StoreInfo{
+		ID: md.ID, Root: root, Canonical: md.Remote,
+		Remote: backend.Remote, Branch: backend.Branch,
+	}
+}
+
+// samePath compares two paths as the filesystem sees them.
+//
+// The registry records a canonicalised path while a walk reports whatever it
+// descended through, so a store reached behind a symlink would otherwise fail
+// to match the entry that names it.
+func samePath(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if a == "" || b == "" {
+		return false
+	}
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		ra = filepath.Clean(a)
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		rb = filepath.Clean(b)
+	}
+	return ra == rb
 }
 
 // ResolveRoot answers where the content of the project at startDir lives.

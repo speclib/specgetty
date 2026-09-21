@@ -21,11 +21,11 @@ func storeBackedModel() model {
 	return model{
 		width:     100,
 		height:    40,
-		repoPaths: []string{root},
+		repoPaths: []string{origin},
 		cursor:    0,
 		detailTab: tabChanges,
 		projects: scanner.ProjectMap{
-			root: scanner.ProjectStatus{
+			origin: scanner.ProjectStatus{
 				Info: scanner.ProjectInfo{
 					Root:                root,
 					Origin:              origin,
@@ -147,7 +147,7 @@ func TestTheHeaderMarkCarriesNothingElse(t *testing.T) {
 	// The mark says one thing. The id, the root path, the remote and the git
 	// state are answers to a question asked once per project, and they live on
 	// the config tab instead. This is what keeps the header from growing a row.
-	info := storeBackedModel().projects["/stores/nivis-tunnel"].Info
+	info := storeBackedModel().projects["/work/nivis-tunnel"].Info
 	mark := ansi.Strip(storeMark(info))
 
 	for _, forbidden := range []string{
@@ -165,7 +165,7 @@ func TestTheHeaderMarkCarriesNothingElse(t *testing.T) {
 // --- 5.1 to 5.5 the config panes ---
 
 func TestConfigPanesForAStoreBackedProject(t *testing.T) {
-	info := storeBackedModel().projects["/stores/nivis-tunnel"].Info
+	info := storeBackedModel().projects["/work/nivis-tunnel"].Info
 	panes := configPanes(info)
 
 	if len(panes) != 3 {
@@ -225,7 +225,7 @@ func TestPlainProjectConfigTabDrawsNoSubTabRow(t *testing.T) {
 // --- 5.6 to 5.8 the store details ---
 
 func TestStoreDetailsReportLocalFactsOnly(t *testing.T) {
-	info := storeBackedModel().projects["/stores/nivis-tunnel"].Info
+	info := storeBackedModel().projects["/work/nivis-tunnel"].Info
 	out := storeDetails(info)
 
 	for _, want := range []string{
@@ -258,7 +258,7 @@ func TestStoreDetailsWithoutAGitWorkingCopy(t *testing.T) {
 
 func TestStoreDetailsWithNoUpstream(t *testing.T) {
 	m := storeBackedModel()
-	info := m.projects["/stores/nivis-tunnel"].Info
+	info := m.projects["/work/nivis-tunnel"].Info
 	info.Store.Git = &scanner.StoreGit{IsRepo: true, DirtyKnown: true, Dirty: true}
 	out := storeDetails(info)
 
@@ -423,10 +423,13 @@ func TestTabDoesNothingToASingleConfigPane(t *testing.T) {
 
 func TestActionsTargetTheRootNotTheOrigin(t *testing.T) {
 	m := storeBackedModel()
-	if got := m.currentRoot(); got != "/stores/nivis-tunnel" {
-		t.Errorf("got %q, want the store", got)
+	if got := m.currentKey(); got != "/work/nivis-tunnel" {
+		t.Errorf("key: got %q, want the repo the project was resolved from", got)
 	}
-	if got := m.startDirOf(m.currentRoot()); got != "/work/nivis-tunnel" {
+	if got := m.currentRoot(); got != "/stores/nivis-tunnel" {
+		t.Errorf("root: got %q, want the store, which is what every action targets", got)
+	}
+	if got := m.startDirOf(m.currentKey()); got != "/work/nivis-tunnel" {
 		t.Errorf("start dir: got %q, want the repo", got)
 	}
 }
@@ -480,10 +483,12 @@ func TestExportReadsFromTheRoot(t *testing.T) {
 
 // --- 4.3 and 4.4 the picker names a store by its id ---
 
-func TestPickerNamesAStoreByItsDeclaredID(t *testing.T) {
+func TestPickerNamesARepoByItsDirectoryNotItsStore(t *testing.T) {
 	projects := scanner.ProjectMap{
-		"/stores/tunnel-dir": {Info: scanner.ProjectInfo{StoreID: "nivis-tunnel"}},
-		"/work/specgetty":    {Info: scanner.ProjectInfo{}},
+		"/work/tunnel-repo": {Info: scanner.ProjectInfo{
+			Root: "/stores/nivis-tunnel", Origin: "/work/tunnel-repo", StoreID: "nivis-tunnel"}},
+		"/work/specgetty": {Info: scanner.ProjectInfo{
+			Root: "/work/specgetty", Origin: "/work/specgetty"}},
 	}
 	rows := buildProjectRows(projects)
 
@@ -491,21 +496,32 @@ func TestPickerNamesAStoreByItsDeclaredID(t *testing.T) {
 	for _, r := range rows {
 		byPath[r.path] = r.display
 	}
-	if byPath["/stores/tunnel-dir"] != "nivis-tunnel" {
-		t.Errorf("got %q, want the declared id rather than the folder name", byPath["/stores/tunnel-dir"])
+	if byPath["/work/tunnel-repo"] != "tunnel-repo" {
+		t.Errorf("got %q, want the directory the user works in", byPath["/work/tunnel-repo"])
 	}
 	if byPath["/work/specgetty"] != "specgetty" {
 		t.Errorf("got %q, want the basename", byPath["/work/specgetty"])
 	}
 }
 
-func TestPickerDisambiguatesAStoreIDColliding(t *testing.T) {
+func TestAStoreOpenedByPathIsStillNamedByItsID(t *testing.T) {
+	// Not a picker row, but the same naming function serves the panel title.
+	// With no repo to name it after, the id is what is left.
 	projects := scanner.ProjectMap{
-		"/stores/whatever": {Info: scanner.ProjectInfo{StoreID: "nivis"}},
-		"/work/nivis":      {Info: scanner.ProjectInfo{}},
+		"/stores/tunnel-dir": {Info: scanner.ProjectInfo{
+			Root: "/stores/tunnel-dir", Origin: "/stores/tunnel-dir", StoreID: "nivis-tunnel"}},
 	}
-	rows := buildProjectRows(projects)
-	for _, r := range rows {
+	if got := buildProjectRows(projects)[0].display; got != "nivis-tunnel" {
+		t.Errorf("got %q, want the declared id", got)
+	}
+}
+
+func TestPickerDisambiguatesDuplicateBasenames(t *testing.T) {
+	projects := scanner.ProjectMap{
+		"/one/nivis": {Info: scanner.ProjectInfo{Root: "/one/nivis", Origin: "/one/nivis"}},
+		"/two/nivis": {Info: scanner.ProjectInfo{Root: "/two/nivis", Origin: "/two/nivis"}},
+	}
+	for _, r := range buildProjectRows(projects) {
 		if r.display == "nivis" {
 			t.Errorf("a colliding name must be qualified: %q", r.display)
 		}
@@ -515,21 +531,54 @@ func TestPickerDisambiguatesAStoreIDColliding(t *testing.T) {
 	}
 }
 
-func TestPickerMarksAStoreRow(t *testing.T) {
-	var kind *fieldDef[projectRow]
+func TestPickerColumnNamesTheStoreARowReadsFrom(t *testing.T) {
+	var col *fieldDef[projectRow]
 	for i := range projectFields {
-		if projectFields[i].id == "kind" {
-			kind = &projectFields[i]
+		if projectFields[i].id == "store" {
+			col = &projectFields[i]
 		}
 	}
-	if kind == nil {
-		t.Fatal("the picker has no column saying what a row is")
+	if col == nil {
+		t.Fatal("the picker has no column naming the store a row reads from")
 	}
-	if got := kind.value(projectRow{info: scanner.ProjectInfo{StoreID: "alpha"}}); got != "store" {
-		t.Errorf("got %q, want store", got)
+	if got := col.value(projectRow{info: scanner.ProjectInfo{StoreID: "nivis-tunnel"}}); got != "nivis-tunnel" {
+		t.Errorf("got %q, want the store's id", got)
 	}
-	if got := kind.value(projectRow{info: scanner.ProjectInfo{}}); got != "" {
-		t.Errorf("got %q, want nothing for a plain project", got)
+	if got := col.value(projectRow{info: scanner.ProjectInfo{}}); got != "" {
+		t.Errorf("got %q, want nothing for a project holding its own content", got)
+	}
+	if got := col.value(projectRow{info: scanner.ProjectInfo{
+		StoreProblem: &scanner.StoreProblem{ID: "gone"},
+	}}); got != "unresolved" {
+		t.Errorf("got %q, want a declaration that could not be followed called out", got)
+	}
+}
+
+func TestTwoReposSharingOneStoreAreTwoRows(t *testing.T) {
+	// The cost this change accepts, made legible by the store column rather
+	// than hidden: the same specs on two rows is the truth about the tree.
+	store := "/stores/nivis-tunnel"
+	projects := scanner.ProjectMap{
+		"/work/nivis-tunnel": {Info: scanner.ProjectInfo{
+			Root: store, Origin: "/work/nivis-tunnel", StoreID: "nivis-tunnel", SpecCount: 6}},
+		"/work/terraform-provider-nivis-tunnel": {Info: scanner.ProjectInfo{
+			Root: store, Origin: "/work/terraform-provider-nivis-tunnel", StoreID: "nivis-tunnel", SpecCount: 6}},
+	}
+	rows := buildProjectRows(projects)
+
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want one per repo", len(rows))
+	}
+	for _, r := range rows {
+		if r.info.StoreID != "nivis-tunnel" {
+			t.Errorf("row %q must name the store it reads from", r.display)
+		}
+		if r.info.SpecCount != 6 {
+			t.Errorf("row %q must carry the store's statistics", r.display)
+		}
+	}
+	if rows[0].display == rows[1].display {
+		t.Error("each row is named by its own directory")
 	}
 }
 
@@ -540,7 +589,7 @@ func TestPickerOpensOnTheRowHoldingTheOpenContent(t *testing.T) {
 	m.focus = focusDetail
 	m.pickerAll = []projectRow{
 		{path: "/work/specgetty", display: "specgetty"},
-		{path: "/stores/nivis-tunnel", display: "nivis-tunnel"},
+		{path: "/work/nivis-tunnel", display: "nivis-tunnel"},
 	}
 	m.pickerLoaded = true
 	m.recalcLayout()
@@ -551,19 +600,44 @@ func TestPickerOpensOnTheRowHoldingTheOpenContent(t *testing.T) {
 	if !um.pickerOpen {
 		t.Fatal("the picker must open")
 	}
-	if um.pickerKey != "/stores/nivis-tunnel" {
-		t.Errorf("got %q, want the store's row", um.pickerKey)
+	if um.pickerKey != "/work/nivis-tunnel" {
+		t.Errorf("got %q, want the repo's own row", um.pickerKey)
 	}
 	rows := um.pickerVisibleRows()
-	if um.pickerCursor >= len(rows) || rows[um.pickerCursor].row.path != "/stores/nivis-tunnel" {
-		t.Errorf("cursor at %d, want the store's row", um.pickerCursor)
+	if um.pickerCursor >= len(rows) || rows[um.pickerCursor].row.path != "/work/nivis-tunnel" {
+		t.Errorf("cursor at %d, want the repo's row", um.pickerCursor)
+	}
+}
+
+func TestPickerCursorMissesQuietlyForAProjectWithNoRow(t *testing.T) {
+	// A registered store opened by --path is deliberately not listed. The
+	// lookup must miss rather than land on an unrelated project.
+	m := storeItselfModel()
+	m.focus = focusDetail
+	m.detailTab = tabChanges
+	m.pickerAll = []projectRow{
+		{path: "/work/specgetty", display: "specgetty"},
+		{path: "/work/nivis-tunnel", display: "nivis-tunnel"},
+	}
+	m.pickerLoaded = true
+	m.recalcLayout()
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	um := updated.(model)
+
+	if !um.pickerOpen {
+		t.Fatal("the picker must still open")
+	}
+	rows := um.pickerVisibleRows()
+	if um.pickerCursor < 0 || um.pickerCursor >= len(rows) {
+		t.Fatalf("cursor at %d, outside the %d rows", um.pickerCursor, len(rows))
 	}
 }
 
 func TestDismissingThePickerLeavesTheProjectUntouched(t *testing.T) {
 	m := storeBackedModel()
 	m.focus = focusDetail
-	m.pickerAll = []projectRow{{path: "/stores/nivis-tunnel", display: "nivis-tunnel"}}
+	m.pickerAll = []projectRow{{path: "/work/nivis-tunnel", display: "nivis-tunnel"}}
 	m.pickerLoaded = true
 	m.recalcLayout()
 
@@ -574,7 +648,7 @@ func TestDismissingThePickerLeavesTheProjectUntouched(t *testing.T) {
 	if um.pickerOpen {
 		t.Error("esc closes the picker")
 	}
-	info := um.projects[um.currentRoot()].Info
+	info := um.projects[um.currentKey()].Info
 	if info.Origin != "/work/nivis-tunnel" || info.StoreID != "nivis-tunnel" {
 		t.Errorf("the project underneath changed: %+v", info)
 	}
@@ -591,7 +665,7 @@ func TestStartDirOfAPlainProjectIsItself(t *testing.T) {
 
 func TestWatchDirsCoversBothTreesForAStoreBackedProject(t *testing.T) {
 	m := storeBackedModel()
-	dirs := m.watchDirs(m.currentRoot())
+	dirs := m.watchDirs(m.currentKey())
 
 	if len(dirs) != 2 {
 		t.Fatalf("got %v, want the store's tree and the repo's", dirs)
@@ -613,7 +687,7 @@ func TestWatchDirsCoversBothTreesForAStoreBackedProject(t *testing.T) {
 
 func TestWatchDirsIsOneTreeForAPlainProject(t *testing.T) {
 	m := plainModel()
-	dirs := m.watchDirs(m.currentRoot())
+	dirs := m.watchDirs(m.currentKey())
 	if len(dirs) != 1 {
 		t.Fatalf("got %v, want one tree", dirs)
 	}
@@ -624,7 +698,7 @@ func TestWatchDirsIsOneTreeForAPlainProject(t *testing.T) {
 
 func TestWatchDirsIsOneTreeForAStoreOpenedDirectly(t *testing.T) {
 	m := storeItselfModel()
-	if got := m.watchDirs(m.currentRoot()); len(got) != 1 {
+	if got := m.watchDirs(m.currentKey()); len(got) != 1 {
 		t.Errorf("got %v, want one tree: there is no separate origin", got)
 	}
 }
@@ -902,4 +976,195 @@ func TestSwitchingProjectResetsTheConfigPane(t *testing.T) {
 	if m.configPane != 0 {
 		t.Errorf("got %d, want the first sub-tab on a new project", m.configPane)
 	}
+}
+
+// TestPickerOpenedRepoHasAllThreeConfigPanes closes the gap that prompted this
+// change. A store row has no origin, so its config tab could never show the
+// repo's own context and rules; opening the repo instead can.
+func TestPickerOpenedRepoHasAllThreeConfigPanes(t *testing.T) {
+	repo := "/work/nivis-tunnel"
+	row := projectRow{
+		path:    repo,
+		display: "nivis-tunnel",
+		info: scanner.ProjectInfo{
+			Root: "/stores/nivis-tunnel", Origin: repo, StoreID: "nivis-tunnel",
+			ConfigFile: "config.yaml", ConfigContent: "schema: spec-driven\n# shared\n",
+			OriginConfigFile: "config.yaml", OriginConfigContent: "store: nivis-tunnel\ncontext: repo only\n",
+			Store: &scanner.StoreInfo{ID: "nivis-tunnel", Root: "/stores/nivis-tunnel", Origin: repo},
+		},
+	}
+	m := model{width: 100, height: 40, pickerOpen: true, pickerAll: []projectRow{row}}
+	m.recalcLayout()
+
+	updated, _ := m.choosePickerProject()
+	um := updated.(model)
+
+	if um.currentKey() != repo {
+		t.Fatalf("key: got %q, want the repo", um.currentKey())
+	}
+	if um.currentRoot() != "/stores/nivis-tunnel" {
+		t.Errorf("root: got %q, want the store", um.currentRoot())
+	}
+
+	panes := um.currentConfigPanes()
+	if len(panes) != 3 {
+		t.Fatalf("got %d panes, want repo, store and store details", len(panes))
+	}
+	if !strings.Contains(panes[0].content, "repo only") {
+		t.Error("the repo's own context must be reachable from a picker-opened row")
+	}
+}
+
+func TestPlainProjectIsUnchangedByTheStoreColumn(t *testing.T) {
+	// Every plain-project behaviour has to read as it did before stores
+	// existed: same name, same blank store column, one config pane.
+	projects := scanner.ProjectMap{
+		"/work/specgetty": {Info: scanner.ProjectInfo{
+			Root: "/work/specgetty", Origin: "/work/specgetty",
+			SpecCount: 22, ConfigFile: "config.yaml", ConfigContent: "schema: spec-driven\n"}},
+	}
+	rows := buildProjectRows(projects)
+	if len(rows) != 1 || rows[0].display != "specgetty" {
+		t.Fatalf("got %+v, want one row named specgetty", rows)
+	}
+	for _, f := range projectFields {
+		if f.id == "store" && f.value(rows[0]) != "" {
+			t.Errorf("a plain project names no store, got %q", f.value(rows[0]))
+		}
+	}
+	if len(configPanes(rows[0].info)) != 1 {
+		t.Error("a plain project has one configuration")
+	}
+	if storeMark(rows[0].info) != "" {
+		t.Error("a plain project carries no store mark")
+	}
+}
+
+// --- the seams the store work added ---
+
+func TestSameDirs(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b []string
+		want bool
+	}{
+		{"identical", []string{"x", "y"}, []string{"x", "y"}, true},
+		{"reordered", []string{"x", "y"}, []string{"y", "x"}, false},
+		{"one shorter", []string{"x"}, []string{"x", "y"}, false},
+		{"both empty", nil, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sameDirs(tc.a, tc.b); got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCurrentKeyAndRootWithNoProject(t *testing.T) {
+	var m model
+	if got := m.currentKey(); got != "" {
+		t.Errorf("key: got %q, want empty", got)
+	}
+	if got := m.currentRoot(); got != "" {
+		t.Errorf("root: got %q, want empty", got)
+	}
+	if m.rescanCurrent() != nil {
+		t.Error("there is nothing to rescan")
+	}
+	if got := m.currentConfigPanes(); got != nil {
+		t.Errorf("got %v, want no panes", got)
+	}
+}
+
+func TestCurrentRootFallsBackToTheKey(t *testing.T) {
+	// A map that predates a scan carries no Root, and the key is the best
+	// answer available rather than an empty string.
+	m := model{repoPaths: []string{"/work/thing"},
+		projects: scanner.ProjectMap{"/work/thing": {}}}
+	if got := m.currentRoot(); got != "/work/thing" {
+		t.Errorf("got %q, want the key", got)
+	}
+	if got := m.startDirOf("/work/thing"); got != "/work/thing" {
+		t.Errorf("start dir: got %q, want the key", got)
+	}
+}
+
+func TestDoScanSingleResolvesAndKeysByTheStartDirectory(t *testing.T) {
+	store := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(store, "openspec", "specs", "a-spec"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(store, ".openspec-store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store, "openspec", "config.yaml"), []byte("schema: spec-driven\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store, ".openspec-store", "store.yaml"), []byte("version: 1\nid: alpha\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	data := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+	regDir := filepath.Join(data, "openspec", "stores")
+	if err := os.MkdirAll(regDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reg := "version: 1\nstores:\n  alpha:\n    backend:\n      type: git\n      local_path: " + store + "\n"
+	if err := os.WriteFile(filepath.Join(regDir, "registry.yaml"), []byte(reg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "openspec"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "openspec", "config.yaml"), []byte("store: alpha\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var m model
+	msg := m.doScanSingle(repo)()
+	sm, ok := msg.(scanMsg)
+	if !ok || sm.err != nil {
+		t.Fatalf("got %+v, want a scan result", msg)
+	}
+	st, found := sm.projects[repo]
+	if !found {
+		t.Fatalf("filed under %v, want the repo %q", keysOfMap(sm.projects), repo)
+	}
+	if st.Info.SpecCount != 1 {
+		t.Errorf("specs: got %d, want the store's 1", st.Info.SpecCount)
+	}
+
+	m.projects = sm.projects
+	m.repoPaths = []string{repo}
+	if m.rescanCurrent() == nil {
+		t.Error("an open project can be rescanned")
+	}
+	if got := m.currentRoot(); got != st.Info.Root {
+		t.Errorf("root: got %q, want %q", got, st.Info.Root)
+	}
+}
+
+func TestDoScanSingleOutsideAnyProject(t *testing.T) {
+	var m model
+	msg := m.doScanSingle(t.TempDir())()
+	sm, ok := msg.(scanMsg)
+	if !ok || sm.err != nil {
+		t.Fatalf("got %+v, want an empty scan result", msg)
+	}
+	if len(sm.projects) != 0 {
+		t.Errorf("got %v, want nothing", keysOfMap(sm.projects))
+	}
+}
+
+func keysOfMap(m scanner.ProjectMap) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

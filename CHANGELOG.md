@@ -20,10 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   root path, the registered remote and branch, and the store working copy's
   local git state (uncommitted changes, and how far ahead or behind its last
   known upstream ref it is, read without fetching).
-- The project picker names a store by the id it declares for itself rather than
-  by the folder it sits in, and marks the row as a store. Repos that only point
-  at a store stay out of the list, so shared specs appear once rather than once
-  per repo reading them.
+- The project picker lists the repos you work in. A repo that declares a store
+  and keeps no specs of its own is a row like any other, carrying that store's
+  spec, change and task counts, and a `store` column names the store it reads
+  from. A registered store is not listed on its own: it is where content lives
+  rather than where work happens. Run `spg` inside a store, or pass `--path`, to
+  open one directly.
 - A store declaration that cannot be followed now says so where the project
   would otherwise look empty, naming the declared id, the file that declared it
   and the reason, rather than showing zero specs and zero changes.
@@ -40,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A directory named `openspec` holding neither a configuration nor any content
   is no longer treated as a project. Without that rule a store kept at
   `~/openspec` would make the home directory capture every project beneath it.
+- A directory counts as a store only when the store registry resolves its
+  declared id to that same directory. A clone, or a folder the registry has
+  moved on from, keeps its copy of `.openspec-store/store.yaml` and used to be
+  shown under the registered store's name.
 
 ## [0.6.0] - 2026-09-18
 

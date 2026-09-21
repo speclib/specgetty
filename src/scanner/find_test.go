@@ -44,12 +44,14 @@ func TestSkip(t *testing.T) {
 }
 
 func TestIsValidOpenSpecDir(t *testing.T) {
+	noStores := map[string]StoreBackend{}
+
 	t.Run("valid with config.yaml and specs/", func(t *testing.T) {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(""), 0644)
 		os.Mkdir(filepath.Join(dir, "specs"), 0755)
 
-		if !isValidOpenSpecDir(dir) {
+		if !isValidOpenSpecDir(dir, noStores) {
 			t.Error("expected valid, got invalid")
 		}
 	})
@@ -59,7 +61,16 @@ func TestIsValidOpenSpecDir(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, "project.md"), []byte(""), 0644)
 		os.Mkdir(filepath.Join(dir, "changes"), 0755)
 
-		if !isValidOpenSpecDir(dir) {
+		if !isValidOpenSpecDir(dir, noStores) {
+			t.Error("expected valid, got invalid")
+		}
+	})
+
+	t.Run("valid with config.yml", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "config.yml"), []byte(""), 0644)
+
+		if !isValidOpenSpecDir(dir, noStores) {
 			t.Error("expected valid, got invalid")
 		}
 	})
@@ -67,17 +78,19 @@ func TestIsValidOpenSpecDir(t *testing.T) {
 	t.Run("invalid empty directory", func(t *testing.T) {
 		dir := t.TempDir()
 
-		if isValidOpenSpecDir(dir) {
+		if isValidOpenSpecDir(dir, noStores) {
 			t.Error("expected invalid, got valid")
 		}
 	})
 
-	t.Run("invalid with config.yaml but no specs/ or changes/", func(t *testing.T) {
+	t.Run("valid with config.yaml and no content of its own", func(t *testing.T) {
+		// A repo declaring a store keeps neither specs/ nor changes/, and it
+		// is still where a person works. This used to be the invalid case.
 		dir := t.TempDir()
-		os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(""), 0644)
+		os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("store: alpha\n"), 0644)
 
-		if isValidOpenSpecDir(dir) {
-			t.Error("expected invalid, got valid")
+		if !isValidOpenSpecDir(dir, noStores) {
+			t.Error("a configuration alone is enough")
 		}
 	})
 
@@ -85,7 +98,7 @@ func TestIsValidOpenSpecDir(t *testing.T) {
 		dir := t.TempDir()
 		os.Mkdir(filepath.Join(dir, "specs"), 0755)
 
-		if isValidOpenSpecDir(dir) {
+		if isValidOpenSpecDir(dir, noStores) {
 			t.Error("expected invalid, got valid")
 		}
 	})

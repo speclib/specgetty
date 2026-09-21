@@ -6,7 +6,11 @@ TBD - created by archiving change replace-git-with-openspec-scanning. Update Pur
 ## Requirements
 
 ### Requirement: Detect OpenSpec projects by directory
-The scanner SHALL identify a directory as an OpenSpec project when it contains a direct child directory named `openspec` that passes validation. A valid `openspec/` directory MUST contain at least one of `config.yaml` or `project.md`, AND at least one of the subdirectories `specs/` or `archive/`.
+The scanner SHALL identify a directory as an OpenSpec project when it contains a
+direct child directory named `openspec` holding at least one of `config.yaml`,
+`config.yml` or `project.md`. Content of its own is NOT required: a repo that
+declares a `store:` and keeps no `specs/` or `changes/` is still a project, and
+is the only place that repo's own context and rules can be read from.
 
 #### Scenario: Valid openspec directory with config.yaml and specs/
 - **WHEN** the walker encounters a directory containing `openspec/` with `config.yaml` and `specs/` inside
@@ -16,9 +20,20 @@ The scanner SHALL identify a directory as an OpenSpec project when it contains a
 - **WHEN** the walker encounters a directory containing `openspec/` with `project.md` and `archive/` inside
 - **THEN** the parent directory SHALL be reported as an OpenSpec project
 
+#### Scenario: A repo that declares a store and keeps no content
+- **WHEN** the walker encounters a directory whose `openspec/` holds only a
+  configuration declaring `store: <id>`
+- **THEN** the parent directory SHALL be reported as an OpenSpec project
+
+#### Scenario: Two repos sharing one store
+- **WHEN** two directories under the scan directories declare the same store id
+- **THEN** both SHALL be reported, each under its own directory name
+
 #### Scenario: Directory named openspec without required contents
-- **WHEN** the walker encounters a directory named `openspec` that does not contain (`config.yaml` or `project.md`) AND (`specs/` or `archive/`)
-- **THEN** the directory SHALL NOT be reported as an OpenSpec project
+- **WHEN** the walker encounters a directory named `openspec` holding none of
+  `config.yaml`, `config.yml` or `project.md`
+- **THEN** the directory SHALL NOT be reported as an OpenSpec project, whatever
+  else it contains
 
 #### Scenario: openspec directory inside .git
 - **WHEN** a directory named `openspec` exists inside a `.git/` subtree
@@ -29,15 +44,24 @@ The scanner SHALL identify a directory as an OpenSpec project when it contains a
 - **THEN** it SHALL NOT be reported as an OpenSpec project
 
 ### Requirement: List OpenSpec directory contents
-The scanner SHALL read the contents of each detected project's `openspec/` directory recursively and produce a flat list of entries.
+The scanner SHALL read the contents of each detected project's `openspec/`
+directory recursively and produce a flat list of entries, reading from the root
+the project's content resolves to.
 
 #### Scenario: Project with openspec contents
 - **WHEN** an OpenSpec project is detected
-- **THEN** the scanner SHALL list all files and subdirectories under `openspec/` with paths relative to the `openspec/` directory
+- **THEN** the scanner SHALL list all files and subdirectories under `openspec/`
+  with paths relative to the `openspec/` directory
+
+#### Scenario: A store-backed repo's contents
+- **WHEN** a repo declaring a store is detected
+- **THEN** the listing SHALL be the store's `openspec/` tree, so that a search
+  inside a project reaches the specs it actually shows
 
 #### Scenario: Empty openspec directory
 - **WHEN** an OpenSpec project's `openspec/` directory is empty
-- **THEN** the project SHALL still appear in the project list with an empty file list
+- **THEN** the project SHALL still appear in the project list with an empty file
+  list
 
 ### Requirement: Display projects in TUI
 The TUI SHALL present discovered OpenSpec projects in the project picker, sorted
@@ -93,37 +117,40 @@ The scanner SHALL ignore an empty entry in `scandirs.include` or
 - **THEN** the entry SHALL be skipped and the scan SHALL complete over the
   remaining includes
 
-### Requirement: A discovered root reports whether it is a store
-The scanner SHALL report, for each discovered root, whether that root is a store
-and under which id, by reading `.openspec-store/store.yaml` beside its
-`openspec/` directory.
+### Requirement: A registered store is not listed as a project
+A directory the registry resolves a store id to SHALL NOT be reported by the
+scanner. A store is where content lives, not where work happens, and every repo
+reading from it already stands for it in the list.
 
-#### Scenario: A store among the scanned directories
-- **WHEN** a discovered root holds `.openspec-store/store.yaml`
-- **THEN** the scanner SHALL report it as a store carrying the `id` from that
-  file
+#### Scenario: The registered stores under a scan directory
+- **WHEN** the walker reaches a directory the registry resolves a store id to
+- **THEN** it SHALL NOT be reported, however much content it holds
 
-#### Scenario: An ordinary project
-- **WHEN** a discovered root holds no `.openspec-store/` directory
-- **THEN** the scanner SHALL report it as a plain project
+#### Scenario: A directory whose identity file the registry does not confirm
+- **WHEN** the walker reaches a directory carrying `.openspec-store/store.yaml`
+  that the registry does not resolve to it
+- **THEN** it SHALL be reported as an ordinary project
 
-#### Scenario: Store metadata that cannot be read
-- **WHEN** `.openspec-store/store.yaml` exists but cannot be parsed, or names no
-  id
-- **THEN** the root SHALL still be reported, as a plain project, so that
-  unreadable metadata hides nothing
+#### Scenario: No registry on the machine
+- **WHEN** no store registry exists
+- **THEN** no directory SHALL be excluded as a store, and discovery SHALL be
+  what it would be with no stores in play
 
-### Requirement: A repo that only points at a store is not a row of its own
-A directory whose `openspec/` holds a configuration file and neither `specs/`
-nor `changes/` SHALL NOT be reported as a project, whether or not it declares a
-store. Such a directory is an entry point to a root, not a root.
+### Requirement: A discovered project carries the statistics of its content
+The scanner SHALL report each discovered project with the specs, changes and
+task counts of the root its content resolves to, which for a store-backed repo
+is the store's.
 
-#### Scenario: A store-backed repo under a scan directory
-- **WHEN** the walker reaches a repo whose `openspec/` holds only
-  `config.yaml` declaring `store: <id>`
-- **THEN** that repo SHALL NOT be reported, and the store it names SHALL be
-  reported on its own account when it lies under a scan directory
+#### Scenario: A store-backed repo's statistics
+- **WHEN** a repo declaring a store is reported
+- **THEN** its spec, change and archived counts SHALL be the store's, not zero
 
 #### Scenario: Two repos sharing one store
-- **WHEN** two repos under the scan directories declare the same store id
-- **THEN** neither SHALL be reported, and the store SHALL appear once
+- **WHEN** two reported repos declare the same store id
+- **THEN** both SHALL carry that store's statistics, and the store SHALL be read
+  once for the scan rather than once for each repo
+
+#### Scenario: A declaration that cannot be followed
+- **WHEN** a reported repo declares a store that cannot be resolved
+- **THEN** it SHALL still be reported, carrying the problem rather than being
+  dropped from the list
