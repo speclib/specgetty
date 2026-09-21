@@ -1,11 +1,11 @@
 ---
 # specgetty-1q1c
 title: extra view layer for Spec
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-09-21T15:56:05Z
-updated_at: 2026-09-21T17:38:56Z
+updated_at: 2026-09-21T18:08:39Z
 blocked_by:
     - specgetty-9xi9
 ---

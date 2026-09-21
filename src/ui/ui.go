@@ -33,6 +33,7 @@ const viewDetail = 0
 const (
 	levelProject = 0 // one project, with its tab bar
 	levelChange  = 1 // one change, with its artifact sub-tabs
+	levelSpec    = 2 // one spec, as an outline beside a card
 )
 
 // Where the keyboard is. One position, one value.
@@ -188,7 +189,7 @@ type model struct {
 	specCursor        int
 	changeCursor      int
 	changeArtifactTab int
-	level             int    // navigation depth: levelProject, levelChange
+	level             int    // navigation depth: levelProject, levelChange, levelSpec
 	startupPath       string // project resolved at startup, scanned on its own
 
 	// Project picker state. The picker is an overlay, not a level: it opens
@@ -243,6 +244,12 @@ type model struct {
 	watcher           *watcher.Watcher
 	watchedRoot       string
 	watchedDirs       []string
+
+	// The spec open at levelSpec, parsed once when it is opened and dropped on
+	// the way out. Reparsing on every render would cost a parse per keystroke.
+	specTree     specTree
+	specNode     int
+	specNodePath string
 
 	// Which row of the properties tab is selected, and what is known about the
 	// schemas of the project it belongs to.
@@ -579,7 +586,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
-			if m.level == levelProject && m.detailTab == tabChanges {
+			if m.level == levelSpec {
+				// Nothing below a spec to descend into.
+			} else if m.level == levelProject && m.detailTab == tabSpecs {
+				m = m.openSelectedSpec()
+			} else if m.level == levelProject && m.detailTab == tabChanges {
 				if _, ok := m.selectedRow(); ok {
 					m.rememberSelection()
 					m.level = levelChange
@@ -590,7 +601,14 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			// levelProject is the floor. The project list is an overlay now,
 			// so there is nothing above it to escape to.
-			if m.level == levelChange {
+			if m.level == levelSpec {
+				m.level = levelProject
+				m.detailTab = tabSpecs
+				m.focus = focusListPane
+				m.specTree = specTree{}
+				m.specNode = 0
+				m.specNodePath = ""
+			} else if m.level == levelChange {
 				m.level = levelProject
 				m.syncCursor()
 			}
@@ -719,6 +737,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveDocCursor(-1)
 			} else if m.docActive() {
 				m.docViewport.ScrollUp(1)
+			} else if m.level == levelSpec {
+				if m.specNode > 0 {
+					m.specNode--
+					m.rememberSpecNode()
+				}
 			} else if m.level != levelChange {
 				switch m.detailTab {
 				case tabSpecs:
@@ -743,6 +766,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveDocCursor(1)
 			} else if m.docActive() {
 				m.docViewport.ScrollDown(1)
+			} else if m.level == levelSpec {
+				if m.specNode < len(m.specTree.nodes)-1 {
+					m.specNode++
+					m.rememberSpecNode()
+				}
 			} else if m.level != levelChange {
 				switch m.detailTab {
 				case tabSpecs:
@@ -858,6 +886,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// A rescan fires on every file save while watching, so the filter
 			// and the selection are preserved across it rather than reset.
 			m.syncCursor()
+			m.reparseOpenSpec()
 
 			// Start watching the open project after its first scan. A rescan
 			// that resolved to a different root, which is what editing a
@@ -1640,6 +1669,11 @@ func (m model) renderDetailPanel(width int, height int) string {
 		return "\n" + dimStyle.Render("No project selected. Press p to pick one.")
 	}
 
+	// A spec fills the panel on its own, the way an open change does.
+	if m.level == levelSpec && len(m.specTree.nodes) > 0 {
+		return m.renderSpecDetail(width, height)
+	}
+
 	// An open change fills the panel on its own: no project header, no tab bar,
 	// so its artifact sub-tabs own the full width and their own key axis.
 	if m.level == levelChange {
@@ -1846,6 +1880,9 @@ func (m *model) enterTab() []tea.Cmd {
 // The specs tab and the properties tab are both splits, and everything about
 // focus, borders and the vertical keys asks this rather than naming a tab.
 func (m model) splitTab() bool {
+	if m.level == levelSpec {
+		return len(m.specTree.nodes) > 0
+	}
 	if m.level != levelProject {
 		return false
 	}
@@ -1966,6 +2003,14 @@ var (
 	mdBoldStyle = lipgloss.NewStyle().Bold(true)
 
 	mdItalicStyle = lipgloss.NewStyle().Italic(true)
+
+	// A backticked span. Specs name capabilities, keys and paths this way.
+	mdCodeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
+
+	// A scenario's keyword, which opens every clause of a card.
+	specKeywordStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("3")) // yellow
 
 	yamlKeyStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("6")) // cyan
@@ -2138,6 +2183,24 @@ func renderInlineMarkdown(line string) string {
 		end += start + 2
 		bold := result[start+2 : end]
 		result = result[:start] + mdBoldStyle.Render(bold) + result[end+2:]
+	}
+
+	// Code: `text`. Specs name capabilities, keys and files in backticks
+	// constantly, and leaving the marks in makes them the loudest punctuation
+	// on the line. An unclosed backtick is left alone: the rest of the line is
+	// prose and deserves to survive.
+	for {
+		start := strings.Index(result, "`")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start+1:], "`")
+		if end == -1 {
+			break
+		}
+		end += start + 1
+		code := result[start+1 : end]
+		result = result[:start] + mdCodeStyle.Render(code) + result[end+1:]
 	}
 
 	// Italic: _text_
@@ -2327,6 +2390,25 @@ func (m model) renderNavBar() string {
 		}
 	} else {
 		switch m.level {
+		case levelSpec:
+			keys = []struct{ key, action string }{
+				{"q", "quit"},
+				{"esc", "back to specs"},
+				{"jk/\u2191\u2193", "navigate"},
+			}
+			if m.focus == focusContentPane {
+				keys = append(keys,
+					struct{ key, action string }{"tab", "focus outline"},
+					struct{ key, action string }{"^f^b", "page"},
+					struct{ key, action string }{"^d^u", "half"},
+					struct{ key, action string }{"gg/G", "ends"})
+			} else {
+				keys = append(keys,
+					struct{ key, action string }{"tab", "focus card"})
+			}
+			keys = append(keys,
+				struct{ key, action string }{"p", "projects"},
+				struct{ key, action string }{"s", "scan"})
 		case levelChange:
 			keys = []struct{ key, action string }{
 				{"q", "quit"},

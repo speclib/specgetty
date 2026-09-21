@@ -17,6 +17,14 @@ package ui
 // expressions mirror what each renderer lays out; they are one fact written
 // twice, and the tests assert the pairing rather than the arithmetic.
 func (m model) listPage() int {
+	if m.level == levelSpec {
+		// A page of the outline is a pane of rows, and a node can occupy more
+		// than one, so the page is however many nodes fit in that many rows.
+		// With every node one row tall this reduces to the row count.
+		rows := max(1, m.mainPanelHeight()-1-boxRows)
+		outlineOuter, _ := specDetailSplit(m.panelContentWidth())
+		return max(1, nodesInRows(m.specTree, outlineOuter-boxChrome, m.selectedSpecNode(), rows))
+	}
 	if m.level != levelProject {
 		return 1
 	}
@@ -40,7 +48,18 @@ func (m model) listPage() int {
 // moveListCursor moves whichever list holds the keyboard by delta rows,
 // stopping at either end.
 func (m *model) moveListCursor(delta int) {
-	if m.level != levelProject || delta == 0 {
+	if delta == 0 {
+		return
+	}
+	if m.level == levelSpec {
+		if m.focus != focusListPane {
+			return
+		}
+		m.specNode = clampIndex(m.specNode+delta, len(m.specTree.nodes))
+		m.rememberSpecNode()
+		return
+	}
+	if m.level != levelProject {
 		return
 	}
 	switch m.detailTab {
@@ -61,6 +80,18 @@ func (m *model) moveListCursor(delta int) {
 
 // gotoListEnd sends the list that holds the keyboard to its first or last row.
 func (m *model) gotoListEnd(last bool) {
+	if m.level == levelSpec {
+		if m.focus != focusListPane {
+			return
+		}
+		to := 0
+		if last {
+			to = len(m.specTree.nodes) - 1
+		}
+		m.specNode = clampIndex(to, len(m.specTree.nodes))
+		m.rememberSpecNode()
+		return
+	}
 	if m.level != levelProject {
 		return
 	}
@@ -130,4 +161,24 @@ func clampIndex(i, n int) int {
 		return n - 1
 	}
 	return i
+}
+
+// nodesInRows counts how many nodes starting at `from` fit in `rows` drawn
+// rows, which is what a page of the outline moves.
+func nodesInRows(tree specTree, width, from, rows int) int {
+	all := outlineRows(tree, width)
+	used, moved := 0, 0
+	for node := from; node < len(tree.nodes); node++ {
+		first, last := rowRangeOfNode(all, node)
+		if first < 0 {
+			continue
+		}
+		h := last - first + 1
+		if used+h > rows && moved > 0 {
+			break
+		}
+		used += h
+		moved++
+	}
+	return moved
 }

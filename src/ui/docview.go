@@ -25,6 +25,13 @@ func (m model) docRegion() (width, height int) {
 	panelH := m.mainPanelHeight()
 
 	switch {
+	case m.level == levelSpec:
+		// The spec's name stays put above the two halves, and the card gets
+		// what is inside the right-hand border.
+		_, cardOuter := specDetailSplit(m.panelContentWidth())
+		width = cardOuter - boxChrome
+		height = panelH - 1 - boxRows
+
 	case m.level == levelChange:
 		// The change name line and the sub-tab row stay put above the box.
 		height = panelH - 2 - boxRows
@@ -72,6 +79,11 @@ func (m model) docActive() bool {
 	}
 	if m.level == levelChange {
 		return true
+	}
+	if m.level == levelSpec {
+		// Two halves, so the vertical keys belong to the card only while the
+		// card holds the keyboard.
+		return m.focus == focusContentPane && len(m.specTree.nodes) > 0
 	}
 	if m.level != levelProject {
 		return false
@@ -193,6 +205,16 @@ func (m model) currentDoc() (document, bool) {
 	width, _ := m.docRegion()
 
 	switch {
+	case m.level == levelSpec:
+		if len(m.specTree.nodes) == 0 {
+			return document{}, false
+		}
+		n := m.specTree.nodes[m.selectedSpecNode()]
+		// Keyed by the node, so moving to another one is moving to another
+		// document and starts at the top.
+		key := strings.Join([]string{project, "spec", m.specTree.name, n.path}, docKeySep)
+		return document{key: key, content: renderSpecCard(n, width)}, true
+
 	case m.level == levelChange:
 		r, found := m.selectedRow()
 		if !found {

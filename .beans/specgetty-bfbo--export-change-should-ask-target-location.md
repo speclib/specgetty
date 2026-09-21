@@ -1,11 +1,11 @@
 ---
 # specgetty-bfbo
 title: export change should ask target location
-status: in-progress
+status: completed
 type: task
 priority: low
 created_at: 2026-09-21T17:04:59Z
-updated_at: 2026-09-21T18:01:34Z
+updated_at: 2026-09-21T18:08:39Z
 ---
 
 currently it only allows saving in home
@@ -41,3 +41,28 @@ the README either.
 The retired-setting requirement lives in `change-list-view` because
 `change_mode` was introduced there. It now serves a second key with nothing to
 do with the change list. Generalised in place; its home is task 6.2.
+
+## Summary of Changes
+
+Shipped as `choose-the-export-directory` (commit 7220428).
+
+- `export_dir` in the config, and a prompt that opens on it. Editing redirects
+  one export and leaves the config alone
+- a directory is typed; the filename stays generated
+- `tab` completes against the filesystem via the text input's own suggestions
+- a missing directory is refused with a message, the typed text stays, nothing
+  is created
+- an existing file is confirmed; declining returns to the prompt with the
+  directory still in it
+- `edit_command` deleted and retired through the existing mechanism
+
+## Found while verifying
+
+Task 2.7's frame assertion caught a violation older than this change: modal
+widths were fixed, so the export prompt asked for 66 columns and the startup
+question for 62, both wider than the 60-column minimum `modal-presentation`
+already required them to respect. Every modal is now clamped to the terminal,
+with a test over all eight states.
+
+Coverage floors raised: scanner 95.1 to 95.4, ui 85.3 to 85.8, total 87.5 to
+88.0.

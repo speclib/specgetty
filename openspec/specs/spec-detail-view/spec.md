@@ -1,10 +1,12 @@
+# spec-detail-view Specification
+
 ## Purpose
 Describes reading one specification as the structure it already has: an outline
 of its Purpose, its requirements and their scenarios, beside a card that shows
 whichever of them the reader is on, and what happens when a file does not fit
 that structure.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: A spec opens in a view of its own
 Pressing `enter` on a spec in the specs tab SHALL open that spec in a view one
@@ -33,9 +35,8 @@ a second list.
 ### Requirement: The view is an outline beside a card
 The spec detail view SHALL draw two halves, an outline of the spec on the left
 and a card on the right, each in its own border, and `tab` SHALL move the
-keyboard between them and on through the log panel when it is open. The half
-holding the keyboard SHALL be the lit one. This is the focus model the specs tab
-and the properties tab already use.
+keyboard between them. The half holding the keyboard SHALL be the lit one. This
+is the focus model the specs tab and the properties tab already use.
 
 #### Scenario: Default focus
 - **WHEN** the spec detail view opens
@@ -45,10 +46,10 @@ and the properties tab already use.
 - **WHEN** the outline holds the keyboard and the user presses `tab`
 - **THEN** the card SHALL hold the keyboard, and its border SHALL be the lit one
 
-#### Scenario: Cycling through the log panel
-- **WHEN** the log panel is open and the user presses `tab` repeatedly
-- **THEN** the keyboard SHALL move through the outline, the card and the log
-  panel in turn
+#### Scenario: Moving it back
+- **WHEN** the card holds the keyboard and the user presses `tab`
+- **THEN** the outline SHALL hold it again, there being only two places for it
+  to be
 
 #### Scenario: Leaving and returning
 - **WHEN** the user leaves the view and opens the same spec again

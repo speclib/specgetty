@@ -42,7 +42,8 @@ If one/more directories are specified as `<directories>`, then this will overrid
 
 ## UI
 
-There are two levels, and the project picker opens over either of them.
+There are three levels, and the project picker opens over any of them. Which
+second level `enter` reaches depends on the tab you are standing on.
 
 ```
    [ project picker ]   p opens it, esc closes it
@@ -50,8 +51,11 @@ There are two levels, and the project picker opens over either of them.
            v
    project view         the startup view; esc does nothing here
        | enter          tabs: changes | specs | properties
-       v
-   change view          artifact sub-tabs: proposal | design | tasks | specs
+       |
+       +--> change view       from the changes tab
+       |                      artifact sub-tabs: proposal | design | tasks | specs
+       +--> spec view         from the specs tab
+                              an outline beside one requirement or scenario
 ```
 
 Active and archived changes are shown together in one list, grouped, with the
@@ -90,6 +94,47 @@ The selected spec is highlighted while the list has the keys and dimmed while
 the content has them, and the title shows a reading position only in the second
 case. When the content has the keys it takes the same scroll keys as an open
 change.
+
+`enter` opens the selected spec at its own level, described below. A spec whose
+headings do not follow the OpenSpec structure does not open: the status line
+says so and the cursor stays where it was.
+
+### Keys in a spec
+
+A spec opens as an outline of its requirements and scenarios beside a card
+showing whichever one the cursor is on. The card is the spec rewritten for
+reading: one requirement or one scenario at a time, clauses laid out with their
+keyword above the text, rather than the raw markdown.
+
+```
+ +----------------------------+ +-------------------------------------+
+ | Purpose                    | |                                     |
+ | A change opens at its own  | |    Scenario: Ascend from a change   |
+ |   navigation level         | |                                     |
+ |   Descend from the list    | |    WHEN                             |
+ | > Ascend from a change     | |       a change is open and the      |
+ |   An open change names its | |       user presses esc              |
+ |     schema                 | |                                     |
+ | Artifact sub-navigation    | |    THEN                             |
+ |   Right arrow at the last  | |       the change list SHALL be      |
+ |     sub-tab                | |       displayed with the same       |
+ |   Left arrow at the first  | |       change under the cursor       |
+ +----------------------------+ +-------------------------------------+
+```
+
+| Key                        | Action                                        |
+| -------------------------- | --------------------------------------------- |
+| `<tab>`                    | Move the keyboard between the outline and the card |
+| `j`/`k` or `<up>`/`<down>` | Move one node, or scroll the card             |
+| `^f`/`^b`                  | Page the outline, or the card                 |
+| `^d`/`^u`                  | Half a page                                   |
+| `gg` / `G`                 | First and last                                |
+| `<esc>`                    | Back to the specs tab, same spec selected     |
+
+A label too long for the outline wraps rather than being cut, and the cursor
+still moves one requirement or scenario per keystroke however many rows it
+occupies. The cursor stays on the same node across a rescan, so editing the
+file above it does not move it.
 
 ### Keys in the change list
 

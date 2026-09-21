@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `enter` on the specs tab opens a spec at its own navigation level: an outline
+  of its requirements and scenarios beside a card showing whichever one the
+  cursor is on, with its clauses laid out under their keywords rather than as
+  raw markdown. `tab` moves the keyboard between the two halves, `esc` returns
+  to the list, and the cursor keeps its place across a rescan.
 - `e` asks where to put the zip. The prompt opens on a new `export_dir` config
   setting, or your home directory when it is unset, and `tab` completes a path.
   You type a directory and the filename stays generated. A directory that does
