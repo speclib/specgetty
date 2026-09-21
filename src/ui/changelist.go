@@ -23,6 +23,12 @@ func (m model) renderChangeDetail(r changeRow, artifactTab, width, height int) s
 	if r.ci.TasksTotal > 0 {
 		b.WriteString(dimStyle.Render(fmt.Sprintf("  tasks %d/%d", r.ci.TasksDone, r.ci.TasksTotal)))
 	}
+	// Which artifacts this change needs follows from its schema, so the schema
+	// belongs beside its name. A change that recorded none says nothing rather
+	// than borrowing the project default it never claimed.
+	if r.ci.Schema != "" {
+		b.WriteString(dimStyle.Render("  schema " + r.ci.Schema))
+	}
 	b.WriteString("\n")
 
 	names := r.artifactTabNames()

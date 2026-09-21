@@ -153,7 +153,7 @@ func TestCopyIsInertOnOtherTabs(t *testing.T) {
 	got := fakeClipboard(t, nil)
 	m, _ := copyModel(t, modeActive)
 
-	for _, tab := range []int{tabSpecs, tabConfig} {
+	for _, tab := range []int{tabSpecs, tabProperties} {
 		m.detailTab = tab
 		m.syncDocument()
 		for _, k := range []rune{'y', 'Y'} {

@@ -49,6 +49,12 @@ type ChangeInfo struct {
 	SpecNames        []string
 	SpecContents     map[string]string
 	ArchiveDate      time.Time // zero for active changes, mtime for archived
+
+	// Schema is what the change's own `.openspec.yaml` records. Empty when the
+	// change has no such file, which is what changes created before OpenSpec
+	// wrote one look like. That is not the same as using the project default,
+	// and the two are kept apart.
+	Schema string
 }
 
 type ProjectInfo struct {
@@ -82,6 +88,27 @@ type ProjectInfo struct {
 	// Set when a store declaration could not be followed. The project is not
 	// empty in that case; it is unreadable, and saying so is the difference.
 	StoreProblem *StoreProblem
+
+	// The workflow schema the project's configuration names, and what its
+	// changes actually record. DefaultSchema is `spec-driven` when nothing is
+	// configured, which is what OpenSpec falls back to.
+	DefaultSchema string
+	SchemaUsage   []SchemaUsage
+	// Changes carrying no `.openspec.yaml` at all. Counted apart from any
+	// schema rather than assumed to be on the default.
+	UnrecordedChanges int
+
+	// Keys the declaring repo's configuration carries that have no effect,
+	// because OpenSpec reads everything but `store:` from the resolved root.
+	// Empty unless Origin and Root differ.
+	InertKeys []string
+}
+
+// SchemaUsage is one workflow schema and how much of the project runs on it.
+type SchemaUsage struct {
+	Name      string
+	Changes   int
+	IsDefault bool
 }
 
 // FromStore reports whether this project reads its content from a store.
@@ -200,6 +227,8 @@ func parseChangeDir(dir string, name string) ChangeInfo {
 		ci.TasksTotal, ci.TasksDone = ParseTaskStats(tasksContent)
 	}
 
+	ci.Schema = readChangeSchema(dir)
+
 	// Read specs within the change
 	specsDir := filepath.Join(dir, "specs")
 	if specEntries, err := os.ReadDir(specsDir); err == nil {
@@ -288,6 +317,9 @@ func ParseProjectInfo(dir string) ProjectInfo {
 	// accepts for the YAML configuration, .yaml before .yml.
 	info.ConfigFile, info.ConfigContent = readProjectConfig(dir)
 
+	info.DefaultSchema = readConfigSchema(dir)
+	info.SchemaUsage, info.UnrecordedChanges = countSchemaUsage(info)
+
 	// Identity. A directory is a store when it carries the metadata file, and
 	// that is checked with one stat before the registry is opened, so an
 	// ordinary project never pays for a registry parse.
@@ -299,6 +331,122 @@ func ParseProjectInfo(dir string) ProjectInfo {
 	}
 
 	return info
+}
+
+// DefaultSchemaName is what OpenSpec uses when a configuration names none.
+const DefaultSchemaName = "spec-driven"
+
+// readChangeSchema reads a change's own workflow schema from its metadata file.
+// An absent or unreadable file leaves it empty, which the caller reports as
+// unrecorded rather than folding into the project default.
+func readChangeSchema(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, ".openspec.yaml"))
+	if err != nil {
+		return ""
+	}
+	var meta struct {
+		Schema string `yaml:"schema"`
+	}
+	if err := yaml.Unmarshal(b, &meta); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.Schema)
+}
+
+// readConfigSchema reads the workflow schema a directory's OpenSpec
+// configuration names, falling back to what OpenSpec itself falls back to.
+//
+// The directory is the resolved root, which for a store-backed project is the
+// store. OpenSpec reads the schema from the root and nowhere else, so a
+// pointing repo's own `schema:` key never decides anything.
+func readConfigSchema(dir string) string {
+	path := ConfigFilePath(dir)
+	if path == "" {
+		return DefaultSchemaName
+	}
+	b, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return DefaultSchemaName
+	}
+	var cfg struct {
+		Schema string `yaml:"schema"`
+	}
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return DefaultSchemaName
+	}
+	if name := strings.TrimSpace(cfg.Schema); name != "" {
+		return name
+	}
+	return DefaultSchemaName
+}
+
+// countSchemaUsage reports which schemas the project's changes record and how
+// many changes each carries, with the project default always present even when
+// nothing uses it.
+//
+// Changes with no metadata file are counted separately: a change that never
+// recorded a schema is not evidence that it used the default.
+func countSchemaUsage(info ProjectInfo) ([]SchemaUsage, int) {
+	counts := make(map[string]int)
+	unrecorded := 0
+	for _, list := range [][]ChangeInfo{info.Changes, info.ArchivedChanges} {
+		for _, ci := range list {
+			if ci.Schema == "" {
+				unrecorded++
+				continue
+			}
+			counts[ci.Schema]++
+		}
+	}
+	if info.DefaultSchema != "" {
+		if _, ok := counts[info.DefaultSchema]; !ok {
+			counts[info.DefaultSchema] = 0
+		}
+	}
+
+	names := make([]string, 0, len(counts))
+	for n := range counts {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	usage := make([]SchemaUsage, 0, len(names))
+	for _, n := range names {
+		usage = append(usage, SchemaUsage{Name: n, Changes: counts[n], IsDefault: n == info.DefaultSchema})
+	}
+	// The default leads: it is the answer to "what does this project use" when
+	// there is only one, and the anchor when there are several.
+	sort.SliceStable(usage, func(i, j int) bool { return usage[i].IsDefault && !usage[j].IsDefault })
+	return usage, unrecorded
+}
+
+// inertConfigKeys lists the keys a declaring repo's configuration carries that
+// have no effect.
+//
+// OpenSpec reads a pointing repo's configuration for `store:` and nothing else;
+// everything else comes from the resolved root. It warns about an inert
+// `references` and says nothing about the rest, so this is the only place a
+// person would find out.
+func inertConfigKeys(origin string) []string {
+	path := ConfigFilePath(origin)
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil
+	}
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(b, &raw); err != nil {
+		return nil
+	}
+	var inert []string
+	for _, key := range []string{"schema", "context", "rules", "operations", "references"} {
+		if _, present := raw[key]; present {
+			inert = append(inert, key)
+		}
+	}
+	return inert
 }
 
 // readProjectConfig returns the display name and content of a directory's
@@ -390,6 +538,7 @@ func scanResolved(startDir string, cache rootCache, withGit bool) (string, Proje
 
 	if info.ResolvedElsewhere() {
 		info.OriginConfigFile, info.OriginConfigContent = readProjectConfig(res.Origin)
+		info.InertKeys = inertConfigKeys(res.Origin)
 	}
 
 	return res.Origin, ProjectStatus{Files: cached.files, Info: info}, nil

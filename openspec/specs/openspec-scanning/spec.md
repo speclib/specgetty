@@ -9,8 +9,14 @@ TBD - created by archiving change replace-git-with-openspec-scanning. Update Pur
 The scanner SHALL identify a directory as an OpenSpec project when it contains a
 direct child directory named `openspec` holding at least one of `config.yaml`,
 `config.yml` or `project.md`. Content of its own is NOT required: a repo that
-declares a `store:` and keeps no `specs/` or `changes/` is still a project, and
-is the only place that repo's own context and rules can be read from.
+declares a `store:` and keeps no `specs/` or `changes/` is still a project,
+because it is the directory a person works in and looks for.
+
+Such a repo's configuration is read by OpenSpec for one key, `store:`. Its
+`schema`, `context`, `rules` and `operations` are inert, and the resolved root's
+configuration is what applies. An earlier reading of this requirement said the
+repo was the only place its own context and rules could be read from, which is
+true and misleading: they can be read there and they are never used.
 
 #### Scenario: Valid openspec directory with config.yaml and specs/
 - **WHEN** the walker encounters a directory containing `openspec/` with `config.yaml` and `specs/` inside

@@ -456,48 +456,39 @@ func TestTitleHasNoPositionWhenNoDocumentIsShown(t *testing.T) {
 
 // --- config tab ---
 
-func TestConfigTabScrollsAndKeepsItsSourceLine(t *testing.T) {
+func TestPropertiesTabScrollsAndNamesItsSource(t *testing.T) {
 	m := makeListModel()
 	m.width, m.height = 80, 30
 	m.projects = scanner.ProjectMap{"/p": scanner.ProjectStatus{Info: scanner.ProjectInfo{
+		Root:          "/p",
+		Origin:        "/p",
 		ConfigFile:    "project.md",
 		ConfigContent: numberedDoc(200),
 	}}}
 	m.level = levelProject
-	m.detailTab = tabConfig
+	m.detailTab = tabProperties
+	m.focus = focusContentPane
 	m.recalcLayout()
 	m.syncDocument()
 
 	if !m.docActive() {
-		t.Fatal("the config tab should own the vertical axis")
+		t.Fatal("the content half of the properties tab should own the vertical axis")
 	}
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
 	if m.docViewport.YOffset() == 0 {
-		t.Error("the config tab did not scroll")
+		t.Error("the properties tab did not scroll")
 	}
 
-	// The source line names the content, so it is drawn above the content's
-	// border rather than inside it. Asserted on the frame, because that is the
-	// only place both the line and the border exist.
-	var sawSource, sawBorder bool
-	for _, l := range strings.Split(m.renderFrame(), "\n") {
-		plain := ansi.Strip(l)
-		if strings.Contains(plain, "openspec/project.md") {
-			if sawBorder {
-				t.Error("the file source line is inside the content border, not above it")
-			}
-			sawSource = true
-		}
-		if strings.Contains(plain, "╭") && !strings.HasPrefix(plain, "╭") {
-			sawBorder = true
-		}
+	// Where the configuration came from is part of what the row reports, so it
+	// heads the document rather than labelling it from outside. The list beside
+	// it is what names the row.
+	_, content, ok := m.currentDocument()
+	if !ok {
+		t.Fatal("expected a document")
 	}
-	if !sawSource {
-		t.Error("the file source line is missing from the frame")
-	}
-	if !sawBorder {
-		t.Error("the content border is missing from the frame")
+	if !strings.Contains(ansi.Strip(content), "openspec/project.md") {
+		t.Error("the configuration's source must be named in the row it belongs to")
 	}
 }
 
@@ -512,7 +503,7 @@ func TestConfigTabResetsWhenTheProjectChanges(t *testing.T) {
 		"/q": scanner.ProjectStatus{Info: info},
 	}
 	m.level = levelProject
-	m.detailTab = tabConfig
+	m.detailTab = tabProperties
 	m.recalcLayout()
 	m.syncDocument()
 	m.docViewport.SetYOffset(60)

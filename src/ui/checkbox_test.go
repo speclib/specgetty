@@ -336,7 +336,7 @@ func TestTasksPaneHasACursorAndOthersDoNot(t *testing.T) {
 		ConfigFile: "project.md", ConfigContent: "# hello\n",
 	}}}
 	other.level = levelProject
-	other.detailTab = tabConfig
+	other.detailTab = tabProperties
 	other.recalcLayout()
 	other.syncDocument()
 	if other.docHasCursor() {

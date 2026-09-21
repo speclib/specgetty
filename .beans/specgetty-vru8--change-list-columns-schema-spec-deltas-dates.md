@@ -5,7 +5,7 @@ status: draft
 type: feature
 priority: normal
 created_at: 2026-09-15T13:45:03Z
-updated_at: 2026-09-15T13:45:21Z
+updated_at: 2026-09-21T16:35:53Z
 blocked_by:
     - specgetty-g4pa
 ---
@@ -50,3 +50,20 @@ archive dir name prefix gives the archived date, not the created date.
 
 The --change-fields mechanism and the column renderer land in the first change.
 This bean adds fields behind that same mechanism.
+
+## Update (2026-09-21)
+
+The open question above is answered by `properties-tab`: shell out to
+`openspec schema which <name> --json` for the path, then parse
+`<path>/schema.yaml` locally. Not per project scan, which was the cost that
+made it look unaffordable: once per schema per project, and only once the
+properties tab is opened.
+
+`scanner.ResolveSchema` is the reader, and `ChangeInfo.Schema` already
+carries each change's recorded schema, so the `schema` column here is a
+display field over data that now exists.
+
+A sortable column would additionally need a sort key per field: the rendered
+value sorts wrong, because `tasks` produces `9/12` and `10/12` and string
+order puts ten before nine. Recorded here because `group-the-change-list`
+considered sorting and deliberately left it to this bean.

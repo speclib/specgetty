@@ -49,17 +49,17 @@ const (
 // viewDetail and viewLog survive above, because which panel gets which title is
 // a different question from where the keyboard is.
 const (
-	focusDetail       = iota // the active tab's content, or an open change's artifact
-	focusSpecsList           // the list half of the specs tab
-	focusSpecsContent        // the document half of the specs tab
-	focusLog                 // the log panel
+	focusDetail      = iota // the active tab's content, or an open change's artifact
+	focusListPane           // the list half of a split tab
+	focusContentPane        // the document half of a split tab
+	focusLog                // the log panel
 )
 
 // Changes lead, because that is what the tool is usually opened to look at.
 const (
-	tabChanges = 0
-	tabSpecs   = 1
-	tabConfig  = 2
+	tabChanges    = 0
+	tabSpecs      = 1
+	tabProperties = 2
 )
 
 const (
@@ -83,7 +83,7 @@ const (
 	exportResult     = 3
 )
 
-var tabNames = []string{"changes", "specs", "config"}
+var tabNames = []string{"changes", "specs", "properties"}
 
 // Message types
 
@@ -186,7 +186,7 @@ type model struct {
 	repoPaths         []string
 	displayNames      []string
 	cursor            int
-	focus             int // focusDetail, focusSpecsList, focusSpecsContent, focusLog
+	focus             int // focusDetail, focusListPane, focusContentPane, focusLog
 	scanning          bool
 	err               error
 	spinner           spinner.Model
@@ -259,10 +259,11 @@ type model struct {
 	watchedRoot       string
 	watchedDirs       []string
 
-	// Which configuration the config tab is showing. A project reading from a
-	// store has more than one, so the tab is a set of panes rather than a
-	// single document.
-	configPane int
+	// Which row of the properties tab is selected, and what is known about the
+	// schemas of the project it belongs to.
+	propSection int
+	schemas     map[string]schemaState
+	schemaFor   string
 }
 
 func newModel(config *scanner.Config, ignoreDirErrors bool, version string) model {
@@ -618,34 +619,19 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "tab":
-			// The specs tab has two halves, so tab moves the keyboard between
-			// them there, and on through the log panel when it is open. The
-			// config tab's sub-tabs follow the same ring: each pane in turn,
-			// then the log, then back to the first pane. Elsewhere there is one
-			// main panel and tab only reaches the log.
-			onSpecs := m.level == levelProject && m.detailTab == tabSpecs &&
-				len(m.currentSpecNames()) > 0
-			configPanes := m.currentConfigPanes()
-			onConfig := m.level == levelProject && m.detailTab == tabConfig &&
-				len(configPanes) > 1
+			// A split tab has two halves, so tab moves the keyboard between
+			// them, and on through the log panel when it is open. Both the
+			// specs tab and the properties tab are splits; elsewhere there is
+			// one main panel and tab only reaches the log.
 			switch {
 			case m.focus == focusLog:
 				m.focus = m.defaultFocus()
-				if onConfig {
-					m.configPane = 0
-				}
-			case onSpecs && m.focus == focusSpecsList:
-				m.focus = focusSpecsContent
-			case onSpecs && m.logVisible:
+			case m.splitTab() && m.focus == focusListPane:
+				m.focus = focusContentPane
+			case m.splitTab() && m.logVisible:
 				m.focus = focusLog
-			case onSpecs:
-				m.focus = focusSpecsList
-			case onConfig && m.configPaneIndex(configPanes) < len(configPanes)-1:
-				m.configPane = m.configPaneIndex(configPanes) + 1
-			case onConfig && m.logVisible:
-				m.focus = focusLog
-			case onConfig:
-				m.configPane = 0
+			case m.splitTab():
+				m.focus = focusListPane
 			case m.logVisible:
 				m.focus = focusLog
 			}
@@ -700,6 +686,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.focus != focusLog && m.detailTab > 0 {
 				m.detailTab--
 				m.focus = m.defaultFocus()
+				cmds = append(cmds, m.enterTab()...)
 			}
 
 		case "right":
@@ -710,6 +697,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.focus != focusLog && m.detailTab < len(tabNames)-1 {
 				m.detailTab++
 				m.focus = m.defaultFocus()
+				cmds = append(cmds, m.enterTab()...)
 			}
 
 		case "1", "2", "3":
@@ -718,6 +706,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.level != levelChange && m.focus != focusLog {
 				m.detailTab = int(key[0] - '1')
 				m.focus = m.defaultFocus()
+				cmds = append(cmds, m.enterTab()...)
 			}
 
 		case "up", "k":
@@ -732,6 +721,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case tabSpecs:
 					if m.specCursor > 0 {
 						m.specCursor--
+					}
+				case tabProperties:
+					if m.propSection > 0 {
+						m.propSection--
 					}
 				case tabChanges:
 					if m.changeCursor > 0 {
@@ -754,6 +747,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case tabSpecs:
 					if m.specCursor < len(m.currentSpecNames())-1 {
 						m.specCursor++
+					}
+				case tabProperties:
+					if m.propSection < len(m.currentSections())-1 {
+						m.propSection++
 					}
 				case tabChanges:
 					if m.changeCursor < len(m.currentRows())-1 {
@@ -876,6 +873,16 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+		}
+
+	case schemaMsg:
+		// An answer for a project that is no longer open is dropped rather than
+		// shown against the wrong one.
+		if msg.project == m.schemaFor {
+			if m.schemas == nil {
+				m.schemas = make(map[string]schemaState)
+			}
+			m.schemas[msg.name] = schemaState{details: msg.details, problem: msg.problem}
 		}
 
 	case pickerLoadedMsg:
@@ -1063,9 +1070,11 @@ func (m model) halfPage() int {
 // defaultFocus is where the keyboard lands when the active tab changes, or when
 // the log panel gives it back. The specs tab opens on its list; everything else
 // has one place for it to be.
+// defaultFocus is where the keyboard lands when a tab becomes active. A split
+// tab starts on its list, because that is what chooses what the content shows.
 func (m model) defaultFocus() int {
-	if m.level == levelProject && m.detailTab == tabSpecs && len(m.currentSpecNames()) > 0 {
-		return focusSpecsList
+	if m.splitTab() {
+		return focusListPane
 	}
 	return focusDetail
 }
@@ -1165,7 +1174,7 @@ func (m *model) resetProjectState() {
 	m.specCursor = 0
 	m.changeCursor = 0
 	m.changeArtifactTab = 0
-	m.configPane = 0
+	m.propSection = 0
 	m.selectedKey = ""
 	m.listMode = m.defaultMode
 	m.searchFocused = false
@@ -1660,21 +1669,6 @@ func (m model) renderDetailPanel(width int, height int) string {
 	// one.
 	boxHeight := height - 5
 
-	// The config tab names its content above the border. A line that says what
-	// the content is belongs with the tab bar; a line that reports on the
-	// content belongs inside. See openspec/specs/panel-layout.
-	//
-	// With more than one configuration to show, the naming line becomes a row
-	// of sub-tabs. It names rather than reports, so it stays outside the box by
-	// the same rule.
-	if m.detailTab == tabConfig {
-		if panes := configPanes(info); len(panes) > 0 {
-			b.WriteString(m.renderConfigPaneRow(panes))
-			b.WriteString("\n\n")
-			boxHeight -= 2
-		}
-	}
-
 	if boxHeight < boxRows+1 {
 		boxHeight = boxRows + 1
 	}
@@ -1689,10 +1683,10 @@ func (m model) renderDetailPanel(width int, height int) string {
 	switch m.detailTab {
 	case tabSpecs:
 		b.WriteString(m.renderSpecsTab(width, boxHeight))
+	case tabProperties:
+		b.WriteString(m.renderPropertiesTab(width, boxHeight))
 	case tabChanges:
 		b.WriteString(contentBox(width, boxHeight, lit, m.renderChangesTab(w, inner)))
-	case tabConfig:
-		b.WriteString(contentBox(width, boxHeight, lit, m.renderConfigTab(w, inner)))
 	default:
 		b.WriteString(contentBox(width, boxHeight, lit, m.renderNotImplemented(w, inner)))
 	}
@@ -1804,9 +1798,9 @@ func (m model) renderSpecsTab(width int, height int) string {
 		}
 		name := info.SpecNames[i]
 		switch {
-		case i == m.specCursor && m.focus == focusSpecsList:
+		case i == m.specCursor && m.focus == focusListPane:
 			listB.WriteString(selectedStyle.Width(listWidth).Render(name))
-		case i == m.specCursor && m.focus == focusSpecsContent:
+		case i == m.specCursor && m.focus == focusContentPane:
 			// Still the selected spec, but the keys belong to the content now.
 			listB.WriteString(dimSelectedStyle.Width(listWidth).Render(name))
 		default:
@@ -1819,97 +1813,139 @@ func (m model) renderSpecsTab(width int, height int) string {
 
 	// Each half says for itself whether the keyboard is in it. Both dim means
 	// the log panel has it.
-	leftBox := contentBox(listOuter, height, m.focus == focusSpecsList, specList)
-	rightBox := contentBox(contentOuter, height, m.focus == focusSpecsContent, specContentStr)
+	leftBox := contentBox(listOuter, height, m.focus == focusListPane, specList)
+	rightBox := contentBox(contentOuter, height, m.focus == focusContentPane, specContentStr)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, " ", rightBox)
 }
 
-func (m model) renderConfigTab(width int, height int) string {
-	if len(m.repoPaths) == 0 {
-		return "No project selected."
-	}
-
-	info := m.projects[m.repoPaths[m.cursor]].Info
-	if len(configPanes(info)) == 0 {
-		return dimStyle.Render("No project configuration found")
-	}
-
-	// The naming line, single or sub-tabbed, is drawn by renderDetailPanel
-	// above the border.
-	return m.docViewport.View()
-}
-
-// headerName is what the header calls the open project.
+// enterTab is what a tab costs when it is selected.
 //
-// The user is standing in the repo, so that is what the header names. A store
-// opened on its own account has no repo to name and is called by its id, which
-// is what every other OpenSpec surface calls it.
-func headerName(info scanner.ProjectInfo, root string) string {
-	if info.ResolvedElsewhere() {
-		return info.Origin
-	}
-	if info.StoreID != "" {
-		return info.StoreID
-	}
-	return root
-}
-
-// storeMark is the header's one sign that the content came from a store.
-//
-// It carries nothing else on purpose. The id, the path, the remote and the git
-// state are answers to a question asked once per project, not once per glance,
-// and they live on the config tab's details pane.
-func storeMark(info scanner.ProjectInfo) string {
-	if !info.FromStore() {
-		return ""
-	}
-	return " " + storeMarkStyle.Render("store")
-}
-
-// renderConfigPaneRow draws the config tab's naming line: one dimmed filename
-// when there is a single configuration, a row of sub-tabs when there is more.
-func (m model) renderConfigPaneRow(panes []configPane) string {
-	if len(panes) == 1 {
-		return dimStyle.Render(panes[0].source)
-	}
-	active := m.configPaneIndex(panes)
-	var b strings.Builder
-	for i, p := range panes {
-		if i > 0 {
-			b.WriteString(" ")
-		}
-		if i == active {
-			b.WriteString(activeTabStyle.Render(p.label))
-		} else {
-			b.WriteString(inactiveTabStyle.Render(p.label))
-		}
-	}
-	return b.String()
-}
-
-// configPaneIndex clamps the selected pane to the set this project has, so
-// switching from a store-backed project to a plain one cannot land past the
-// end.
-func (m model) configPaneIndex(panes []configPane) int {
-	if len(panes) == 0 {
-		return 0
-	}
-	if m.configPane < 0 {
-		return 0
-	}
-	if m.configPane >= len(panes) {
-		return len(panes) - 1
-	}
-	return m.configPane
-}
-
-// currentConfigPanes returns the open project's configuration panes.
-func (m model) currentConfigPanes() []configPane {
-	if len(m.repoPaths) == 0 || m.cursor >= len(m.repoPaths) {
+// Only the properties tab costs anything: its schema rows need a definition
+// located, which is a subprocess. Nothing runs until the tab is asked for, so a
+// session that never opens it never pays.
+func (m *model) enterTab() []tea.Cmd {
+	if m.level != levelProject || m.detailTab != tabProperties {
 		return nil
 	}
-	return configPanes(m.projects[m.repoPaths[m.cursor]].Info)
+	return m.ensureSchemasLoaded()
+}
+
+// splitTab reports whether the active tab draws a list beside its content.
+//
+// The specs tab and the properties tab are both splits, and everything about
+// focus, borders and the vertical keys asks this rather than naming a tab.
+func (m model) splitTab() bool {
+	if m.level != levelProject {
+		return false
+	}
+	switch m.detailTab {
+	case tabSpecs:
+		return len(m.currentSpecNames()) > 0
+	case tabProperties:
+		return len(m.currentSections()) > 0
+	}
+	return false
+}
+
+// currentSections returns the open project's properties rows.
+func (m model) currentSections() []propSection {
+	key := m.currentKey()
+	if key == "" {
+		return nil
+	}
+	return propSections(m.projects[key].Info)
+}
+
+// sectionIndex clamps the selected row to the set this project has, so
+// switching from a project with three schemas to one with a single schema
+// cannot land past the end.
+func (m model) sectionIndex(sections []propSection) int {
+	if len(sections) == 0 {
+		return 0
+	}
+	if m.propSection < 0 {
+		return 0
+	}
+	if m.propSection >= len(sections) {
+		return len(sections) - 1
+	}
+	return m.propSection
+}
+
+// renderPropertiesTab draws the row list and the content beside it, each in its
+// own border, by the same split the specs tab uses.
+func (m model) renderPropertiesTab(width int, height int) string {
+	lit := m.focus != focusLog
+	sections := m.currentSections()
+	if len(sections) == 0 {
+		return contentBox(width, height, lit, dimStyle.Render("No project selected."))
+	}
+
+	listOuter, contentOuter := m.propertiesSplit(width)
+	listWidth := listOuter - boxChrome
+	rows := height - boxRows
+	if rows < 1 {
+		rows = 1
+	}
+
+	active := m.sectionIndex(sections)
+	var listB strings.Builder
+	offset := 0
+	if active >= rows {
+		offset = active - rows + 1
+	}
+	end := offset + rows
+	if end > len(sections) {
+		end = len(sections)
+	}
+	for i := offset; i < end; i++ {
+		if i > offset {
+			listB.WriteString("\n")
+		}
+		label := sections[i].label
+		switch {
+		case i == active && m.focus == focusListPane:
+			listB.WriteString(selectedStyle.Width(listWidth).Render(label))
+		case i == active:
+			// Still the selected row, but the keys belong to the content now.
+			listB.WriteString(dimSelectedStyle.Width(listWidth).Render(label))
+		default:
+			listB.WriteString(normalStyle.Render(label))
+		}
+	}
+
+	list := truncateContent(listB.String(), rows)
+	content := truncateContent(m.docViewport.View(), rows)
+
+	leftBox := contentBox(listOuter, height, m.focus == focusListPane, list)
+	rightBox := contentBox(contentOuter, height, m.focus == focusContentPane, content)
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, " ", rightBox)
+}
+
+// propertiesSplit sizes the row list to its labels rather than to a share of
+// the panel.
+//
+// The specs tab gives its list thirty percent because capability names are
+// long. These labels are short words and a schema name, and the content beside
+// them carries absolute paths, which is the thing that suffers from a narrow
+// column.
+func (m model) propertiesSplit(width int) (listOuter, contentOuter int) {
+	widest := 0
+	for _, s := range m.currentSections() {
+		if n := len([]rune(s.label)); n > widest {
+			widest = n
+		}
+	}
+	listOuter = widest + boxChrome
+	if min := 9 + boxChrome; listOuter < min {
+		listOuter = min
+	}
+	// Never let the list crowd out the content it exists to label.
+	if max := width / 3; listOuter > max {
+		listOuter = max
+	}
+	return listOuter, width - listOuter - 1
 }
 
 var (
@@ -2304,14 +2340,20 @@ func (m model) renderNavBar() string {
 				{"jk/\u2191\u2193", "navigate"},
 				{"\u2190\u2192/1-3", "tabs"},
 			}
-			if m.detailTab == tabConfig && len(m.currentConfigPanes()) > 1 {
-				keys = append(keys,
-					struct{ key, action string }{"tab", "config pane"},
-					struct{ key, action string }{"^f^b", "page"},
-					struct{ key, action string }{"gg/G", "ends"})
+			if m.detailTab == tabProperties && m.splitTab() {
+				if m.focus == focusContentPane {
+					keys = append(keys,
+						struct{ key, action string }{"tab", "focus list"},
+						struct{ key, action string }{"^f^b", "page"},
+						struct{ key, action string }{"^d^u", "half"},
+						struct{ key, action string }{"gg/G", "ends"})
+				} else {
+					keys = append(keys,
+						struct{ key, action string }{"tab", "focus content"})
+				}
 			}
 			if m.detailTab == tabSpecs && len(m.currentSpecNames()) > 0 {
-				if m.focus == focusSpecsContent {
+				if m.focus == focusContentPane {
 					keys = append(keys,
 						struct{ key, action string }{"tab", "focus list"},
 						struct{ key, action string }{"^f^b", "page"},

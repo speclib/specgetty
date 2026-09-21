@@ -316,7 +316,7 @@ func TestTheHeaderAndTheRowsBelowItShareAColumn(t *testing.T) {
 	// they look one column further in than they are drawn. What must hold is
 	// that the chip's paint starts right after the gutter.
 	for _, l := range strings.Split(m.renderFrame(), "\n") {
-		if !strings.Contains(ansi.Strip(l), "changes") || !strings.Contains(ansi.Strip(l), "config") {
+		if !strings.Contains(ansi.Strip(l), "changes") || !strings.Contains(ansi.Strip(l), "properties") {
 			continue
 		}
 		if !strings.HasPrefix(l, "\x1b[32m│\x1b[m \x1b[") {
@@ -555,7 +555,7 @@ func TestTheChangeTableKeepsItsColumnsInsideTheBorder(t *testing.T) {
 
 func TestEveryViewFitsTheTerminalWithTheBorderDrawn(t *testing.T) {
 	for _, sz := range [][2]int{{100, 30}, {72, 24}, {60, 20}} {
-		for _, tab := range []int{tabChanges, tabSpecs, tabConfig} {
+		for _, tab := range []int{tabChanges, tabSpecs, tabProperties} {
 			m := makeViewModel()
 			m.width, m.height = sz[0], sz[1]
 			m.detailTab = tab
@@ -617,8 +617,8 @@ func TestTheLitBorderIsTheOneHoldingTheKeyboard(t *testing.T) {
 		focus     int
 		wantInner []bool // list, content
 	}{
-		{"the spec list has it", focusSpecsList, []bool{true, false}},
-		{"the spec content has it", focusSpecsContent, []bool{false, true}},
+		{"the spec list has it", focusListPane, []bool{true, false}},
+		{"the spec content has it", focusContentPane, []bool{false, true}},
 		{"the log panel has it", focusLog, []bool{false, false}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -637,7 +637,7 @@ func TestTheLitBorderIsTheOneHoldingTheKeyboard(t *testing.T) {
 }
 
 func TestTheTwoSpecsBordersAreNeverLitTogether(t *testing.T) {
-	for _, focus := range []int{focusSpecsList, focusSpecsContent, focusLog} {
+	for _, focus := range []int{focusListPane, focusContentPane, focusLog} {
 		inner := litContentBorders(specsFrame(t, focus, true))
 		n := 0
 		for _, l := range inner {
@@ -660,8 +660,8 @@ func TestThePanelBorderStillMeansWhatItAlwaysMeant(t *testing.T) {
 		want  bool
 	}{
 		{focusDetail, true},
-		{focusSpecsList, true},
-		{focusSpecsContent, true},
+		{focusListPane, true},
+		{focusContentPane, true},
 		{focusLog, false},
 	} {
 		m := makeViewModel()

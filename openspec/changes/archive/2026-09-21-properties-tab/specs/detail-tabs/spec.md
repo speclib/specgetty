@@ -1,9 +1,4 @@
-# detail-tabs Specification
-
-## Purpose
-TBD - created by archiving change overview-tab-with-stats. Update Purpose after archive.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Tab header in detail panel
 The detail panel SHALL display a tab header row showing the available views,
@@ -37,10 +32,3 @@ and no search prompt is open.
 #### Scenario: Number keys while a change is open
 - **WHEN** a change is open and the user presses a number key
 - **THEN** the project tab bar SHALL NOT change
-
-### Requirement: Unimplemented tabs show placeholder
-Tabs other than overview SHALL display a "Not yet implemented" message.
-
-#### Scenario: Selecting an unimplemented tab
-- **WHEN** the user switches to the specs, changes, config, or search tab
-- **THEN** the detail panel content SHALL display "Not yet implemented" centered in the panel

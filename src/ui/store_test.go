@@ -31,6 +31,8 @@ func storeBackedModel() model {
 					Origin:              origin,
 					StoreID:             "nivis-tunnel",
 					SpecCount:           6,
+					DefaultSchema:       "spec-driven",
+					SchemaUsage:         []scanner.SchemaUsage{{Name: "spec-driven", Changes: 8, IsDefault: true}},
 					SpecNames:           []string{"tunnel-relay"},
 					SpecContents:        map[string]string{"tunnel-relay": "# tunnel-relay\n"},
 					ConfigFile:          "config.yaml",
@@ -67,6 +69,8 @@ func plainModel() model {
 				Info: scanner.ProjectInfo{
 					Root: root, Origin: root,
 					SpecCount:     22,
+					DefaultSchema: "spec-driven",
+					SchemaUsage:   []scanner.SchemaUsage{{Name: "spec-driven", Changes: 34, IsDefault: true}},
 					ConfigFile:    "config.yaml",
 					ConfigContent: "schema: spec-driven\n",
 				},
@@ -84,12 +88,14 @@ func storeItselfModel() model {
 		height:    40,
 		repoPaths: []string{root},
 		cursor:    0,
-		detailTab: tabConfig,
+		detailTab: tabProperties,
 		projects: scanner.ProjectMap{
 			root: scanner.ProjectStatus{
 				Info: scanner.ProjectInfo{
 					Root: root, Origin: root,
 					StoreID:       "nivis-tunnel",
+					DefaultSchema: "spec-driven",
+					SchemaUsage:   []scanner.SchemaUsage{{Name: "spec-driven", Changes: 8, IsDefault: true}},
 					ConfigFile:    "config.yaml",
 					ConfigContent: "schema: spec-driven\n",
 					Store: &scanner.StoreInfo{
@@ -164,61 +170,90 @@ func TestTheHeaderMarkCarriesNothingElse(t *testing.T) {
 
 // --- 5.1 to 5.5 the config panes ---
 
-func TestConfigPanesForAStoreBackedProject(t *testing.T) {
-	info := storeBackedModel().projects["/work/nivis-tunnel"].Info
-	panes := configPanes(info)
-
-	if len(panes) != 3 {
-		t.Fatalf("got %d panes, want repo, store and store details", len(panes))
-	}
-	want := []string{"repo", "store", "store details"}
-	for i, w := range want {
-		if panes[i].label != w {
-			t.Errorf("pane %d: got %q, want %q", i, panes[i].label, w)
-		}
-	}
-	if !strings.Contains(panes[0].content, "repo only") {
-		t.Error("the repo pane must show the repo's own configuration")
-	}
-	if !strings.Contains(panes[1].content, "shared by both repos") {
-		t.Error("the store pane must show the store's configuration")
-	}
-}
-
-func TestConfigPanesForAPlainProject(t *testing.T) {
-	panes := configPanes(plainModel().projects["/work/specgetty"].Info)
-	if len(panes) != 1 {
-		t.Fatalf("got %d panes, want one", len(panes))
-	}
-	if panes[0].source != "openspec/config.yaml" {
-		t.Errorf("got %q, want the filename", panes[0].source)
-	}
-}
-
-func TestConfigPanesForAStoreOpenedDirectly(t *testing.T) {
-	// No repo to name, so no repo pane is offered.
-	panes := configPanes(storeItselfModel().projects["/stores/nivis-tunnel"].Info)
-	for _, p := range panes {
-		if p.label == "repo" {
-			t.Error("a store opened directly has no originating repo")
-		}
-	}
-	if len(panes) != 2 {
-		t.Fatalf("got %d panes, want the store's configuration and its details", len(panes))
+func TestSectionsAreTheSameShapeForEveryProject(t *testing.T) {
+	// project, a row per schema in use, store. A store-backed project has the
+	// same shape as any other, because the configuration that applies is a
+	// single file either way.
+	for _, tc := range []struct {
+		name string
+		m    model
+	}{
+		{"store-backed", storeBackedModel()},
+		{"plain", plainModel()},
+		{"the store itself", storeItselfModel()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sections := propSections(tc.m.projects[tc.m.currentKey()].Info)
+			if len(sections) != 3 {
+				t.Fatalf("got %d rows, want project, one schema and store", len(sections))
+			}
+			if sections[0].label != "project" || sections[0].kind != sectionConfig {
+				t.Errorf("first row: %+v", sections[0])
+			}
+			if sections[1].kind != sectionSchema || sections[1].label != "spec-driven" {
+				t.Errorf("schema row: %+v", sections[1])
+			}
+			if sections[2].label != "store" || sections[2].kind != sectionStore {
+				t.Errorf("last row: %+v", sections[2])
+			}
+		})
 	}
 }
 
-func TestPlainProjectConfigTabDrawsNoSubTabRow(t *testing.T) {
+func TestSectionsGrowWithTheSchemasInUse(t *testing.T) {
 	m := plainModel()
-	m.detailTab = tabConfig
-	m.syncDocument()
-	out := plainText(m)
-
-	if !strings.Contains(out, "openspec/config.yaml") {
-		t.Error("a single configuration keeps its dimmed filename")
+	info := m.projects["/work/specgetty"].Info
+	info.SchemaUsage = []scanner.SchemaUsage{
+		{Name: "spec-driven", Changes: 24, IsDefault: true},
+		{Name: "tinychange", Changes: 10},
 	}
-	if strings.Contains(out, "store details") {
-		t.Error("a plain project has no sub-tabs")
+	sections := propSections(info)
+	if len(sections) != 4 {
+		t.Fatalf("got %d rows, want project, two schemas and store", len(sections))
+	}
+	if sections[1].label != "spec-driven" || sections[2].label != "tinychange" {
+		t.Errorf("schema rows: %+v", sections)
+	}
+}
+
+func TestTheProjectRowNamesTheFileItCameFrom(t *testing.T) {
+	plain := propSections(plainModel().projects["/work/specgetty"].Info)
+	if plain[0].source != "openspec/config.yaml" {
+		t.Errorf("got %q, want the filename", plain[0].source)
+	}
+
+	// For a store-backed project the content came from the store, and nothing
+	// else on screen would say so.
+	backed := propSections(storeBackedModel().projects["/work/nivis-tunnel"].Info)
+	if !strings.Contains(backed[0].source, "/stores/nivis-tunnel/openspec/config.yaml") {
+		t.Errorf("got %q, want the store's path", backed[0].source)
+	}
+}
+
+func TestTheStoreOpenedDirectlyNamesNoDeclaringFile(t *testing.T) {
+	out := renderStoreSection(storeItselfModel().projects["/stores/nivis-tunnel"].Info)
+	if strings.Contains(out, "declared_in") {
+		t.Errorf("there is no repo that pointed here:\n%s", out)
+	}
+	if !strings.Contains(out, "store: nivis-tunnel") {
+		t.Errorf("the store must still name itself:\n%s", out)
+	}
+}
+
+func TestPlainProjectPropertiesTabHasTheSameShape(t *testing.T) {
+	m := plainModel()
+	m.detailTab = tabProperties
+	m.recalcLayout()
+	m.syncDocument()
+	out := ansi.Strip(m.renderFrame())
+
+	for _, want := range []string{"project", "spec-driven", "store"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("row %q missing from a plain project:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, "openspec/config.yaml") {
+		t.Error("the configuration's source is named")
 	}
 }
 
@@ -226,12 +261,12 @@ func TestPlainProjectConfigTabDrawsNoSubTabRow(t *testing.T) {
 
 func TestStoreDetailsReportLocalFactsOnly(t *testing.T) {
 	info := storeBackedModel().projects["/work/nivis-tunnel"].Info
-	out := storeDetails(info)
+	out := renderStoreSection(info)
 
 	for _, want := range []string{
 		"store: nivis-tunnel",
 		"root: /stores/nivis-tunnel",
-		"origin: /work/nivis-tunnel",
+		"declared_in: /work/nivis-tunnel",
 		"registered_remote: git@example.com:n/stores.git",
 		"uncommitted_changes: no",
 		"ahead: 2",
@@ -247,7 +282,7 @@ func TestStoreDetailsReportLocalFactsOnly(t *testing.T) {
 }
 
 func TestStoreDetailsWithoutAGitWorkingCopy(t *testing.T) {
-	out := storeDetails(storeItselfModel().projects["/stores/nivis-tunnel"].Info)
+	out := renderStoreSection(storeItselfModel().projects["/stores/nivis-tunnel"].Info)
 	if !strings.Contains(out, "not a git working copy") {
 		t.Errorf("want a plain report rather than an error:\n%s", out)
 	}
@@ -260,7 +295,7 @@ func TestStoreDetailsWithNoUpstream(t *testing.T) {
 	m := storeBackedModel()
 	info := m.projects["/work/nivis-tunnel"].Info
 	info.Store.Git = &scanner.StoreGit{IsRepo: true, DirtyKnown: true, Dirty: true}
-	out := storeDetails(info)
+	out := renderStoreSection(info)
 
 	if !strings.Contains(out, "uncommitted_changes: yes") {
 		t.Error("a dirty working copy must say so")
@@ -329,20 +364,10 @@ func TestAnUnfollowedDeclarationIsReportedOnTheSpecsTab(t *testing.T) {
 
 func TestAnUnfollowedDeclarationGetsAStoreDetailsPane(t *testing.T) {
 	info := problemModel().projects["/work/nivis-tunnel"].Info
-	panes := configPanes(info)
-
-	var details string
-	for _, p := range panes {
-		if p.kind == paneDetails {
-			details = p.content
-		}
-	}
-	if details == "" {
-		t.Fatal("an unresolved declaration still gets a details pane")
-	}
+	details := renderStoreSection(info)
 	for _, want := range []string{"nivis-tunnel", "openspec/config.yaml", "not among the registered stores"} {
 		if !strings.Contains(details, want) {
-			t.Errorf("details missing %q:\n%s", want, details)
+			t.Errorf("the store row must report the failure, missing %q:\n%s", want, details)
 		}
 	}
 }
@@ -355,9 +380,9 @@ func TestAPlainProjectHasNoProblemLine(t *testing.T) {
 
 // --- 5.10 each pane is its own document ---
 
-func TestSwitchingConfigPaneChangesTheDocument(t *testing.T) {
+func TestSwitchingSectionChangesTheDocument(t *testing.T) {
 	m := storeBackedModel()
-	m.detailTab = tabConfig
+	m.detailTab = tabProperties
 	m.recalcLayout()
 	m.syncDocument()
 
@@ -365,57 +390,80 @@ func TestSwitchingConfigPaneChangesTheDocument(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a document")
 	}
-	if !strings.Contains(ansi.Strip(firstContent), "repo only") {
-		t.Error("the first pane is the repo's configuration")
+	// The one configuration that applies is the root's, which for this project
+	// is the store's file.
+	if !strings.Contains(ansi.Strip(firstContent), "shared by both repos") {
+		t.Errorf("the project row shows the configuration in force:\n%s", ansi.Strip(firstContent))
+	}
+	if strings.Contains(ansi.Strip(firstContent), "repo only") {
+		t.Error("the declaring repo's configuration is inert and must not be shown as in force")
 	}
 
-	m.configPane = 1
+	m.propSection = 2
 	m.syncDocument()
 	second, secondContent, _ := m.currentDocument()
 
 	if first == second {
-		t.Error("a different pane is a different document")
+		t.Error("a different row is a different document")
 	}
-	if !strings.Contains(ansi.Strip(secondContent), "shared by both repos") {
-		t.Error("the second pane is the store's configuration")
+	if !strings.Contains(ansi.Strip(secondContent), "store: nivis-tunnel") {
+		t.Errorf("the store row reports the store:\n%s", ansi.Strip(secondContent))
 	}
 }
 
-func TestConfigPaneIndexIsClampedToTheProject(t *testing.T) {
-	// Switching from a store-backed project to a plain one must not land past
-	// the end of a shorter set of panes.
+func TestSectionIndexIsClampedToTheProject(t *testing.T) {
+	// Switching from a project with three schemas to one with a single schema
+	// must not land past the end of a shorter list.
 	m := plainModel()
-	m.configPane = 2
-	panes := configPanes(m.projects["/work/specgetty"].Info)
-	if got := m.configPaneIndex(panes); got != 0 {
-		t.Errorf("got %d, want the only pane", got)
+	m.propSection = 9
+	sections := propSections(m.projects["/work/specgetty"].Info)
+	if got := m.sectionIndex(sections); got != len(sections)-1 {
+		t.Errorf("got %d, want the last row", got)
+	}
+	m.propSection = -1
+	if got := m.sectionIndex(sections); got != 0 {
+		t.Errorf("got %d, want the first row", got)
 	}
 }
 
-func TestTabCyclesTheConfigPanes(t *testing.T) {
+func TestTabMovesFocusBetweenTheHalves(t *testing.T) {
 	m := storeBackedModel()
-	m.detailTab = tabConfig
-	m.focus = focusDetail
+	m.detailTab = tabProperties
+	m.focus = m.defaultFocus()
 	m.recalcLayout()
 
-	for _, want := range []int{1, 2, 0} {
-		updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.focus != focusListPane {
+		t.Fatalf("a split tab starts on its list, got %d", m.focus)
+	}
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := updated.(model).focus; got != focusContentPane {
+		t.Errorf("tab moves to the content, got %d", got)
+	}
+	updated, _ = updated.(model).Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := updated.(model).focus; got != focusListPane {
+		t.Errorf("and back to the list, got %d", got)
+	}
+}
+
+func TestVerticalKeysMoveTheSelectedSection(t *testing.T) {
+	m := storeBackedModel()
+	m.detailTab = tabProperties
+	m.focus = focusListPane
+	m.recalcLayout()
+
+	for _, want := range []int{1, 2, 2} {
+		updated, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 		m = updated.(model)
-		if m.configPane != want {
-			t.Fatalf("got pane %d, want %d", m.configPane, want)
+		if m.propSection != want {
+			t.Fatalf("got row %d, want %d", m.propSection, want)
 		}
 	}
-}
-
-func TestTabDoesNothingToASingleConfigPane(t *testing.T) {
-	m := plainModel()
-	m.detailTab = tabConfig
-	m.focus = focusDetail
-	m.recalcLayout()
-
-	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if updated.(model).configPane != 0 {
-		t.Error("one pane has nothing to cycle through")
+	for _, want := range []int{1, 0, 0} {
+		updated, _ := m.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+		m = updated.(model)
+		if m.propSection != want {
+			t.Fatalf("got row %d, want %d", m.propSection, want)
+		}
 	}
 }
 
@@ -743,7 +791,7 @@ func TestConfigTabGeometryIsUnchangedByTheSubTabRow(t *testing.T) {
 			t.Run(fmt.Sprintf("%s %dx%d", tc.name, size.w, size.h), func(t *testing.T) {
 				m := tc.m
 				m.width, m.height = size.w, size.h
-				m.detailTab = tabConfig
+				m.detailTab = tabProperties
 				m.recalcLayout()
 				m.syncDocument()
 
@@ -759,47 +807,68 @@ func TestConfigTabGeometryIsUnchangedByTheSubTabRow(t *testing.T) {
 	}
 }
 
-func TestPlainConfigTabKeepsItsFilenameAboveTheBorder(t *testing.T) {
-	m := plainModel()
-	m.detailTab = tabConfig
+func TestPropertiesTabDrawsTwoBoxesSideBySide(t *testing.T) {
+	// The same split the specs tab uses: a narrow list of rows and a wide
+	// content pane, each in its own border.
+	m := storeBackedModel()
+	m.detailTab = tabProperties
+	m.focus = focusListPane
 	m.recalcLayout()
 	m.syncDocument()
 
 	lines := strings.Split(ansi.Strip(m.renderFrame()), "\n")
-	filenameRow := rowContaining(lines, 0, "openspec/config.yaml")
-	if filenameRow < 0 {
-		t.Fatal("the filename must be shown")
-	}
-	// The panel draws its own border at the top of the frame, so the box that
-	// matters is the first one below the naming row.
-	if rowContaining(lines, filenameRow+1, "╭") < 0 {
-		t.Error("the filename names the content, so the content box must open below it")
-	}
-}
-
-// rowContaining returns the first index at or after from whose line holds sub.
-func rowContaining(lines []string, from int, sub string) int {
-	for i := from; i < len(lines); i++ {
-		if strings.Contains(lines[i], sub) {
-			return i
+	var twoBoxRows int
+	for _, l := range lines {
+		if strings.Count(l, "╭") == 2 || strings.Count(l, "╰") == 2 {
+			twoBoxRows++
 		}
 	}
-	return -1
+	if twoBoxRows != 2 {
+		t.Errorf("got %d rows opening or closing two boxes, want a top and a bottom", twoBoxRows)
+	}
+
+	// Every row label is in the list half, left of the content.
+	joined := strings.Join(lines, "\n")
+	for _, label := range []string{"project", "spec-driven", "store"} {
+		if !strings.Contains(joined, label) {
+			t.Errorf("row %q is not on screen", label)
+		}
+	}
 }
 
-func TestSubTabRowSitsAboveTheBorder(t *testing.T) {
+func TestPropertiesListIsSizedToItsLabels(t *testing.T) {
+	// The specs tab gives its list thirty percent, which is right for
+	// capability names and wrong for three short words. The content beside
+	// these rows carries absolute paths, which is what suffers from a narrow
+	// column.
 	m := storeBackedModel()
-	m.detailTab = tabConfig
+	m.width, m.height = 92, 30
+	m.detailTab = tabProperties
 	m.recalcLayout()
-	m.syncDocument()
 
-	lines := strings.Split(ansi.Strip(m.renderFrame()), "\n")
-	subTabRow := rowContaining(lines, 0, "store details")
-	if subTabRow < 0 {
-		t.Fatal("the sub-tabs must be shown")
+	panel := m.panelContentWidth()
+	_, propContent := m.propertiesSplit(panel)
+	_, specsContent := specsSplit(panel)
+
+	if propContent <= specsContent {
+		t.Errorf("properties content %d, specs content %d: the label-sized list must leave more room",
+			propContent, specsContent)
 	}
-	if rowContaining(lines, subTabRow+1, "╭") < 0 {
-		t.Error("sub-tabs name the content, so the content box must open below them")
+}
+
+func TestPropertiesListNeverCrowdsOutTheContent(t *testing.T) {
+	m := storeBackedModel()
+	for _, w := range []int{60, 92, 120} {
+		m.width, m.height = w, 24
+		m.recalcLayout()
+		listOuter, contentOuter := m.propertiesSplit(m.panelContentWidth())
+		if listOuter+contentOuter+1 != m.panelContentWidth() {
+			t.Errorf("width %d: halves and gap are %d, want %d",
+				w, listOuter+contentOuter+1, m.panelContentWidth())
+		}
+		if listOuter > m.panelContentWidth()/3 {
+			t.Errorf("width %d: the list takes %d of %d", w, listOuter, m.panelContentWidth())
+		}
 	}
 }
 
@@ -931,33 +1000,33 @@ func TestConfigTabKeepsItsPositionAcrossATabSwitch(t *testing.T) {
 	// The retention the single-configuration tab already had, kept for the
 	// active sub-tab: leaving the config tab and coming back does not rewind.
 	m := storeBackedModel()
-	m.detailTab = tabConfig
-	m.configPane = 1
+	m.detailTab = tabProperties
+	m.propSection = 1
 	m.recalcLayout()
 	m.syncDocument()
 
 	before := m.docKey
 	m.detailTab = tabChanges
 	m.syncDocument()
-	m.detailTab = tabConfig
+	m.detailTab = tabProperties
 	m.syncDocument()
 
 	if m.docKey != before {
 		t.Errorf("the same sub-tab is the same document: got %q, want %q", m.docKey, before)
 	}
-	if m.configPane != 1 {
-		t.Errorf("the active sub-tab survives a tab switch: got %d", m.configPane)
+	if m.propSection != 1 {
+		t.Errorf("the active sub-tab survives a tab switch: got %d", m.propSection)
 	}
 }
 
 func TestSelectingAnotherConfigPaneStartsAtTheTop(t *testing.T) {
 	m := storeBackedModel()
-	m.detailTab = tabConfig
+	m.detailTab = tabProperties
 	m.recalcLayout()
 	m.syncDocument()
 	first := m.docKey
 
-	m.configPane = 1
+	m.propSection = 1
 	m.syncDocument()
 
 	if m.docKey == first {
@@ -968,20 +1037,22 @@ func TestSelectingAnotherConfigPaneStartsAtTheTop(t *testing.T) {
 	}
 }
 
-func TestSwitchingProjectResetsTheConfigPane(t *testing.T) {
+func TestSwitchingProjectResetsTheSelectedSection(t *testing.T) {
 	m := storeBackedModel()
-	m.detailTab = tabConfig
-	m.configPane = 2
+	m.detailTab = tabProperties
+	m.propSection = 2
 	m.resetProjectState()
-	if m.configPane != 0 {
-		t.Errorf("got %d, want the first sub-tab on a new project", m.configPane)
+	if m.propSection != 0 {
+		t.Errorf("got %d, want the first row on a new project", m.propSection)
 	}
 }
 
-// TestPickerOpenedRepoHasAllThreeConfigPanes closes the gap that prompted this
-// change. A store row has no origin, so its config tab could never show the
-// repo's own context and rules; opening the repo instead can.
-func TestPickerOpenedRepoHasAllThreeConfigPanes(t *testing.T) {
+// TestPickerOpenedRepoReportsItsInertDeclarations replaces a test written on a
+// premise that turned out to be false. The previous change believed a declaring
+// repo's own context and rules still applied to it and made them reachable.
+// They do not: OpenSpec reads that file for `store:` alone. So what the store
+// row owes the user is the opposite report, that those keys do nothing.
+func TestPickerOpenedRepoReportsItsInertDeclarations(t *testing.T) {
 	repo := "/work/nivis-tunnel"
 	row := projectRow{
 		path:    repo,
@@ -990,7 +1061,10 @@ func TestPickerOpenedRepoHasAllThreeConfigPanes(t *testing.T) {
 			Root: "/stores/nivis-tunnel", Origin: repo, StoreID: "nivis-tunnel",
 			ConfigFile: "config.yaml", ConfigContent: "schema: spec-driven\n# shared\n",
 			OriginConfigFile: "config.yaml", OriginConfigContent: "store: nivis-tunnel\ncontext: repo only\n",
-			Store: &scanner.StoreInfo{ID: "nivis-tunnel", Root: "/stores/nivis-tunnel", Origin: repo},
+			InertKeys:     []string{"context", "rules"},
+			DefaultSchema: "spec-driven",
+			SchemaUsage:   []scanner.SchemaUsage{{Name: "spec-driven", IsDefault: true}},
+			Store:         &scanner.StoreInfo{ID: "nivis-tunnel", Root: "/stores/nivis-tunnel", Origin: repo},
 		},
 	}
 	m := model{width: 100, height: 40, pickerOpen: true, pickerAll: []projectRow{row}}
@@ -1006,18 +1080,19 @@ func TestPickerOpenedRepoHasAllThreeConfigPanes(t *testing.T) {
 		t.Errorf("root: got %q, want the store", um.currentRoot())
 	}
 
-	panes := um.currentConfigPanes()
-	if len(panes) != 3 {
-		t.Fatalf("got %d panes, want repo, store and store details", len(panes))
+	out := renderStoreSection(um.projects[repo].Info)
+	if !strings.Contains(out, "context, rules") {
+		t.Errorf("the inert keys must be named:\n%s", out)
 	}
-	if !strings.Contains(panes[0].content, "repo only") {
-		t.Error("the repo's own context must be reachable from a picker-opened row")
+	if !strings.Contains(out, "any effect") {
+		t.Errorf("and said to have no effect:\n%s", out)
 	}
 }
 
 func TestPlainProjectIsUnchangedByTheStoreColumn(t *testing.T) {
 	// Every plain-project behaviour has to read as it did before stores
-	// existed: same name, same blank store column, one config pane.
+	// existed: same name, same blank store column, and a store row that says
+	// the content is local rather than being absent.
 	projects := scanner.ProjectMap{
 		"/work/specgetty": {Info: scanner.ProjectInfo{
 			Root: "/work/specgetty", Origin: "/work/specgetty",
@@ -1032,8 +1107,8 @@ func TestPlainProjectIsUnchangedByTheStoreColumn(t *testing.T) {
 			t.Errorf("a plain project names no store, got %q", f.value(rows[0]))
 		}
 	}
-	if len(configPanes(rows[0].info)) != 1 {
-		t.Error("a plain project has one configuration")
+	if got := renderStoreSection(rows[0].info); !strings.Contains(got, "store: local") {
+		t.Errorf("a plain project reads as local:\n%s", got)
 	}
 	if storeMark(rows[0].info) != "" {
 		t.Error("a plain project carries no store mark")
@@ -1073,7 +1148,7 @@ func TestCurrentKeyAndRootWithNoProject(t *testing.T) {
 	if m.rescanCurrent() != nil {
 		t.Error("there is nothing to rescan")
 	}
-	if got := m.currentConfigPanes(); got != nil {
+	if got := m.currentSections(); got != nil {
 		t.Errorf("got %v, want no panes", got)
 	}
 }

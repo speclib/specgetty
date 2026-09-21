@@ -37,11 +37,16 @@ func (m model) docRegion() (width, height int) {
 		width = contentOuter - boxChrome
 		height = panelH - 5 - boxRows
 
+	case m.detailTab == tabProperties:
+		// The same split, sized to its own labels rather than to a share.
+		_, contentOuter := m.propertiesSplit(m.panelContentWidth())
+		width = contentOuter - boxChrome
+		height = panelH - 5 - boxRows
+
 	default:
-		// The project header takes four rows and the tab bar one, then the
-		// config pane's source line and the blank line under it, all above the
-		// box.
-		height = panelH - 5 - 2 - boxRows
+		// The project header takes four rows and the tab bar one, all above
+		// the box.
+		height = panelH - 5 - boxRows
 	}
 
 	if width < 1 {
@@ -77,12 +82,15 @@ func (m model) docActive() bool {
 
 	info := m.projects[m.repoPaths[m.cursor]].Info
 	switch m.detailTab {
-	case tabConfig:
-		return len(configPanes(info)) > 0
+	case tabProperties:
+		// The properties tab has two halves. The vertical keys belong to the
+		// content only while the content holds the keyboard, exactly as on the
+		// specs tab.
+		return m.focus == focusContentPane && len(propSections(info)) > 0
 	case tabSpecs:
 		// The specs tab has two halves. The vertical keys belong to the content
 		// only while the content holds the keyboard.
-		return m.focus == focusSpecsContent &&
+		return m.focus == focusContentPane &&
 			m.specCursor < len(info.SpecNames)
 	}
 	return false
@@ -220,21 +228,38 @@ func (m model) currentDoc() (document, bool) {
 		}
 		return document{key: key, content: renderMarkdown(content, width)}, true
 
-	case m.level == levelProject && m.detailTab == tabConfig:
-		panes := m.currentConfigPanes()
-		if len(panes) == 0 {
+	case m.level == levelProject && m.detailTab == tabProperties:
+		sections := m.currentSections()
+		if len(sections) == 0 {
 			return document{}, false
 		}
-		i := m.configPaneIndex(panes)
-		pane := panes[i]
-		// Keyed by the pane, so selecting a different sub-tab is moving to a
+		info := m.projects[project].Info
+		sec := sections[m.sectionIndex(sections)]
+		// Keyed by the row, so selecting a different one is moving to a
 		// different document and starts at the top, by the same rule the spec
 		// list and the artifact sub-tabs already follow.
-		key := strings.Join([]string{project, "config", pane.label, pane.source}, docKeySep)
-		if pane.md {
-			return document{key: key, content: renderMarkdown(pane.content, width)}, true
+		key := strings.Join([]string{project, "properties", sec.label}, docKeySep)
+
+		switch sec.kind {
+		case sectionConfig:
+			if info.ConfigFile == "" {
+				return document{key: key, content: dimStyle.Render("No project configuration found")}, true
+			}
+			// Where the configuration came from is part of what this row
+			// reports, not a label on it: for a store-backed project the file
+			// is the store's, and nothing else on screen would say so. The
+			// list beside it is the chrome that names the row.
+			head := dimStyle.Render("# "+sec.source) + "\n\n"
+			if sec.md {
+				return document{key: key, content: head + renderMarkdown(info.ConfigContent, width)}, true
+			}
+			return document{key: key, content: head + renderYAML(info.ConfigContent, width)}, true
+		case sectionSchema:
+			body := renderSchemaSection(info, sec.schema, m.schemaStateOf(sec.schema))
+			return document{key: key, content: renderYAML(body, width)}, true
+		default:
+			return document{key: key, content: renderYAML(renderStoreSection(info), width)}, true
 		}
-		return document{key: key, content: renderYAML(pane.content, width)}, true
 	}
 
 	return document{}, false

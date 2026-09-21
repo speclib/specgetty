@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The config tab is now `properties`, and reports what a project is rather than
+  only what is in its config file. Its rows sit in a list beside their content,
+  the same split the specs tab uses: the one configuration that applies, a row
+  for each workflow schema the project's changes record, and the store the
+  content comes from.
+- Workflow schemas are reported: which ones the project's changes use and how
+  many changes are on each, plus each schema's source, artifact chain and apply
+  rule. A schema that overrides a built-in says so. Definitions are located with
+  `openspec schema which`, so the rows need the `openspec` CLI for their detail
+  but not for the counts.
+- An open change names the schema it records.
+- A repo that declares a store is told which of its own configuration keys have
+  no effect. OpenSpec reads such a file for `store:` alone and takes `schema`,
+  `context`, `rules` and `operations` from the store, and warns about none of
+  them.
+
 - OpenSpec stores are supported. A repo whose `openspec/` holds only a
   `config.yaml` naming a `store:` now opens on that store's specs and changes
   instead of reporting an empty project, resolved through the registry at

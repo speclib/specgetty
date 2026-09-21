@@ -56,7 +56,7 @@ func twoSpecs(t *testing.T) model {
 
 func TestSpecsFocusStartsOnTheList(t *testing.T) {
 	m := twoSpecs(t)
-	if m.focus != focusSpecsList {
+	if m.focus != focusListPane {
 		t.Errorf("focus is %d, want the list", m.focus)
 	}
 	if m.docActive() {
@@ -67,14 +67,14 @@ func TestSpecsFocusStartsOnTheList(t *testing.T) {
 func TestSpecsFocusResetsWhenLeavingTheTab(t *testing.T) {
 	m := twoSpecs(t)
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus != focusSpecsContent {
+	if m.focus != focusContentPane {
 		t.Fatal("expected the content to take the keyboard")
 	}
 
 	// Away to another tab and back.
 	m = press(m, tea.KeyPressMsg{Code: '1', Text: "1"})
 	m = press(m, tea.KeyPressMsg{Code: '2', Text: "2"})
-	if m.focus != focusSpecsList {
+	if m.focus != focusListPane {
 		t.Errorf("focus is %d after returning, want the list", m.focus)
 	}
 
@@ -82,7 +82,7 @@ func TestSpecsFocusResetsWhenLeavingTheTab(t *testing.T) {
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
-	if m.focus != focusSpecsList {
+	if m.focus != focusListPane {
 		t.Errorf("focus is %d after changing tab with the arrows, want the list", m.focus)
 	}
 }
@@ -94,11 +94,11 @@ func TestTabCyclesTheSpecsHalves(t *testing.T) {
 	m.logVisible = false
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus != focusSpecsContent {
+	if m.focus != focusContentPane {
 		t.Fatalf("first tab gave focus %d, want the content", m.focus)
 	}
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus != focusSpecsList {
+	if m.focus != focusListPane {
 		t.Errorf("second tab gave focus %d, want the list", m.focus)
 	}
 }
@@ -109,7 +109,7 @@ func TestTabCyclesThroughTheLogPanel(t *testing.T) {
 	m.recalcLayout()
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus != focusSpecsContent {
+	if m.focus != focusContentPane {
 		t.Fatalf("first tab gave focus %d, want the content half", m.focus)
 	}
 
@@ -119,7 +119,7 @@ func TestTabCyclesThroughTheLogPanel(t *testing.T) {
 	}
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus != focusSpecsList {
+	if m.focus != focusListPane {
 		t.Errorf("third tab gave focus %d, want back to the spec list", m.focus)
 	}
 }
@@ -267,7 +267,7 @@ func TestSpecsTabWithNoSpecs(t *testing.T) {
 	}
 
 	m = press(m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.focus == focusSpecsContent {
+	if m.focus == focusContentPane {
 		t.Error("tab reached the content half of a tab that has no specs in it")
 	}
 	if m.focus != focusDetail {
@@ -314,7 +314,7 @@ func TestReachingTheSpecsTabWithAKeyPutsTheKeyboardOnTheList(t *testing.T) {
 
 	m = press(m, tea.KeyPressMsg{Code: '2', Text: "2"})
 
-	if m.focus != focusSpecsList {
+	if m.focus != focusListPane {
 		t.Fatalf("focus is %d after switching to the specs tab, want the list", m.focus)
 	}
 	// Asserted on the render, not just the field: the highlight is the thing

@@ -49,7 +49,7 @@ There are two levels, and the project picker opens over either of them.
            |            enter switches project
            v
    project view         the startup view; esc does nothing here
-       | enter          tabs: changes | specs | config
+       | enter          tabs: changes | specs | properties
        v
    change view          artifact sub-tabs: proposal | design | tasks | specs
 ```
@@ -138,6 +138,37 @@ The filter uses the same grammar as the change list, with one addition: `:`
 searches file paths as well as file contents, so you can look for a project by
 a filename it contains.
 
+## The properties tab
+
+The third tab reports what the project is and where its parts come from, as a
+list of rows beside their content:
+
+```
+ ╭─────────────╮ ╭────────────────────────────────────────╮
+ │ project     │ │ schema: spec-driven                    │
+ │ spec-driven │ │ default: yes                           │
+ │ tinychange  │ │ changes: 26                            │
+ │ store       │ │ source: package                        │
+ ╰─────────────╯ │ artifacts:                             │
+                 │   proposal -> proposal.md              │
+                 ╰────────────────────────────────────────╯
+```
+
+| Row       | Shows                                                          |
+| --------- | -------------------------------------------------------------- |
+| `project` | the one configuration that applies, and the file it came from   |
+| a schema  | one row per workflow schema the project's changes record        |
+| `store`   | where the content comes from, or `local`                        |
+
+`tab` moves between the list and the content, `j`/`k` move down the list.
+
+A schema's definition is located by running `openspec schema which`, which costs
+about a second, so nothing is read until you open the tab and nothing is read
+twice for the same project. Editing a schema while `spg` is open will not show
+up until you open the project again. Without the `openspec` CLI the rows still
+report which schemas are in use and how many changes are on each, and say why
+the rest is missing.
+
 ### Projects that keep their specs in a store
 
 OpenSpec lets a repo keep no specs and no changes of its own and name a store
@@ -152,8 +183,13 @@ instead, so that several repos can plan together:
 ```
 
 `spg` follows that pointer. Such a repo opens on the store's specs and changes,
-its header carries a `store` mark, and the config tab gains sub-tabs: the repo's
-own configuration, the store's shared one, and a report on the store itself.
+its header carries a `store` mark, and the properties tab reports where the
+content came from.
+
+Only the store's configuration applies. OpenSpec reads a pointing repo's file
+for its `store:` key and takes everything else from the store, so a `context:`,
+`rules:` or `operations:` block in the repo has no effect. The properties tab
+names those keys where it finds them, because OpenSpec itself does not.
 
 The picker lists the repos you work in. A registered store is not listed on its
 own: it is where content lives rather than where work happens, and every repo
