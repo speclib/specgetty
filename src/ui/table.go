@@ -158,6 +158,13 @@ func renderTable[T tableRow](rows []filtered[T], defs []fieldDef[T], cursor, wid
 			break
 		}
 	}
+	// The hint is a column like any other, so it is separated like one. It used
+	// to be appended flush, and looked right only because the last default
+	// column held values shorter than its width; the archive date fills its
+	// column exactly.
+	if hintWidth > 0 {
+		hintWidth += columnGap
+	}
 	tableWidth := width - hintWidth
 	if tableWidth < 1 {
 		tableWidth = width
@@ -174,7 +181,7 @@ func renderTable[T tableRow](rows []filtered[T], defs []fieldDef[T], cursor, wid
 	}
 	header := fitCell(strings.Join(headerCells, columnSep), tableWidth)
 	if hintWidth > 0 {
-		header += fitCell("matched", hintWidth)
+		header += columnSep + fitCell("matched", hintWidth-columnGap)
 	}
 	b.WriteString(dimStyle.Render(header))
 
@@ -203,7 +210,7 @@ func renderTable[T tableRow](rows []filtered[T], defs []fieldDef[T], cursor, wid
 
 		hint := ""
 		if hintWidth > 0 {
-			hint = fitCell(strings.Join(rows[i].matched, ", "), hintWidth)
+			hint = columnSep + fitCell(strings.Join(rows[i].matched, ", "), hintWidth-columnGap)
 		}
 
 		if i == cursor {
@@ -219,17 +226,55 @@ func renderTable[T tableRow](rows []filtered[T], defs []fieldDef[T], cursor, wid
 	return b.String()
 }
 
+// searchLegend names the three matchers the query grammar accepts.
+//
+// Two of them are prefix sigils and neither can be guessed at. One wording
+// serves both surfaces: the contents sigil reaches artifact and spec text in a
+// change and file paths and contents in a project, and `inside` is the shortest
+// word true of both.
+const searchLegend = "fuzzy name  'exact  :inside"
+
 // renderSearchPrompt draws the filter line under a table. It stays visible for
 // as long as a query is applied, so a narrowed list always shows why.
-func renderSearchPrompt(input string, focused bool, shown, total int) string {
+//
+// While the prompt is focused and empty it also names the matchers, which is
+// the moment between asking to search and knowing what to type. The first
+// keystroke replaces the naming with the query, so it costs a fast typist
+// nothing and is dropped entirely when the line is too narrow to hold it.
+func renderSearchPrompt(input string, focused bool, shown, total int, width int) string {
 	var b strings.Builder
 	b.WriteString(navBarKeyStyle.Render("/"))
 	b.WriteString(navBarStyle.Render(input))
 	if focused {
 		b.WriteString(navBarStyle.Render("_"))
 	}
-	b.WriteString(dimStyle.Render(fmt.Sprintf("   %d of %d shown", shown, total)))
+
+	count := fmt.Sprintf("   %d of %d shown", shown, total)
+	if focused && input == "" {
+		legend := "  " + searchLegend
+		// 1 for the sigil, 1 for the cursor, and the count, which is never
+		// dropped: it is what the prompt is for.
+		if width >= 2+len(legend)+len(count) {
+			b.WriteString(dimStyle.Render(legend))
+		}
+	}
+	b.WriteString(dimStyle.Render(count))
 	return b.String()
+}
+
+// noMatchMessage explains an empty result, and suggests the contents search
+// when the query that failed was a name search.
+//
+// A name search that found nothing is the moment a person is already looking
+// for another way, which is a better time to be told about one than any other.
+// A contents query that failed suggests nothing: there is no further matcher.
+func noMatchMessage(noun, raw string) string {
+	msg := fmt.Sprintf("No %s match %q", noun, raw)
+	q := parseQuery(raw)
+	if q.kind == matchBody || q.term == "" {
+		return msg
+	}
+	return msg + "\n" + dimStyle.Render("try :"+q.term+" to search inside them")
 }
 
 // sortedLabels returns map keys in a stable order, so match hints do not

@@ -252,14 +252,14 @@ func (m model) renderPicker() string {
 			tableHeight = 1
 		}
 		if len(rows) == 0 {
-			body = dimStyle.Render(fmt.Sprintf("No projects match %q", m.pickerInput.Value()))
+			body = noMatchMessage("projects", m.pickerInput.Value())
 			body = truncateContent(body, tableHeight)
 		} else {
 			body = renderTable(rows, projectFields, m.pickerCursor, inner, tableHeight)
 			body = truncateContent(body, tableHeight)
 		}
 		body += "\n" + renderSearchPrompt(
-			m.pickerInput.Value(), m.pickerFocused, len(rows), len(m.pickerAll))
+			m.pickerInput.Value(), m.pickerFocused, len(rows), len(m.pickerAll), inner)
 	}
 
 	title := headerStyle.Render("Projects")

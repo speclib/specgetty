@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   saying whether a change is active or archived is no longer a default, since
   the group header says it, and remains available in `change_fields`.
 
+### Added
+
+- The search prompt names its three matchers while it is focused and empty, so
+  `'exact` and `:inside` stop being things you have to read the README to learn.
+  It goes on the first keystroke and is dropped where the line is too narrow.
+- A name search that finds nothing suggests the same term as a contents search,
+  which is the moment you are already looking for another way. Both the change
+  list and the project picker.
+
 ### Changed
 
 - One blank line separates the active and archived groups in the change list, so

@@ -152,6 +152,9 @@ The filter uses the same grammar as the change list, with one addition: `:`
 searches file paths as well as file contents, so you can look for a project by
 a filename it contains.
 
+Pressing `/` names the three matchers until you start typing, and a name search
+that finds nothing suggests the same term as a `:` search.
+
 ## The properties tab
 
 The third tab reports what the project is and where its parts come from, as a

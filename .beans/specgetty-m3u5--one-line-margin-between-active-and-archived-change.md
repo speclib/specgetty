@@ -1,11 +1,11 @@
 ---
 # specgetty-m3u5
 title: one line margin between active and archived changes
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-09-21T16:59:57Z
-updated_at: 2026-09-21T17:56:08Z
+updated_at: 2026-09-21T17:58:18Z
 ---
 
 One blank line between the ACTIVE and ARCHIVED groups in the change list.
@@ -27,3 +27,15 @@ Settled during exploration:
 Found while tracing the line budget, split off as bean `specgetty-rj7k`: the
 page key already spends the body's line count on changes, so it skips the two
 changes the group headers displace, and three once this lands.
+
+## Summary of Changes
+
+Shipped as `space-the-change-groups` (commit 0e76b86).
+
+`groupLine` gained a third kind for the blank line, emitted before every group
+but the first, unconditionally. Drawn unstyled so no background is painted
+across a line meant to read as a gap.
+
+The offset arithmetic counts it, and when it would land at the top of the pane
+the window starts one line further down instead. That is the case task 2.7
+reverted to confirm the test bites.

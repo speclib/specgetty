@@ -1653,8 +1653,7 @@ func (m model) renderChangesTab(width int, height int) string {
 		// not change under a query. The message says why they are empty, which
 		// the counts alone do not.
 		if len(rows) == 0 && m.searchInput.Value() != "" {
-			body += "\n" + dimStyle.Render(
-				fmt.Sprintf("No changes match %q", m.searchInput.Value()))
+			body += "\n" + noMatchMessage("changes", m.searchInput.Value())
 		}
 	}
 
@@ -1662,7 +1661,7 @@ func (m model) renderChangesTab(width int, height int) string {
 		return body
 	}
 	return truncateContent(body, tableHeight) + "\n" +
-		renderSearchPrompt(m.searchInput.Value(), m.searchFocused, len(rows), total)
+		renderSearchPrompt(m.searchInput.Value(), m.searchFocused, len(rows), total, width)
 }
 
 // specsSplit divides the specs tab into its list half and its content half.

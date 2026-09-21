@@ -104,6 +104,13 @@ func renderGroupedTable(groups []changeGroup, rows []filtered[changeRow],
 			break
 		}
 	}
+	// The hint is a column like any other, so it is separated like one. It used
+	// to be appended flush, and looked right only because the last default
+	// column held values shorter than its width; the archive date fills its
+	// column exactly.
+	if hintWidth > 0 {
+		hintWidth += columnGap
+	}
 	tableWidth := width - hintWidth
 	if tableWidth < 1 {
 		tableWidth = width
@@ -119,7 +126,7 @@ func renderGroupedTable(groups []changeGroup, rows []filtered[changeRow],
 	}
 	header := fitCell(strings.Join(headerCells, columnSep), tableWidth)
 	if hintWidth > 0 {
-		header += fitCell("matched", hintWidth)
+		header += columnSep + fitCell("matched", hintWidth-columnGap)
 	}
 	b.WriteString(dimStyle.Render(header))
 
@@ -170,7 +177,7 @@ func renderGroupedTable(groups []changeGroup, rows []filtered[changeRow],
 
 		hint := ""
 		if hintWidth > 0 {
-			hint = fitCell(strings.Join(l.row.matched, ", "), hintWidth)
+			hint = columnSep + fitCell(strings.Join(l.row.matched, ", "), hintWidth-columnGap)
 		}
 
 		if l.rowIndex == cursor {
