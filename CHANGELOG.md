@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `enter` on a change's specs sub-tab opens its spec deltas as an outline beside
+  a card, marked with what the change does: `+` a requirement it adds, `~` one it
+  modifies, `-` one it removes. Inside a modified requirement each scenario is
+  marked too, as added, edited, or unchanged and drawn back. More than half of
+  what a modified requirement restates is usually text it does not touch, and the
+  outline now says which half is which.
+- A requirement the change modifies offers its difference, the text it modifies
+  and the text it proposes, chosen with `left` and `right`. Offered for a change
+  that has not been archived, where the project's specs are still the text the
+  delta modifies; an archived change shows what it proposed and nothing beside
+  it, those specs having already been rewritten by it.
+- `E` opens the delta file a node belongs to. The specs sub-tab one level up
+  still offers no key, showing several files at once.
+
 ### Changed
 
 - A spec is read by OpenSpec's own rules, transcribed from its parser: the

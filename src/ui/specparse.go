@@ -32,6 +32,29 @@ const (
 	nodePurpose = iota
 	nodeRequirement
 	nodeScenario
+	// nodeCapability roots one delta file inside a change, a change carrying
+	// one per capability it touches. A main spec never produces one.
+	nodeCapability
+)
+
+// What a change does to a requirement, and what a delta header names.
+//
+// A string rather than an enum: a delta may carry a heading none of these
+// match, and the requirements under it are listed marked with what the heading
+// actually said rather than hidden for being unrecognised.
+const (
+	opAdded    = "ADDED"
+	opModified = "MODIFIED"
+	opRemoved  = "REMOVED"
+	opRenamed  = "RENAMED"
+)
+
+// What a scenario of a MODIFIED requirement does to the one it restates.
+const (
+	markNone = iota // nothing to compare against
+	markUnchanged
+	markEdited
+	markAdded
 )
 
 // What a piece of a scenario is.
@@ -62,8 +85,24 @@ type specNode struct {
 	parts []specPart
 	// path identifies the node across a re-parse, so a rescan that rewrites the
 	// file keeps the cursor where the eye is. A title is enough: a requirement
-	// heading is unique in a spec, and a scenario's is unique under it.
+	// heading is unique in a spec, and a scenario's is unique under it. In a
+	// change the capability is prefixed, two deltas being free to modify
+	// requirements of the same name in different capabilities.
 	path string
+
+	// The rest is set only for a node read from a change's delta.
+
+	// op is the delta operation a requirement carries, empty elsewhere.
+	op string
+	// capability is the delta file this node came from, which is what `E`
+	// opens and what the comparison is looked up against.
+	capability string
+	// mark says what a scenario of a MODIFIED requirement does to the one it
+	// restates. markNone when there was nothing to compare against.
+	mark int
+	// old is the node this one modifies, when the original could be found.
+	// Its presence is what gives a card its old, new and difference views.
+	old *specNode
 }
 
 // specTree is a parsed spec.
@@ -160,24 +199,12 @@ func scenarioName(line string) string {
 
 // parseSpec reads a spec into an outline, or says why it is not one.
 func parseSpec(name, content string) (specTree, []specProblem) {
-	content = strings.TrimPrefix(content, "\ufeff")
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-	content = strings.ReplaceAll(content, "\r", "\n")
-	raw := strings.Split(content, "\n")
-	mask := fenceMask(raw)
-
 	// Two views of the same file. lines is the content, which a fence is part
 	// of; heads is the content with every fenced line blanked, and is what
 	// every heading test reads, so none of them has to remember the mask. A
-	// spec that shows its own format in a fenced block reaches this.
-	lines := make([]string, len(raw))
-	heads := make([]string, len(raw))
-	for i, l := range raw {
-		lines[i] = strings.TrimRight(l, " \t")
-		if !mask[i] {
-			heads[i] = lines[i]
-		}
-	}
+	// spec that shows its own format in a fenced block reaches this. The delta
+	// grammar reads the same two views, which is why this is shared.
+	lines, heads := maskedLines(content)
 
 	var problems []specProblem
 	add := func(line int, format string, args ...any) {

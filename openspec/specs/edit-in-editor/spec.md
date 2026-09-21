@@ -26,6 +26,12 @@ files at once, SHALL NOT act on the key.
   presses `E`
 - **THEN** the configuration file that row reports SHALL be opened in the editor
 
+#### Scenario: A node of a change's delta
+- **WHEN** a node is selected in the change spec detail view and the user presses
+  `E`
+- **THEN** the delta file that node belongs to SHALL be opened in the editor,
+  that view having narrowed the several files of the specs sub-tab down to one
+
 #### Scenario: A pane showing several files
 - **WHEN** a change's specs sub-tab is on screen, which renders every spec delta
   of the change together, and the user presses `E`

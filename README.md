@@ -53,7 +53,9 @@ second level `enter` reaches depends on the tab you are standing on.
        | enter          tabs: changes | specs | properties
        |
        +--> change view       from the changes tab
-       |                      artifact sub-tabs: proposal | design | tasks | specs
+       |      |               artifact sub-tabs: proposal | design | tasks | specs
+       |      +--> change spec view    from that change's specs sub-tab
+       |                               its deltas, marked with what they do
        +--> spec view         from the specs tab
                               an outline beside one requirement or scenario
 ```
@@ -183,6 +185,55 @@ A scenario's content is shown whatever shape it is written in. Clauses written
 as the OpenSpec template shows them get their keyword on a row of its own;
 anything else is shown as the prose it is, in the place it was written. Nothing
 is left out.
+
+### Keys in a change's specs
+
+A change carries a spec delta per capability it touches, and the specs sub-tab
+lists them all as one document. `enter` opens them as an outline instead, marked
+with what the change does to each requirement:
+
+```
+ +----------------------------+ +-------------------------------------+
+ | change-search              | | [diff] old  new                     |
+ | + The prompt names the     | |                                     |
+ |     matchers it accepts    | |    Scenario: The legend             |
+ |     The prompt is opened   | |                                     |
+ |   ~ The first character    | |    WHEN                             |
+ |   + Too narrow to say it   | |       the prompt is focused and     |
+ | ~ A failed name search     | |       empty has been typed          |
+ | - The old grammar          | |                                     |
+ +----------------------------+ +-------------------------------------+
+```
+
+| Mark | On a requirement      | On a scenario                          |
+| ---- | --------------------- | -------------------------------------- |
+| `+`  | the change adds it    | the change introduces it                |
+| `~`  | the change modifies it | the change edits it                    |
+| `-`  | the change removes it | never: a delta cannot drop one          |
+|      |                       | unchanged, and drawn back to say so     |
+
+The marks on scenarios are the useful half. A modified requirement is restated
+in full even to change one sentence, and more than half of what it restates is
+usually text it does not touch. The outline says which half is which without
+your reading it.
+
+| Key                | Action                                              |
+| ------------------ | --------------------------------------------------- |
+| `<left>`/`<right>` | Move between the difference, the original and the new |
+| `<esc>`            | Back to the change, specs sub-tab selected           |
+
+Everything else is the same as a spec: `tab`, `j`/`k`, the paging keys and `E`
+all behave as they do one level across.
+
+The three-way choice appears only where there is something to compare, which is
+a requirement the change modifies and the scenarios inside it. The difference is
+what opens, and each node opens on its own difference rather than keeping the
+last choice.
+
+Only a change that has not been archived offers it. An archived change's deltas
+have already been applied to the project's specs, so those specs are the result
+rather than the original, and presenting them as the text the change modified
+would be a lie. Such a change shows what it proposed and nothing beside it.
 
 ### When a spec opens as a report instead
 

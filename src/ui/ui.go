@@ -34,7 +34,20 @@ const (
 	levelProject = 0 // one project, with its tab bar
 	levelChange  = 1 // one change, with its artifact sub-tabs
 	levelSpec    = 2 // one spec, as an outline beside a card
+	// levelChangeSpec is a change's spec deltas, as one outline beside a card.
+	// Reached from a change rather than from the project, which is why level is
+	// a set of views with explicit enter and esc mappings and not a depth.
+	levelChangeSpec = 3
 )
+
+// specLevel reports whether an outline and a card own the panel.
+//
+// The two spec levels differ in what they read and what a card may show, and in
+// nothing else: the outline, the cursor, the paging and the borders are one
+// implementation serving both.
+func (m model) specLevel() bool {
+	return m.level == levelSpec || m.level == levelChangeSpec
+}
 
 // Where the keyboard is. One position, one value.
 //
@@ -189,7 +202,7 @@ type model struct {
 	specCursor        int
 	changeCursor      int
 	changeArtifactTab int
-	level             int    // navigation depth: levelProject, levelChange, levelSpec
+	level             int    // which view is open; see the level constants
 	startupPath       string // project resolved at startup, scanned on its own
 
 	// Project picker state. The picker is an overlay, not a level: it opens
@@ -244,6 +257,10 @@ type model struct {
 	watcher           *watcher.Watcher
 	watchedRoot       string
 	watchedDirs       []string
+
+	// Which of a comparable node's three views its card is showing. Reset to
+	// the difference on every move, a choice being about one node.
+	cardView int
 
 	// The spec open at levelSpec, parsed once when it is opened and dropped on
 	// the way out. Reparsing on every render would cost a parse per keystroke.
@@ -593,8 +610,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
-			if m.level == levelSpec {
+			if m.specLevel() {
 				// Nothing below a spec to descend into.
+			} else if m.level == levelChange && m.onChangeSpecsTab() {
+				m = m.openChangeSpecs()
 			} else if m.level == levelProject && m.detailTab == tabSpecs {
 				m = m.openSelectedSpec()
 			} else if m.level == levelProject && m.detailTab == tabChanges {
@@ -608,15 +627,21 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			// levelProject is the floor. The project list is an overlay now,
 			// so there is nothing above it to escape to.
-			if m.level == levelSpec {
-				m.level = levelProject
-				m.detailTab = tabSpecs
+			if m.specLevel() {
+				if m.level == levelChangeSpec {
+					m.level = levelChange
+					m.changeArtifactTab = m.changeSpecsTabIndex()
+				} else {
+					m.level = levelProject
+					m.detailTab = tabSpecs
+				}
 				m.focus = focusListPane
 				m.specTree = specTree{}
 				m.specProblems = nil
 				m.specName = ""
 				m.specNode = 0
 				m.specNodePath = ""
+				m.cardView = viewDiff
 			} else if m.level == levelChange {
 				m.level = levelProject
 				m.syncCursor()
@@ -728,6 +753,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case levelSpec:
 				// One spec, no sibling to move to. Its two halves are reached
 				// with tab.
+			case levelChangeSpec:
+				m.moveCardView(-1)
 			case levelChange:
 				if m.changeArtifactTab > 0 {
 					m.changeArtifactTab--
@@ -744,6 +771,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.level {
 			case levelSpec:
 				// As for left.
+			case levelChangeSpec:
+				m.moveCardView(1)
 			case levelChange:
 				if m.changeArtifactTab < m.changeArtifactTabCount()-1 {
 					m.changeArtifactTab++
@@ -770,7 +799,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveDocCursor(-1)
 			} else if m.docActive() {
 				m.docViewport.ScrollUp(1)
-			} else if m.level == levelSpec {
+			} else if m.specLevel() {
 				if m.specNode > 0 {
 					m.specNode--
 					m.rememberSpecNode()
@@ -799,7 +828,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveDocCursor(1)
 			} else if m.docActive() {
 				m.docViewport.ScrollDown(1)
-			} else if m.level == levelSpec {
+			} else if m.specLevel() {
 				if m.specNode < len(m.specTree.nodes)-1 {
 					m.specNode++
 					m.rememberSpecNode()
@@ -1711,7 +1740,7 @@ func (m model) renderDetailPanel(width int, height int) string {
 
 	// A spec fills the panel on its own, the way an open change does, whether
 	// it opened as an outline or as a report.
-	if m.level == levelSpec {
+	if m.specLevel() {
 		return m.renderSpecDetail(width, height)
 	}
 
@@ -1921,7 +1950,7 @@ func (m *model) enterTab() []tea.Cmd {
 // The specs tab and the properties tab are both splits, and everything about
 // focus, borders and the vertical keys asks this rather than naming a tab.
 func (m model) splitTab() bool {
-	if m.level == levelSpec {
+	if m.specLevel() {
 		// A report is one panel, so tab has nowhere to go in that state.
 		return m.specStructured()
 	}
@@ -2053,6 +2082,30 @@ var (
 	specKeywordStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("3")) // yellow
+
+	// What a change does to a requirement, and what one of its scenarios does
+	// to the one it restates. Green, yellow and red are what a diff has always
+	// used for these three, so the marks read before the legend is found.
+	opAddedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+	opModifiedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
+	opRemovedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+
+	// A scenario a modified requirement restates without changing it. Drawn
+	// back rather than drawn out: "you have read this before" is what the
+	// reader needs from it, and half of a modified requirement is this.
+	unchangedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+
+	// The capability a delta belongs to, rooting its requirements.
+	capabilityStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("6")) // cyan
+
+	// A word the change adds, and one it drops. Struck through rather than
+	// only coloured, so the two read apart without relying on colour.
+	addedWordStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+	removedWordStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("1")). // red
+				Strikethrough(true)
 
 	yamlKeyStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("6")) // cyan
@@ -2432,13 +2485,17 @@ func (m model) renderNavBar() string {
 		}
 	} else {
 		switch m.level {
-		case levelSpec:
+		case levelSpec, levelChangeSpec:
+			back := "back to specs"
+			if m.level == levelChangeSpec {
+				back = "back to change"
+			}
 			if !m.specStructured() {
 				// A report offers what a report can do: read it, open the file,
 				// leave. None of the navigation keys apply.
 				keys = []struct{ key, action string }{
 					{"q", "quit"},
-					{"esc", "back to specs"},
+					{"esc", back},
 					{"jk/\u2191\u2193", "scroll"},
 					{"^f^b", "page"},
 					{"p", "projects"},
@@ -2448,8 +2505,14 @@ func (m model) renderNavBar() string {
 			}
 			keys = []struct{ key, action string }{
 				{"q", "quit"},
-				{"esc", "back to specs"},
+				{"esc", back},
 				{"jk/\u2191\u2193", "navigate"},
+			}
+			// Advertised only where it does something, which is a node with an
+			// original to show beside itself.
+			if m.cardViewRowShown() {
+				keys = append(keys,
+					struct{ key, action string }{"\u2190\u2192", "diff/old/new"})
 			}
 			if m.focus == focusContentPane {
 				keys = append(keys,

@@ -25,17 +25,21 @@ func (m model) docRegion() (width, height int) {
 	panelH := m.mainPanelHeight()
 
 	switch {
-	case m.level == levelSpec && !m.specStructured():
+	case m.specLevel() && !m.specStructured():
 		// A report fills the panel on its own: there is no outline beside it.
 		width = m.panelContentWidth() - boxChrome
 		height = panelH - 1 - boxRows
 
-	case m.level == levelSpec:
-		// The spec's name stays put above the two halves, and the card gets
-		// what is inside the right-hand border.
+	case m.specLevel():
+		// The name stays put above the two halves, and the card gets what is
+		// inside the right-hand border. A change's card gives one more row to
+		// the chooser above it.
 		_, cardOuter := specDetailSplit(m.panelContentWidth())
 		width = cardOuter - boxChrome
 		height = panelH - 1 - boxRows
+		if m.cardViewRowShown() {
+			height--
+		}
 
 	case m.level == levelChange:
 		// The change name line and the sub-tab row stay put above the box.
@@ -85,7 +89,7 @@ func (m model) docActive() bool {
 	if m.level == levelChange {
 		return true
 	}
-	if m.level == levelSpec {
+	if m.specLevel() {
 		if !m.specStructured() {
 			// One panel, so the vertical keys scroll the report, the way they
 			// scroll an open change.
@@ -219,7 +223,7 @@ func (m model) currentDoc() (document, bool) {
 	width, _ := m.docRegion()
 
 	switch {
-	case m.level == levelSpec && !m.specStructured():
+	case m.specLevel() && !m.specStructured():
 		if len(m.specProblems) == 0 {
 			return document{}, false
 		}
@@ -240,6 +244,27 @@ func (m model) currentDoc() (document, bool) {
 		// document and starts at the top.
 		key := strings.Join([]string{project, "spec", m.specTree.name, n.path}, docKeySep)
 		return document{key: key, content: renderSpecCard(n, width)}, true
+
+	case m.level == levelChangeSpec:
+		n := m.specTree.nodes[m.selectedSpecNode()]
+		// Keyed by the node and the view, so moving between the difference, the
+		// original and the new text starts each at its own top.
+		key := strings.Join([]string{project, "change-spec", m.specTree.name,
+			n.path, cardViewNames[m.cardView]}, docKeySep)
+		// The delta this node came from, which is the one file the pane is
+		// showing. The specs sub-tab one level up shows several and so offers
+		// no key.
+		path := ""
+		if r, ok := m.selectedRow(); ok && n.capability != "" {
+			dir := "changes"
+			if r.archived {
+				dir = filepath.Join("changes", "archive")
+			}
+			path = filepath.Join(m.currentRoot(), "openspec", dir, r.ci.DirName,
+				"specs", n.capability, "spec.md")
+		}
+		return document{key: key, path: path,
+			content: renderChangeCard(n, m.cardView, width)}, true
 
 	case m.level == levelChange:
 		r, found := m.selectedRow()

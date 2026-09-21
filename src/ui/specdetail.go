@@ -13,6 +13,40 @@ import (
 // third navigation level, and it follows the same rule as the change view:
 // `enter` descends, `esc` ascends.
 
+// outlineRowStyle picks how one outline row is drawn.
+//
+// A main spec has only the requirement heading to distinguish, which is what it
+// had before. A change's outline says more: what the change does to each
+// requirement, and which of a modified requirement's scenarios it leaves alone.
+func outlineRowStyle(n specNode) lipgloss.Style {
+	switch n.kind {
+	case nodeCapability:
+		return capabilityStyle
+	case nodeRequirement:
+		switch n.op {
+		case opAdded:
+			return opAddedStyle
+		case opModified:
+			return opModifiedStyle
+		case opRemoved:
+			return opRemovedStyle
+		case "":
+			return sectionHeaderStyle
+		}
+		return sectionHeaderStyle
+	case nodeScenario:
+		switch n.mark {
+		case markAdded:
+			return opAddedStyle
+		case markEdited:
+			return opModifiedStyle
+		case markUnchanged:
+			return unchangedStyle
+		}
+	}
+	return normalStyle
+}
+
 // specDetailSplit sizes the outline against the card.
 //
 // Four tenths, with a floor: an outline of scenario titles needs more room than
@@ -50,14 +84,45 @@ type outlineRow struct {
 	node int
 }
 
+// markedTree reports whether a tree came from a change's deltas.
+//
+// Only such a tree has capability roots, and only such a tree needs the gutter
+// the marks sit in. A main spec is drawn exactly as it was before there were
+// marks at all.
+func markedTree(tree specTree) bool {
+	for _, n := range tree.nodes {
+		if n.kind == nodeCapability {
+			return true
+		}
+	}
+	return false
+}
+
 // outlineRows lays the tree out at a given width.
 func outlineRows(tree specTree, width int) []outlineRow {
+	gutter := markedTree(tree)
+
 	var rows []outlineRow
 	for i, n := range tree.nodes {
 		indent, hang := "", "  "
-		if n.kind == nodeScenario {
+		switch {
+		case n.kind == nodeScenario && gutter:
+			indent, hang = "  ", "      "
+		case n.kind == nodeScenario:
 			indent, hang = "  ", "    "
 		}
+		// The mark sits in a gutter every row of a marked tree carries, so a
+		// requirement with a mark and one without still line up. The gutter is
+		// two columns whether or not this node fills them.
+		if gutter && n.kind != nodeCapability {
+			sigil, _ := outlineMark(n)
+			if sigil == "" {
+				sigil = " "
+			}
+			indent += sigil + " "
+			hang += "  "
+		}
+
 		// Wrapped against the hanging indent, which is the wider of the two: a
 		// continuation row that only got its indent after being wrapped could
 		// come out wider than the pane, and lipgloss would then wrap it again
@@ -66,6 +131,8 @@ func outlineRows(tree specTree, width int) []outlineRow {
 		for j, line := range wrapped {
 			prefix := indent
 			if j > 0 {
+				// A continuation never repeats the mark: the gutter it would
+				// sit in is part of the hanging indent.
 				prefix = hang
 			}
 			rows = append(rows, outlineRow{text: prefix + strings.TrimSpace(line), node: i})
@@ -119,10 +186,8 @@ func renderSpecOutline(tree specTree, selected, width, height int, lit bool) str
 			b.WriteString(selectedStyle.Width(width).Render(r.text))
 		case r.node == selected:
 			b.WriteString(dimSelectedStyle.Width(width).Render(r.text))
-		case tree.nodes[r.node].kind == nodeRequirement:
-			b.WriteString(sectionHeaderStyle.Render(r.text))
 		default:
-			b.WriteString(normalStyle.Render(r.text))
+			b.WriteString(outlineRowStyle(tree.nodes[r.node]).Render(r.text))
 		}
 	}
 	return b.String()
@@ -327,17 +392,33 @@ func (m model) renderSpecDetail(width, height int) string {
 	}
 
 	outlineOuter, cardOuter := specDetailSplit(width)
+
+	// The chooser sits above the card, inside its half, the way a change's
+	// artifact sub-tabs sit above the document they choose between. It costs
+	// the card a row, which docRegion has already taken off.
+	cardRows, viewRow := rows, ""
+	if m.cardViewRowShown() {
+		viewRow = renderCardViewRow(m.cardView)
+		cardRows--
+		if cardRows < 1 {
+			cardRows = 1
+		}
+	}
+
 	outline := renderSpecOutline(m.specTree, m.selectedSpecNode(),
 		outlineOuter-boxChrome, rows, m.focus == focusListPane)
 	// Truncated to the pane as well as to the row count: a resize renders once
 	// with a viewport still sized for the width before it, and a card wider
 	// than its box would push the frame past the terminal.
-	card := truncateContent(m.docViewport.View(), rows)
+	card := truncateContent(m.docViewport.View(), cardRows)
 	var fitted []string
 	for _, line := range strings.Split(card, "\n") {
 		fitted = append(fitted, ansi.Truncate(line, max(1, cardOuter-boxChrome), ""))
 	}
 	card = strings.Join(fitted, "\n")
+	if viewRow != "" {
+		card = ansi.Truncate(viewRow, max(1, cardOuter-boxChrome), "") + "\n" + card
+	}
 
 	left := contentBox(outlineOuter, boxHeight, m.focus == focusListPane, outline)
 	right := contentBox(cardOuter, boxHeight, m.focus == focusContentPane, card)
@@ -357,7 +438,7 @@ func (m model) selectedSpecNode() int {
 // cursor would otherwise move it. The path is what survives; when the node it
 // named is gone, the index is clamped instead.
 func (m *model) syncSpecNode() {
-	if m.level != levelSpec || len(m.specTree.nodes) == 0 {
+	if !m.specLevel() || len(m.specTree.nodes) == 0 {
 		return
 	}
 	if m.specNodePath != "" {
@@ -372,13 +453,24 @@ func (m *model) syncSpecNode() {
 
 // rememberSpecNode records which node the cursor is on, by path.
 func (m *model) rememberSpecNode() {
-	if m.level == levelSpec && len(m.specTree.nodes) > 0 {
-		m.specNodePath = m.specTree.nodes[m.selectedSpecNode()].path
+	if !m.specLevel() || len(m.specTree.nodes) == 0 {
+		return
+	}
+	was := m.specNodePath
+	m.specNodePath = m.specTree.nodes[m.selectedSpecNode()].path
+	if m.specNodePath != was {
+		// Each node is read from its difference first. Carrying the choice
+		// forward would show the reader an original they did not ask for.
+		m.cardView = viewDiff
 	}
 }
 
 // reparseOpenSpec rebuilds the tree after a rescan, keeping the cursor.
 func (m *model) reparseOpenSpec() {
+	if m.level == levelChangeSpec {
+		m.reparseOpenChangeSpecs()
+		return
+	}
 	if m.level != levelSpec {
 		return
 	}

@@ -17,7 +17,7 @@ package ui
 // expressions mirror what each renderer lays out; they are one fact written
 // twice, and the tests assert the pairing rather than the arithmetic.
 func (m model) listPage() int {
-	if m.level == levelSpec {
+	if m.specLevel() {
 		if !m.specStructured() {
 			// A report has no outline to page. Its own scrolling goes through
 			// the viewport, which docActive() routes to before this is asked.
@@ -56,7 +56,7 @@ func (m *model) moveListCursor(delta int) {
 	if delta == 0 {
 		return
 	}
-	if m.level == levelSpec {
+	if m.specLevel() {
 		if m.focus != focusListPane {
 			return
 		}
@@ -85,7 +85,7 @@ func (m *model) moveListCursor(delta int) {
 
 // gotoListEnd sends the list that holds the keyboard to its first or last row.
 func (m *model) gotoListEnd(last bool) {
-	if m.level == levelSpec {
+	if m.specLevel() {
 		if m.focus != focusListPane {
 			return
 		}
