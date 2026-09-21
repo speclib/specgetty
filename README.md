@@ -192,6 +192,39 @@ as the OpenSpec template shows them get their keyword on a row of its own;
 anything else is shown as the prose it is, in the place it was written. Nothing
 is left out.
 
+### The keywords a spec is written in
+
+A spec is written in a small vocabulary, and specgetty draws it wherever
+markdown is rendered: the specs tab, the detail card, a change's spec deltas,
+and the proposal and design documents.
+
+| word                                  | role                            |
+| ------------------------------------- | ------------------------------- |
+| `GIVEN`, `WHEN`                       | opens a condition               |
+| `THEN`                                | opens the assertion             |
+| `AND`                                 | continues the clause above it   |
+| `SHALL`, `SHALL NOT`, `MUST`, `MUST NOT` | binds                        |
+
+The three clause roles are drawn apart from one another, so the shape of a
+scenario reads before the words do. The four words that bind are drawn wherever
+they appear in a sentence.
+
+The vocabulary is [openspec.nvim](https://github.com/speclib/openspec.nvim)'s,
+whose `spec-highlighting` capability gives the same words capture groups for an
+editor, so a spec reads the same in either tool. Two consequences of following
+it:
+
+- `SHOULD`, `MAY`, `REQUIRED`, `RECOMMENDED` and `OPTIONAL` are not drawn.
+  OpenSpec's own guidance is to use `SHALL` and `MUST` and avoid the rest, and
+  drawing a word the format discourages would read as endorsement.
+- A clause keyword counts only at the start of a line, with or without a list
+  marker and with or without bold marks. In the middle of a sentence these are
+  ordinary words.
+
+Keywords are matched in upper case only, and never inside a span between
+backticks, so a spec that names `SHALL` as a word rather than using one reads as
+what it is.
+
 ### Keys in a change's specs
 
 A change carries a spec delta per capability it touches, and the specs sub-tab

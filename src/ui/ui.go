@@ -2156,10 +2156,38 @@ var (
 	// A backticked span. Specs name capabilities, keys and paths this way.
 	mdCodeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
 
-	// A scenario's keyword, which opens every clause of a card.
-	specKeywordStyle = lipgloss.NewStyle().
+	// The vocabulary a spec is written in, drawn by role rather than as one
+	// kind of word. The roles are openspec.nvim's, so a spec reads the same in
+	// either tool.
+	//
+	// Three roles from two hues and a weight, rather than three hues: green and
+	// red mean added and removed in a spec delta, which shows both on the same
+	// screen as its clauses, and a third hue would have had to be one of those.
+	// The two reuses are deliberate. Blue is the panel name line's, which sits
+	// above the pane rather than inside it; magenta is the store chip's, which
+	// is a background with black text in the header rather than a foreground in
+	// the content.
+
+	// GIVEN and WHEN, which open a condition.
+	kwConditionStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("3")) // yellow
+
+	// THEN, which opens the assertion a scenario exists to make.
+	kwAssertionStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("4")) // blue
+
+	// AND, which continues the clause above it, and so is quieter than what it
+	// continues.
+	kwContinuationStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("3")) // yellow
+
+	// SHALL, SHALL NOT, MUST and MUST NOT: the words that bind. Unlike the
+	// others these are written inside a sentence rather than opening a line.
+	kwBindingStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("5")) // magenta
 
 	// What a change does to a requirement, and what one of its scenarios does
 	// to the one it restates. Green, yellow and red are what a diff has always
@@ -2338,60 +2366,6 @@ func renderMarkdownLines(content string, width int) (string, []sourceLine) {
 func renderMarkdown(content string, width int) string {
 	out, _ := renderMarkdownLines(content, width)
 	return out
-}
-
-func renderInlineMarkdown(line string) string {
-	result := line
-
-	// Bold: **text**
-	for {
-		start := strings.Index(result, "**")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(result[start+2:], "**")
-		if end == -1 {
-			break
-		}
-		end += start + 2
-		bold := result[start+2 : end]
-		result = result[:start] + mdBoldStyle.Render(bold) + result[end+2:]
-	}
-
-	// Code: `text`. Specs name capabilities, keys and files in backticks
-	// constantly, and leaving the marks in makes them the loudest punctuation
-	// on the line. An unclosed backtick is left alone: the rest of the line is
-	// prose and deserves to survive.
-	for {
-		start := strings.Index(result, "`")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(result[start+1:], "`")
-		if end == -1 {
-			break
-		}
-		end += start + 1
-		code := result[start+1 : end]
-		result = result[:start] + mdCodeStyle.Render(code) + result[end+1:]
-	}
-
-	// Italic: _text_
-	for {
-		start := strings.Index(result, "_")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(result[start+1:], "_")
-		if end == -1 {
-			break
-		}
-		end += start + 1
-		italic := result[start+1 : end]
-		result = result[:start] + mdItalicStyle.Render(italic) + result[end+1:]
-	}
-
-	return result
 }
 
 // styleYAMLLine applies the styling for a single line of YAML.

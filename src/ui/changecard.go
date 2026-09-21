@@ -131,7 +131,7 @@ func writeClauseDiff(b *strings.Builder, old, new []specPart, left string, inner
 			writeClausePart(b, new[i], addedWordStyle, left, clauseIndent, inner,
 				func(_, o string) string { return markRun(addedWordStyle, splitWords(o)) })
 		default:
-			style := specKeywordStyle
+			style := clauseStyleFor(new[i].keyword)
 			if old[i].keyword != new[i].keyword {
 				style = addedWordStyle
 			}

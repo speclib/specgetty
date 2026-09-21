@@ -226,7 +226,10 @@ func renderSpecCard(n specNode, width int) string {
 				writeProse(&b, part.text, left, inner)
 				continue
 			}
-			b.WriteString(left + specKeywordStyle.Render(part.keyword) + "\n")
+			// By role rather than one style for all four: the condition, the
+			// assertion and the continuation of a clause read apart, which is
+			// what lets the shape of a scenario be read without reading it.
+			b.WriteString(left + clauseStyleFor(part.keyword).Render(part.keyword) + "\n")
 			// A hanging indent, so every row after the first still reads as
 			// belonging to the keyword above it.
 			clauseIndent := left + "   "
@@ -241,11 +244,18 @@ func renderSpecCard(n specNode, width int) string {
 
 // writeProse lays a node's body out, one paragraph at a time.
 func writeProse(b *strings.Builder, body, left string, inner int) {
+	first := true
 	for _, para := range strings.Split(body, "\n\n") {
 		joined := strings.Join(strings.Fields(strings.ReplaceAll(para, "\n", " ")), " ")
 		if joined == "" {
 			continue
 		}
+		// Between paragraphs, not after the last one. The caller separates
+		// whatever comes next, and a trailing blank here would double it.
+		if !first {
+			b.WriteString("\n")
+		}
+		first = false
 		// Styled before it is wrapped. The other way round, a backticked span
 		// that happens to straddle the wrap is two halves with one backtick
 		// each, and neither half is a span any more: the marks stay on screen
@@ -253,7 +263,6 @@ func writeProse(b *strings.Builder, body, left string, inner int) {
 		for _, line := range strings.Split(ansi.Wrap(renderInlineMarkdown(joined), inner, " "), "\n") {
 			b.WriteString(left + line + "\n")
 		}
-		b.WriteString("\n")
 	}
 }
 
@@ -335,7 +344,7 @@ func renderSpecReport(name string, problems []specProblem, width int) string {
 	for _, p := range problems {
 		b.WriteString("\n")
 		if p.line > 0 {
-			b.WriteString(left + specKeywordStyle.Render(fmt.Sprintf("line %d", p.line)) + "\n")
+			b.WriteString(left + sectionHeaderStyle.Render(fmt.Sprintf("line %d", p.line)) + "\n")
 		}
 		for _, line := range strings.Split(ansi.Wrap(renderInlineMarkdown(p.text), inner, " "), "\n") {
 			b.WriteString(left + line + "\n")

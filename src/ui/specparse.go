@@ -437,6 +437,15 @@ func partsOf(content []string) []specPart {
 				pending = &specPart{kind: partClause, keyword: kw, text: rest}
 				continue
 			}
+			// A line that opens with a clause keyword starts a paragraph of
+			// its own, even where the card will not lay it out as a clause.
+			// Markdown would glue it to the line above, which for a scenario
+			// written without bullets turns its three statements into one
+			// run-on sentence. The lines stay prose; they just keep the
+			// boundaries the author wrote.
+			if pending != nil && pending.kind == partProse && opensWithClauseKeyword(line) {
+				flush()
+			}
 			if pending == nil {
 				pending = &specPart{kind: partProse}
 			}

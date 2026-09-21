@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The vocabulary a spec is written in is drawn wherever markdown is rendered.
+  `GIVEN` and `WHEN` open a condition, `THEN` the assertion, `AND` continues the
+  clause above it, and `SHALL`, `SHALL NOT`, `MUST` and `MUST NOT` bind, each
+  drawn apart from the others. The words and their roles are
+  [openspec.nvim](https://github.com/speclib/openspec.nvim)'s, so a spec reads
+  the same in the editor and in specgetty.
 - `enter` on a change's specs sub-tab opens its spec deltas as an outline beside
   a card, marked with what the change does: `+` a requirement it adds, `~` one it
   modifies, `-` one it removes. Inside a modified requirement each scenario is
@@ -60,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   markdown on the specs tab.
 
 ### Fixed
+
+- A code span holding bold marks lost its colour part way through. Styles were
+  applied around one another, and the end of the inner one ended the outer, so a
+  spec quoting `- **WHEN** ...` was drawn half in colour and half in plain text.
+  One line of markdown is now drawn in a single pass, each segment carrying
+  exactly one style.
 
 - Scenarios no longer show up empty. A scenario's content is now kept whatever
   shape it is written in, rather than only the bulleted `- **WHEN**` form the

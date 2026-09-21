@@ -553,7 +553,7 @@ func TestTheCardStylesKeywordsAndCodeSpans(t *testing.T) {
 	}
 
 	scen := renderSpecCard(tree.nodes[2], 60)
-	if !strings.Contains(scen, specKeywordStyle.Render("WHEN")) {
+	if !strings.Contains(scen, kwConditionStyle.Render("WHEN")) {
 		t.Error("a clause keyword must be styled")
 	}
 }
