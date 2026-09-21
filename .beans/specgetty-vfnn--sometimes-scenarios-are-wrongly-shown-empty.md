@@ -1,11 +1,11 @@
 ---
 # specgetty-vfnn
 title: sometimes scenarios are wrongly shown empty
-status: in-progress
+status: completed
 type: bug
 priority: high
 created_at: 2026-09-21T20:19:39Z
-updated_at: 2026-09-21T21:02:35Z
+updated_at: 2026-09-21T21:18:26Z
 ---
 
 check /home/pim/mipnix/openspec/specs/airplane-mode/spec.md
@@ -70,3 +70,60 @@ lossless where there is only a habit.
 
 Deferred to `specgetty-p44t`: a per-project problems report and a mechanical
 repair, which would reach 130 of the 136 invalid files.
+
+
+## Summary of Changes
+
+Shipped as OpenSpec change `follow-the-spec-grammar`, commit `8706633`. 38 tasks.
+
+Both halves of the diagnosis, since either alone leaves the bug alive somewhere.
+
+**Nothing is dropped.** A scenario now carries its content as ordered parts, each
+a clause or a paragraph, so no line is lost for being written in a shape the
+clause matcher does not know. Ordered rather than grouped, because the two
+interleave: the corpus has horizontal rules and `**Rationale**:` paragraphs
+sitting between clauses, and grouping would reorder a behaviour contract.
+
+**Strict where OpenSpec has a rule.** The grammar is transcribed from
+`openspec-1.10.0/dist/core/parsers/`, not invented: the `## Requirements`
+section, `### Requirement:` inside it, any non-fenced `#### ` heading with
+content, fences masked, a delta header in a main spec an error. A test writes
+each of the 13 fixtures into a temporary project and runs
+`openspec validate <spec> --type spec` against it, asserting the two tools agree
+on whether the file is a spec. All 13 agree.
+
+**The refusal became a report.** `enter` always descends. A file that does not
+fit opens as a report naming every reason and the line it sits on, with `E` to
+open the file in an editor and `esc` back to the markdown. Repair it and the next
+scan turns the report into an outline without leaving the view.
+
+Measured after the change, over every `openspec/specs/*/spec.md` under /home/pim:
+605 specs, 469 structured, **0 blank scenarios**. Before it, 254 cards were blank.
+The 136 that do not structure are files `openspec validate` also rejects; 102 of
+them carry a delta header in a main spec.
+
+Two things found while building it, neither in the plan:
+
+- `document.path` styling ran after wrapping, so a backticked span straddling a
+  wrap lost its colour and kept its marks on screen. Visible in the report,
+  latent in the card since the previous change. Styled before wrapping now, with
+  a test.
+- The fence mask was blanking content as well as headings, which dropped a
+  fenced code block out of the scenario that contained it. The mask now applies
+  to heading detection only, which is what openspec does.
+
+Two tasks were reworded rather than implemented as written, both noted in
+`tasks.md`: 5.2 asked for `docActive()` to be inert in the report state, which is
+wrong, because a report with several faults is longer than a 60x20 terminal and
+has to scroll; and 1.4's rule was confirmed against openspec's own comment rather
+than assumed.
+
+The corpus test that missed this walked only this project's 24 specs, all one
+shape by one author. `src/ui/testdata/specs/` now holds 13 specimens, each with a
+comment naming the live project it came from.
+
+Coverage: ui 88.5% (floor raised 87.6 to 88.3), total 90.0% (89.2 to 89.8). Gate
+green. Both revert checks bit, with the build confirmed first.
+
+Deferred to `specgetty-p44t`: the per-project problems report and the mechanical
+repair, which would reach 130 of the 136 files that do not structure.
