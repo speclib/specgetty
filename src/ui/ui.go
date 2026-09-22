@@ -191,13 +191,14 @@ type model struct {
 	cursor            int
 	focus             int // focusDetail, focusListPane, focusContentPane
 	scanning          bool
+	refreshing        bool
 	err               error
 	spinner           spinner.Model
 	docViewport       viewport.Model
 	docKey            string
-	docLines          []sourceLine // source to screen mapping, when the document has a cursor
-	docCursor         int          // index into docLines
-	docPath           string       // the file a toggle writes back to
+	docTasks          taskItems // the tasks the cursor selects, and their rows
+	docCursor         int       // index into docTasks
+	docPath           string    // the file a toggle writes back to
 	detailTab         int
 	specCursor        int
 	changeCursor      int
@@ -359,6 +360,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// as the user is still looking at it. Handlers below may set it again.
 		m.statusMsg = ""
 
+		// Only a first scan refuses keys. It has an empty screen and nothing to
+		// act on, so there is nothing to lose. A refresh has the content on
+		// screen and the user's hands on the keyboard, and dropping presses
+		// there loses work: toggling several tasks quickly writes a file each
+		// time, and every write brings the watcher back around.
 		if m.scanning {
 			switch msg.String() {
 			case "q", "ctrl+c":
@@ -601,6 +607,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingKey = ""
 			if key == "g" {
 				switch {
+				case m.docHasCursor():
+					m.gotoDocEnd(false)
 				case m.docActive():
 					m.docViewport.GotoTop()
 				default:
@@ -699,16 +707,23 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "G":
 			switch {
+			case m.docHasCursor():
+				m.gotoDocEnd(true)
 			case m.docActive():
 				m.docViewport.GotoBottom()
 			default:
 				m.gotoListEnd(true)
 			}
 
+		// Every movement key splits three ways, the way `j` and `k` already do.
+		// A document with a cursor moves the cursor and lets the view follow; a
+		// document without one moves its rows; anything else is a list. The
+		// page keys used to skip the first case, which left the cursor off
+		// screen and `space` acting out of sight.
 		case "pgdown", "ctrl+f":
-			// A full page in a document, vim style. Lists keep halfPage(),
-			// which is how they have always moved.
 			switch {
+			case m.docHasCursor():
+				m.moveDocCursor(m.docPage())
 			case m.docActive():
 				m.docViewport.PageDown()
 			default:
@@ -717,15 +732,18 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "pgup", "ctrl+b":
 			switch {
+			case m.docHasCursor():
+				m.moveDocCursor(-m.docPage())
 			case m.docActive():
 				m.docViewport.PageUp()
 			default:
 				m.moveListCursor(-m.listPage())
 			}
 
-		// 5.3: half page, in a document only.
 		case "ctrl+d":
 			switch {
+			case m.docHasCursor():
+				m.moveDocCursor(max(1, m.docPage()/2))
 			case m.docActive():
 				m.docViewport.HalfPageDown()
 			default:
@@ -734,6 +752,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "ctrl+u":
 			switch {
+			case m.docHasCursor():
+				m.moveDocCursor(-max(1, m.docPage()/2))
 			case m.docActive():
 				m.docViewport.HalfPageUp()
 			default:
@@ -870,6 +890,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				msg, cmd := m.toggleSelectedTask()
 				m.statusMsg = msg
 				if cmd != nil {
+					// Through the refresh flag, so the watcher's notice of this
+					// same write coalesces into it rather than queueing a read
+					// of its own. Nothing is drawn for it.
+					m.refreshing = true
 					cmds = append(cmds, cmd)
 				}
 			}
@@ -922,13 +946,15 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fsChangeMsg:
 		if m.level >= levelProject && len(m.repoPaths) > 0 {
-			if m.scanning {
+			if m.scanning || m.refreshing {
 				// A scan already in flight may have read the file before this
 				// change landed in it. Remembered rather than started now, so
 				// the two do not race, and run once the current one lands.
+				// A toggle's own read counts here, which is what keeps a write
+				// and the watcher's notice of it to two reads rather than three.
 				m.scanPending = true
 			} else {
-				m.scanning = true
+				m.refreshing = true
 				cmds = append(cmds, m.rescanCurrent())
 			}
 			if m.watcher != nil {
@@ -945,13 +971,16 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case scanMsg:
 		m.scanning = false
+		m.refreshing = false
 		// A change that arrived while this scan was running. One further scan
 		// however many arrived: a scan reads the whole project, so a queue of
 		// them would be a queue of identical work.
 		if m.scanPending {
 			m.scanPending = false
 			if m.level >= levelProject && len(m.repoPaths) > 0 {
-				m.scanning = true
+				// A refresh whatever the scan before it was: there is content
+				// on screen by now, so this one interrupts nothing.
+				m.refreshing = true
 				cmds = append(cmds, m.rescanCurrent())
 			}
 		}
@@ -1657,6 +1686,11 @@ func (m model) renderFrame() string {
 	}
 
 	// Modal overlays
+	//
+	// The first scan only. It searches the filesystem with an empty screen, and
+	// saying so is the only thing on it. A refresh re-reads one project whose
+	// content is already drawn, and a modal over what is being read makes the
+	// application appear to stutter on every keystroke that writes a file.
 	if m.scanning {
 		modal := modalStyle.Width(modalWidth(m, 40)).Render(m.spinner.View() + " Scanning for OpenSpec sources...")
 		view = modalFrame(m.width, m.height, modal)
@@ -2582,12 +2616,27 @@ func (m model) renderNavBar() string {
 				{"q", "quit"},
 				{"esc", "back to list"},
 				{"\u2190\u2192", "artifact"},
-				{"jk/\u2191\u2193", "scroll"},
-				{"^f^b", "page"},
-				{"^d^u", "half"},
-				{"gg/G", "ends"},
-				{"p", "projects"},
 			}
+			// The tasks artifact moves a cursor; every other artifact scrolls.
+			// Described as what it does, and the toggle listed exactly where it
+			// does something, by the rule `E` and the card view arrows follow.
+			//
+			// `space` goes ahead of the paging hints so that a narrow terminal,
+			// which drops hints from the end, loses `gg/G` before it loses the
+			// action of the pane.
+			if m.docHasCursor() {
+				keys = append(keys,
+					struct{ key, action string }{"jk/\u2191\u2193", "navigate"},
+					struct{ key, action string }{"space", "toggle"})
+			} else {
+				keys = append(keys,
+					struct{ key, action string }{"jk/\u2191\u2193", "scroll"})
+			}
+			keys = append(keys,
+				struct{ key, action string }{"^f^b", "page"},
+				struct{ key, action string }{"^d^u", "half"},
+				struct{ key, action string }{"gg/G", "ends"},
+				struct{ key, action string }{"p", "projects"})
 		case levelProject:
 			keys = []struct{ key, action string }{
 				{"q", "quit"},

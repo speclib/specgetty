@@ -1,9 +1,5 @@
 # specgetty
 
-`Specgetty`, spg for short, is a text-mode UI for reviewing
-[OpenSpec](https://github.com/Fission-AI/OpenSpec) changes and specifications.
-It is built for speed and focus.
-
 [![Check](https://github.com/speclib/specgetty/actions/workflows/check.yml/badge.svg)](https://github.com/speclib/specgetty/actions/workflows/check.yml)
 [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/speclib/specgetty/gh-pages/badges/coverage.json)](https://github.com/speclib/specgetty/actions/workflows/check.yml)
 ![specs](https://raw.githubusercontent.com/speclib/specgetty/gh-pages/badges/number_of_specs.svg)
@@ -11,6 +7,10 @@ It is built for speed and focus.
 ![tasks](https://raw.githubusercontent.com/speclib/specgetty/gh-pages/badges/tasks_status.svg)
 [![Go](https://img.shields.io/github/go-mod/go-version/speclib/specgetty)](go.mod)
 [![MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
+`Specgetty`, spg for short, is a text-mode UI for reviewing
+[OpenSpec](https://github.com/Fission-AI/OpenSpec) changes and specifications.
+It is built for speed and focus.
 
 ![A spec opened as an outline beside a card](demo/recordings/hero.gif)
 

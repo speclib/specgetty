@@ -1,32 +1,4 @@
-# task-checkboxes Specification
-
-## Purpose
-Reading and changing a change's task list from inside specgetty: how checkbox
-lines look, how one is selected, and what happens to the file when it is ticked.
-
-## Requirements
-
-### Requirement: Checkbox lines render as boxes
-A markdown checkbox SHALL be drawn as a box rather than as its source
-punctuation.
-
-#### Scenario: An unchecked task
-- **WHEN** a line begins a markdown task that is not done
-- **THEN** it SHALL be drawn with an empty box in place of the `- [ ]` prefix
-
-#### Scenario: A completed task
-- **WHEN** a line begins a markdown task that is done
-- **THEN** it SHALL be drawn with a filled box in place of the `- [x]` prefix
-
-#### Scenario: The two states are distinguishable without colour
-- **WHEN** the two boxes are compared
-- **THEN** they SHALL differ in shape, so the state is readable on a highlighted
-  row and by a reader who cannot rely on colour
-
-#### Scenario: Both boxes occupy one cell
-- **WHEN** either box is drawn
-- **THEN** it SHALL occupy exactly one terminal cell, so that the width the
-  renderer counts is the width the terminal draws
+## MODIFIED Requirements
 
 ### Requirement: The tasks pane has a cursor
 When the tasks artifact of a change is shown, one task SHALL be selected, and
@@ -128,41 +100,7 @@ project's content was resolved to.
 - **THEN** the `tasks.md` under the store SHALL be written, rather than a path
   under the repository the user started in that holds no such file
 
-### Requirement: A toggle never discards another writer's work
-The saved file SHALL be built from the contents of `tasks.md` as they are on
-disk at the moment of the toggle, not from any copy read earlier.
-
-#### Scenario: The file changed since it was read
-- **WHEN** `tasks.md` has been edited and saved elsewhere since specgetty read
-  it, and the user toggles a task
-- **THEN** those edits SHALL survive, and only the toggled checkbox SHALL differ
-  from what is on disk
-
-#### Scenario: The selected line is no longer present
-- **WHEN** the selected line cannot be found in the file as it now stands
-- **THEN** nothing SHALL be written, and the user SHALL be told that the file
-  changed
-
-#### Scenario: The selected line appears more than once
-- **WHEN** the selected line appears more than once in the file, so the intended
-  one cannot be identified
-- **THEN** nothing SHALL be written, and the user SHALL be told
-
-### Requirement: The save is atomic
-A reader of `tasks.md` SHALL never observe a partially written file.
-
-#### Scenario: Replacing the file
-- **WHEN** a toggle is saved
-- **THEN** the file SHALL be replaced in a single step, so that any reader sees
-  either the previous contents or the new contents
-
-#### Scenario: Permissions are preserved
-- **WHEN** a toggle is saved
-- **THEN** the file's permissions SHALL be what they were before the save
-
-#### Scenario: The save fails
-- **WHEN** the file cannot be written, for instance because it is read only
-- **THEN** the user SHALL be told, and `tasks.md` SHALL be left as it was
+## ADDED Requirements
 
 ### Requirement: The tasks pane advertises its own keys
 The nav bar SHALL describe the tasks pane as it behaves, and SHALL do so exactly

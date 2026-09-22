@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A change's tasks pane selects a task rather than a line of one. A task in an
+  OpenSpec `tasks.md` wraps onto indented continuation lines, and the cursor
+  used to step through them one at a time while the highlight covered only the
+  first, so a task read as half selected and walking a list of eight took
+  twenty presses. `j` and `k` now move task to task, passing over headings and
+  blank lines, and the whole task is highlighted as one band.
+
+### Fixed
+
+- `pgdown`, `pgup`, `ctrl+f`, `ctrl+b`, `ctrl+d`, `ctrl+u`, `gg` and `G` move
+  the cursor in the tasks pane instead of scrolling past it. They used to move
+  the rows and leave the cursor behind, so `space` afterwards could toggle a
+  task that was no longer on screen.
+
+- Ticking a checkbox no longer blinks a "Scanning for OpenSpec sources" modal
+  over the screen, and no longer swallows the keys pressed while it is up.
+  Re-reading a project that is already on screen is not the same event as
+  searching the filesystem at startup, and only the second one is worth
+  interrupting a reader for. Ticking several tasks quickly used to lose presses.
+
+### Changed
+
+- The nav bar offers `space toggle` on the tasks pane, and describes `jk/↑↓`
+  there as navigating rather than scrolling, which is what they do.
+
 - The README is a landing page rather than a manual: 130 lines against 534, with
   the reference material moved to five pages under `docs/`. It now says what
   OpenSpec is and links it, carries badges, and documents three ways to install

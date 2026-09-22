@@ -50,6 +50,21 @@ func (m model) listPage() int {
 	return 1
 }
 
+// docPage is how far a page moves the cursor in a document that has one.
+//
+// It is the number of tasks that fill the rows the pane is showing, by the rule
+// listPage() already follows for a list: the key means the same thing at any
+// terminal height, and a task taller than one row counts once rather than once
+// per row. A page over tall tasks therefore moves fewer of them, which is the
+// property the change list and the spec outline are already tested for.
+func (m model) docPage() int {
+	height := m.docViewport.Height()
+	if height < 1 {
+		_, height = m.docRegion()
+	}
+	return max(1, m.docTasks.rows.fit(m.docCursor, height))
+}
+
 // moveListCursor moves whichever list holds the keyboard by delta rows,
 // stopping at either end.
 func (m *model) moveListCursor(delta int) {

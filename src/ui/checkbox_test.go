@@ -344,8 +344,11 @@ func TestTasksPaneHasACursorAndOthersDoNot(t *testing.T) {
 	}
 }
 
-func TestCursorMovesBySourceLineAndClamps(t *testing.T) {
+func TestCursorMovesByTaskAndClamps(t *testing.T) {
 	m, _ := taskModel(t, threeTasks)
+	if m.docTasks.count() != 3 {
+		t.Fatalf("%d tasks found, want 3", m.docTasks.count())
+	}
 	if m.docCursor != 0 {
 		t.Fatalf("cursor starts at %d, want 0", m.docCursor)
 	}
@@ -355,18 +358,55 @@ func TestCursorMovesBySourceLineAndClamps(t *testing.T) {
 		t.Errorf("k at the top moved to %d", m.docCursor)
 	}
 
-	for i := 0; i < 3; i++ {
-		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
-	}
-	if m.docCursor != 3 {
-		t.Errorf("cursor is at %d after three j, want 3", m.docCursor)
+	// One press per task, not one per source line. The heading and the blank
+	// line above the first task are passed over rather than stopped on.
+	m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	sel, ok := m.selectedTask()
+	if !ok || !strings.Contains(sel.text, "1.2") {
+		t.Errorf("one j selected %q, want the second task", sel.text)
 	}
 
 	for i := 0; i < 20; i++ {
 		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
 	}
-	if m.docCursor != len(m.docLines)-1 {
-		t.Errorf("cursor ran to %d, want it clamped at %d", m.docCursor, len(m.docLines)-1)
+	if m.docCursor != 2 {
+		t.Errorf("cursor ran to %d, want it clamped at 2", m.docCursor)
+	}
+}
+
+// TestTheCursorNeverStopsOnChrome pins the reason the unit changed: every
+// position the cursor can hold is a task, so `j` `space` `j` `space` works
+// through a list without a press landing on a heading or a blank line.
+func TestTheCursorNeverStopsOnChrome(t *testing.T) {
+	m, _ := taskModel(t, "## 1. Group\n\n- [ ] 1.1 first\n\n## 2. Other\n\n- [ ] 2.1 second\n")
+	if m.docTasks.count() != 2 {
+		t.Fatalf("%d tasks found, want 2", m.docTasks.count())
+	}
+	for i := 0; i < 6; i++ {
+		sel, ok := m.selectedTask()
+		if !ok {
+			t.Fatal("no task selected")
+		}
+		if !isTaskLine(sel.text) {
+			t.Fatalf("cursor stopped on %q, which is not a task", sel.text)
+		}
+		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	}
+}
+
+// TestATasksFileWithNoTasksHasNoCursor pins the fallback: nothing to select
+// means no cursor, and the pane scrolls by rows like any other document. It
+// falls out of the count rather than being a case of its own.
+func TestATasksFileWithNoTasksHasNoCursor(t *testing.T) {
+	m, _ := taskModel(t, "## 1. Group\n\nProse, and not one checkbox.\n")
+	if m.docTasks.count() != 0 {
+		t.Fatalf("%d tasks found in a file with none", m.docTasks.count())
+	}
+	if m.docHasCursor() {
+		t.Error("a tasks file with no tasks must not have a cursor")
+	}
+	if !m.docActive() {
+		t.Error("it should still be scrollable as a document")
 	}
 }
 
@@ -374,44 +414,96 @@ func TestHighlightCoversEveryRowOfAWrappedTask(t *testing.T) {
 	long := "- [ ] 1.1 " + strings.Repeat("word ", 40)
 	m, _ := taskModel(t, long+"\n- [ ] 1.2 short\n")
 
-	// Put the cursor on the long task.
-	for i := range m.docLines {
-		if m.docLines[i].text == long {
-			m.docCursor = i
-		}
+	first, last, ok := m.selectedTaskRows()
+	if !ok {
+		t.Fatal("no task selected")
 	}
-	m.syncDocument()
-
-	sel, _ := m.selectedSourceLine()
-	if sel.rowEnd == sel.rowStart {
+	if last == first {
 		t.Fatal("the task did not wrap; the test proves nothing")
 	}
 
 	rows := strings.Split(m.docViewport.View(), "\n")
-	// Every row of the selected line carries the highlight, and the row after
-	// it does not.
-	for i := sel.rowStart; i <= sel.rowEnd && i < len(rows); i++ {
+	for i := first; i <= last && i < len(rows); i++ {
 		if !strings.Contains(rows[i], "\x1b[") {
-			t.Errorf("row %d of the selected line is not highlighted", i)
+			t.Errorf("row %d of the selected task is not highlighted", i)
 		}
 	}
-	if next := sel.rowEnd + 1; next < len(rows) {
+	if next := last + 1; next < len(rows) {
 		plain := ansi.Strip(rows[next])
 		if strings.TrimSpace(plain) != "" && rows[next] != plain && strings.Contains(rows[next], "30;42") {
-			t.Error("the row after the selected line is highlighted too")
+			t.Error("the row after the selected task is highlighted too")
 		}
+	}
+}
+
+// TestHighlightCoversTheContinuationLines is the fault the bean reported: a
+// task's indented continuation lines sat outside the band, so a task read as
+// half selected.
+func TestHighlightCoversTheContinuationLines(t *testing.T) {
+	const tasks = "- [ ] 1.1 first line of the task\n" +
+		"      second line, indented\n" +
+		"      third line, indented\n" +
+		"- [ ] 1.2 another task\n"
+	m, _ := taskModel(t, tasks)
+
+	if m.docTasks.count() != 2 {
+		t.Fatalf("%d tasks found, want 2", m.docTasks.count())
+	}
+
+	first, last, ok := m.selectedTaskRows()
+	if !ok {
+		t.Fatal("no task selected")
+	}
+	if last-first < 2 {
+		t.Fatalf("the item spans rows %d-%d, want the three lines of the task", first, last)
+	}
+
+	rows := strings.Split(m.docViewport.View(), "\n")
+	for i := first; i <= last && i < len(rows); i++ {
+		if !strings.Contains(rows[i], "30;42") {
+			t.Errorf("row %d of the item is not highlighted: %q", i, ansi.Strip(rows[i]))
+		}
+	}
+	// The next task is a different item and keeps out of the band.
+	if next := last + 1; next < len(rows) && strings.Contains(rows[next], "30;42") {
+		t.Error("the following task is highlighted too")
+	}
+}
+
+// TestTheContinuationLinesAreNotSelectable pins the other half: the indented
+// lines are drawn and highlighted with their task, and never selected on their
+// own.
+func TestTheContinuationLinesAreNotSelectable(t *testing.T) {
+	const tasks = "- [ ] 1.1 first\n      continued\n      continued again\n- [ ] 1.2 second\n"
+	m, _ := taskModel(t, tasks)
+
+	m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	sel, ok := m.selectedTask()
+	if !ok || !strings.Contains(sel.text, "1.2") {
+		t.Errorf("one j from the first task selected %q, want the second task", sel.text)
+	}
+}
+
+// TestAnIndentedCheckboxIsAContinuation pins the boundary against the rule the
+// scanner already follows: it counts checkboxes at column zero, so an indented
+// one is part of the task above rather than a task of its own.
+func TestAnIndentedCheckboxIsAContinuation(t *testing.T) {
+	m, _ := taskModel(t, "- [ ] 1.1 first\n      - [ ] not counted\n- [ ] 1.2 second\n")
+	if m.docTasks.count() != 2 {
+		t.Errorf("%d tasks found, want 2: an indented checkbox is a continuation",
+			m.docTasks.count())
 	}
 }
 
 func TestSpaceTogglesTheSelectedTaskOnDisk(t *testing.T) {
 	m, path := taskModel(t, threeTasks)
 
-	// Move to the second task.
-	for !isTaskLine(mustLine(t, m).text) || !strings.Contains(mustLine(t, m).text, "1.2") {
-		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
-		if m.docCursor >= len(m.docLines)-1 {
+	// Move to the second task. One press, the cursor selecting tasks only.
+	for !strings.Contains(mustTask(t, m).text, "1.2") {
+		if m.docCursor >= m.docTasks.count()-1 {
 			break
 		}
+		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
 	}
 
 	m = press(m, tea.KeyPressMsg{Code: ' ', Text: " "})
@@ -425,11 +517,11 @@ func TestSpaceTogglesTheSelectedTaskOnDisk(t *testing.T) {
 	}
 }
 
-func mustLine(t *testing.T, m model) sourceLine {
+func mustTask(t *testing.T, m model) taskItem {
 	t.Helper()
-	sel, ok := m.selectedSourceLine()
+	sel, ok := m.selectedTask()
 	if !ok {
-		t.Fatal("no selected line")
+		t.Fatal("no selected task")
 	}
 	return sel
 }
@@ -438,9 +530,13 @@ func TestSpaceOnANonTaskLineWritesNothing(t *testing.T) {
 	m, path := taskModel(t, threeTasks)
 	before := readFile(t, path)
 
-	// The cursor starts on the heading.
-	if isTaskLine(mustLine(t, m).text) {
-		t.Fatal("expected the cursor to start on a heading")
+	// The cursor cannot rest on a heading any more: it selects tasks and
+	// nothing else. What still has to hold is that `space` writes nothing where
+	// there is no task under it, which is now a document with none in it.
+	m, path = taskModel(t, "## 1. Group\n\nProse, and not one checkbox.\n")
+	before = readFile(t, path)
+	if _, ok := m.selectedTask(); ok {
+		t.Fatal("expected no task to be selectable")
 	}
 	m = press(m, tea.KeyPressMsg{Code: ' ', Text: " "})
 
@@ -454,9 +550,7 @@ func TestSpaceOnANonTaskLineWritesNothing(t *testing.T) {
 
 func TestSpaceReportsWhenTheLineIsGone(t *testing.T) {
 	m, path := taskModel(t, threeTasks)
-	for !isTaskLine(mustLine(t, m).text) {
-		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
-	}
+	mustTask(t, m) // the cursor is on a task already; it selects nothing else
 
 	// The file loses that task behind specgetty's back.
 	if err := os.WriteFile(path, []byte("## 1. Group\n\n- [ ] 9.9 different\n"), 0o644); err != nil {
@@ -479,9 +573,7 @@ func TestSpaceIsInertWhileAConfirmationIsUp(t *testing.T) {
 	// draft wired space into the modal handlers by accident, which would have
 	// edited a file while a question was waiting for an answer.
 	m, path := taskModel(t, threeTasks)
-	for !isTaskLine(mustLine(t, m).text) {
-		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
-	}
+	mustTask(t, m) // the cursor is on a task already; it selects nothing else
 	before := readFile(t, path)
 
 	for _, setup := range []func(*model){
@@ -528,10 +620,13 @@ func TestCursorScrollsIntoView(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
 	}
-	sel := mustLine(t, m)
+	first, last, ok := m.selectedTaskRows()
+	if !ok {
+		t.Fatal("no task selected")
+	}
 	top := m.docViewport.YOffset()
-	if sel.rowStart < top || sel.rowEnd >= top+height {
+	if first < top || last >= top+height {
 		t.Errorf("selected rows %d-%d are outside the visible window %d-%d",
-			sel.rowStart, sel.rowEnd, top, top+height-1)
+			first, last, top, top+height-1)
 	}
 }

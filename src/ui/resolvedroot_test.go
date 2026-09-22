@@ -76,17 +76,16 @@ func onDiskStoreModel(t *testing.T, tasks string) (m model, origin, root, tasksP
 	return m, origin, root, tasksPath
 }
 
-// moveToTask puts the document cursor on the first task line, the heading above
-// it carrying no checkbox.
+// moveToTask puts the document cursor on the first task.
+//
+// The cursor selects tasks and nothing else, so it is already there. The helper
+// stays because it says what the tests below depend on, and fails loudly on a
+// document that has no task to select.
 func moveToTask(t *testing.T, m model) model {
 	t.Helper()
-	for i := 0; i < len(m.docLines); i++ {
-		if sel, ok := m.selectedSourceLine(); ok && isTaskLine(sel.text) {
-			return m
-		}
-		m = press(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	if _, ok := m.selectedTask(); !ok {
+		t.Fatal("no task found in the document")
 	}
-	t.Fatal("no task line found in the document")
 	return m
 }
 
@@ -335,8 +334,8 @@ func TestNoPaneGainedACursor(t *testing.T) {
 		m.syncDocument()
 
 		if got := m.docHasCursor(); got != p.want {
-			t.Errorf("%s: docHasCursor() = %v, want %v (path %q, %d mapped lines)",
-				p.name, got, p.want, m.docPath, len(m.docLines))
+			t.Errorf("%s: docHasCursor() = %v, want %v (path %q, %d tasks)",
+				p.name, got, p.want, m.docPath, m.docTasks.count())
 		}
 	}
 }

@@ -45,6 +45,34 @@ func isTaskLine(line string) bool {
 		strings.HasPrefix(line, taskCheckedPrefix)
 }
 
+// continuesTaskItem reports whether a line belongs to the task above it.
+//
+// A task is rarely one line. OpenSpec's own generators wrap a task onto as many
+// lines as it needs and indent the rest, so the checkbox line and its
+// continuations are one thing to a reader and have to be one thing to the
+// cursor:
+//
+//   - [ ] 1.1 Add `.github/workflows/check.yml` running on push and on
+//     installing nix and running `nix flake check` and nothing else
+//
+// A continuation is indented and not blank. Everything else starts something
+// new: an unindented line, a blank line, a heading, or the next checkbox.
+//
+// An indented `- [ ]` is a continuation rather than a task of its own, which
+// falls out of the prefixes above matching at column zero and is the answer
+// this file already gives everywhere else: the scanner does not count such a
+// line, so a cursor that stopped on it would offer to toggle something the
+// totals do not know about.
+func continuesTaskItem(line string) bool {
+	if isTaskLine(line) {
+		return false
+	}
+	if strings.TrimSpace(line) == "" {
+		return false
+	}
+	return line[0] == ' ' || line[0] == '\t'
+}
+
 // toggleTaskLine returns the line with its checkbox flipped.
 func toggleTaskLine(line string) (string, bool) {
 	if rest, ok := strings.CutPrefix(line, taskUncheckedPrefix); ok {
@@ -155,13 +183,12 @@ func toggleTaskInFile(path, want string) error {
 // wrong task, or that quietly did nothing, would be worse than one that says it
 // could not.
 func (m model) toggleSelectedTask() (string, tea.Cmd) {
-	sel, ok := m.selectedSourceLine()
+	sel, ok := m.selectedTask()
 	if !ok || m.docPath == "" {
-		return "", nil
-	}
-	if !isTaskLine(sel.text) {
-		// Not a task. Saying nothing is right: the key simply does not apply
-		// here, and a message for every stray press would be noise.
+		// No task under the cursor, which now means no task in the document at
+		// all: the cursor selects tasks and nothing else. Saying nothing is
+		// right, the key not applying here, and a message for every stray press
+		// would be noise.
 		return "", nil
 	}
 

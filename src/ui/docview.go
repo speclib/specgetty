@@ -352,7 +352,7 @@ func (m *model) syncDocument() {
 	d, ok := m.currentDoc()
 	if !ok {
 		m.docKey = ""
-		m.docLines = nil
+		m.docTasks = taskItems{}
 		m.docPath = ""
 		return
 	}
@@ -362,8 +362,8 @@ func (m *model) syncDocument() {
 	m.docViewport.SetHeight(height)
 
 	fresh := d.key != m.docKey
-	m.docLines = d.lines
 	m.docPath = d.path
+	m.docTasks = taskItemsIn(d.lines, strings.Count(d.content, "\n")+1)
 
 	if fresh {
 		// A different document starts at the top, cursor included.
@@ -385,27 +385,29 @@ func (m *model) syncDocument() {
 
 // clampDocCursor keeps the cursor inside the document.
 func (m *model) clampDocCursor() {
-	if len(m.docLines) == 0 {
-		m.docCursor = 0
-		return
-	}
-	if m.docCursor < 0 {
-		m.docCursor = 0
-	}
-	if m.docCursor >= len(m.docLines) {
-		m.docCursor = len(m.docLines) - 1
-	}
+	m.docCursor = clampIndex(m.docCursor, m.docTasks.count())
 }
 
-// selectedSourceLine returns the line under the cursor, if the document has one.
-func (m model) selectedSourceLine() (sourceLine, bool) {
-	if len(m.docLines) == 0 || m.docCursor < 0 || m.docCursor >= len(m.docLines) {
-		return sourceLine{}, false
-	}
-	return m.docLines[m.docCursor], true
+// selectedTask returns the task under the cursor, if the document has one.
+func (m model) selectedTask() (taskItem, bool) {
+	return m.docTasks.at(m.docCursor)
 }
 
-// highlightCursorLine marks every row the selected source line produced.
+// selectedTaskRows returns the first and last screen row of the selected task,
+// which is every row of its checkbox line and of its continuation lines.
+func (m model) selectedTaskRows() (first, last int, ok bool) {
+	if m.docTasks.count() == 0 {
+		return 0, 0, false
+	}
+	first, last = m.docTasks.rows.span(m.docCursor)
+	return first, last, first >= 0
+}
+
+// highlightCursorLine marks every row the selected task produced.
+//
+// Every row, not the checkbox line's rows: a task wraps onto continuation lines
+// and a band that covered the first of them and stopped read as a task half
+// selected, which is what the span from itemLines fixes.
 //
 // The rows are already styled, and layering a background over them would leave
 // the inner colours showing through in patches. Stripping first and restyling
@@ -415,14 +417,14 @@ func (m model) highlightCursorLine(d document) string {
 	if !d.cursored() {
 		return d.content
 	}
-	sel, ok := m.selectedSourceLine()
+	first, last, ok := m.selectedTaskRows()
 	if !ok {
 		return d.content
 	}
 
 	rows := strings.Split(d.content, "\n")
 	width, _ := m.docRegion()
-	for i := sel.rowStart; i <= sel.rowEnd && i < len(rows); i++ {
+	for i := first; i <= last && i < len(rows); i++ {
 		if i < 0 {
 			continue
 		}
@@ -431,13 +433,21 @@ func (m model) highlightCursorLine(d document) string {
 	return strings.Join(rows, "\n")
 }
 
-// scrollCursorIntoView moves the viewport so the whole selected line is shown.
+// scrollCursorIntoView moves the viewport so the whole selected task is shown.
 //
-// A source line can be several rows tall, so bringing the first row into view
-// is not enough: the last row has to fit as well, and when the line is taller
-// than the pane the top wins.
+// A task is several rows tall, so bringing the first row into view is not
+// enough: the last row has to fit as well, and when the task is taller than the
+// pane the top wins, a task scrolled to its last row reading as a fragment with
+// no beginning.
+//
+// The scroll is the smallest one that shows the task, rather than itemLines'
+// offsetFor, which answers a different question: where the pane would sit if it
+// were being laid out from scratch. The outline can ask that because it is laid
+// out from scratch every frame. A document holds a reading position across
+// rescans and resizes, and moving it further than the cursor needed would throw
+// that position away on every keystroke.
 func (m *model) scrollCursorIntoView() {
-	sel, ok := m.selectedSourceLine()
+	first, last, ok := m.selectedTaskRows()
 	if !ok {
 		return
 	}
@@ -447,18 +457,18 @@ func (m *model) scrollCursorIntoView() {
 		return
 	}
 
-	if sel.rowEnd >= top+height {
-		top = sel.rowEnd - height + 1
+	if last >= top+height {
+		top = last - height + 1
 	}
-	if sel.rowStart < top {
-		top = sel.rowStart
+	if first < top {
+		top = first
 	}
 	m.docViewport.SetYOffset(top)
 }
 
-// moveDocCursor steps the cursor and brings it into view.
+// moveDocCursor steps the cursor by delta tasks and brings it into view.
 func (m *model) moveDocCursor(delta int) {
-	if len(m.docLines) == 0 {
+	if m.docTasks.count() == 0 {
 		return
 	}
 	m.docCursor += delta
@@ -466,9 +476,27 @@ func (m *model) moveDocCursor(delta int) {
 	m.scrollCursorIntoView()
 }
 
+// gotoDocEnd sends the cursor to the first or last task.
+func (m *model) gotoDocEnd(last bool) {
+	n := m.docTasks.count()
+	if n == 0 {
+		return
+	}
+	to := 0
+	if last {
+		to = n - 1
+	}
+	m.docCursor = clampIndex(to, n)
+	m.scrollCursorIntoView()
+}
+
 // docHasCursor reports whether the document on screen is one the cursor drives.
+//
+// A tasks file with no checkbox at column zero has no tasks to select, so it
+// answers no and is scrolled by rows like any other document. That falls out of
+// the count rather than being a case of its own.
 func (m model) docHasCursor() bool {
-	return m.docActive() && len(m.docLines) > 0 && m.docPath != ""
+	return m.docActive() && m.docTasks.count() > 0 && m.docPath != ""
 }
 
 // docScrollPercent reports how far down the document the viewport sits, or -1

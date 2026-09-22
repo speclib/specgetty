@@ -39,8 +39,11 @@ func TestAChangeDuringAScanIsScannedAfterIt(t *testing.T) {
 	m := watchingModel(t)
 
 	m, started := issuedScan(m, fsChangeMsg{})
-	if !started || !m.scanning {
-		t.Fatal("the first change should start a scan")
+	if !started || !m.refreshing {
+		t.Fatal("the first change should start a refresh")
+	}
+	if m.scanning {
+		t.Fatal("a watcher rescan is a refresh, not a first scan")
 	}
 
 	// A second change while the first scan is still running. The watcher's
@@ -61,8 +64,8 @@ func TestAChangeDuringAScanIsScannedAfterIt(t *testing.T) {
 	if m.scanPending {
 		t.Error("the pending change should be consumed by the scan it caused")
 	}
-	if !m.scanning {
-		t.Error("the further scan is in flight")
+	if !m.refreshing {
+		t.Error("the further refresh is in flight")
 	}
 }
 
@@ -87,7 +90,7 @@ func TestManyChangesDuringAScanCauseOneFurtherScan(t *testing.T) {
 	if more {
 		t.Error("the second landing should not start a third scan")
 	}
-	if m.scanning {
+	if m.scanning || m.refreshing {
 		t.Error("nothing is in flight once the queue is drained")
 	}
 }
@@ -99,7 +102,7 @@ func TestAQuietProjectScansOnce(t *testing.T) {
 	if followed {
 		t.Error("nothing arrived during the scan, so nothing should follow it")
 	}
-	if m.scanning {
+	if m.scanning || m.refreshing {
 		t.Error("the scan is done")
 	}
 }
