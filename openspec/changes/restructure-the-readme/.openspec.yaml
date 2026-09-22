@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-09-22
+
+# This change moves and rewrites documentation. No software behaviour
+# changes, so there is no requirement to add, modify or remove.
+skip_specs: true

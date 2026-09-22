@@ -1,0 +1,68 @@
+# What the repository is made of, published as badges.
+#
+# Separate from the gate on purpose. A badge is decoration and the gate is not:
+# a branch push that raced, or a permission a fork cannot be given, is not
+# evidence that the software is broken. This workflow needs write access to
+# publish, which a pull request from a fork can never be granted, so combining
+# the two would fail an outside contributor's pull request through no fault of
+# theirs.
+#
+# It runs after the gate rather than beside it, so that nothing describes a
+# commit the gate rejected.
+name: Badges
+
+on:
+  workflow_run:
+    workflows: ["Check"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the commit that passed
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # Creates gh-pages on its first run, and writes the four OpenSpec metrics:
+      # specs, requirements, the task ratio and open changes.
+      - name: OpenSpec metrics
+        uses: wearetechnative/openspec-badge-action@main
+
+      - name: Take the coverage the gate measured
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-badge
+          path: badge
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # A second checkout rather than a bare clone, so the push is authenticated
+      # the same way every other push in this repository is.
+      - name: Check out the published branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: published
+
+      - name: Publish the coverage beside the metrics
+        working-directory: published
+        run: |
+          set -euo pipefail
+          mkdir -p badges
+          cp ../badge/coverage.json badges/coverage.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add badges/coverage.json
+          if git diff --cached --quiet; then
+            echo "coverage unchanged"
+            exit 0
+          fi
+          git commit -m "coverage: the number the gate measured on ${GITHUB_SHA::7}"
+          git push

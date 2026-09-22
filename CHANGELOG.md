@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Continuous integration. Every push and every pull request runs `nix flake
+  check`, the same gate `scripts/ship-change.sh` runs, so that what CI enforces
+  and what shipping enforces cannot drift apart. The coverage number the gate
+  measured and the project's OpenSpec metrics are published as badges.
+
 ### Removed
 
 - Directories as positional arguments. `spg ~/work` overrode `scandirs.include`
