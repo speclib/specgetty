@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The README is a landing page rather than a manual: 130 lines against 534, with
+  the reference material moved to five pages under `docs/`. It now says what
+  OpenSpec is and links it, carries badges, and documents three ways to install
+  that were each run before being written down. The one it replaced did not work.
+
 ### Added
 
 - Continuous integration. Every push and every pull request runs `nix flake

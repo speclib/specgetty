@@ -1,11 +1,11 @@
 ---
 # specgetty-y662
 title: 'README: a landing page, not a manual'
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-09-22T15:25:04Z
-updated_at: 2026-09-22T15:25:04Z
+updated_at: 2026-09-22T15:51:51Z
 parent: specgetty-ab9u
 ---
 
