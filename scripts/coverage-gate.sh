@@ -27,7 +27,7 @@ floor_for() {
   case "$1" in
     # Raised from 42.3 when the CLI action moved out of main() into runApp,
     # which made everything up to the terminal takeover reachable from a test.
-    github.com/mipmip/specgetty/src)         echo "87.7" ;;
+    github.com/mipmip/specgetty/src)          echo "88.5" ;;
     github.com/mipmip/specgetty/src/scanner) echo "95.4" ;;
     github.com/mipmip/specgetty/src/ui)      echo "89.6" ;;
     # watcher measures anywhere from 84.6% to 90.2% depending on how its

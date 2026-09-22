@@ -29,7 +29,7 @@ The config path follows the XDG Base Directory Specification. If `$XDG_CONFIG_HO
 ## Running
 
 ```bash
-spg [ <directories...> ]
+spg
 ```
 
 `spg` opens the OpenSpec project you are standing in. It resolves it from the
@@ -43,8 +43,10 @@ is no project there, it offers the project picker.
 | `--path <dir>`          | Open that project; implies `--view=single`          |
 | `--change-fields=<a,b>` | Choose the change list columns                      |
 
-If one/more directories are specified as `<directories>`, then this will override the
-`scandirs.include` from your config file.
+The command line takes no positional arguments. To open one project, use
+`--path`. To choose where the picker looks, edit `scandirs.include` in the
+configuration file. A directory passed as an argument is refused rather than
+ignored, so it cannot look as though it had been honoured.
 
 ## UI
 

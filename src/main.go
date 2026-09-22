@@ -132,25 +132,21 @@ func appFlags() []cli.Flag {
 // that it can be driven by a test. Everything up to the point the terminal is
 // taken over is reachable that way, which `--debug` exercises end to end.
 func runApp(c *cli.Context) error {
-	config, err := scanner.ParseConfigFile(c.String("config"), defaultConfig)
+	// Refused rather than ignored. urfave/cli hands a positional argument
+	// through without complaint, so saying nothing would open the working
+	// directory and look like the argument had been honoured.
 	if c.Args().Len() > 0 {
-
-		fmt.Println("Arguments given, skipping config")
-		// A configuration that failed to parse leaves config nil, and the
-		// arguments replace its scan directories outright, so there is nothing
-		// to read from it. Assigning into the nil pointer was a crash:
-		// `spg --config broken.yml somedir` segfaulted.
-		if config == nil {
-			config = &scanner.Config{}
-		}
-		config.ScanDirs.Include = c.Args().Slice()
-
-	} else {
-		if err != nil {
-			return err
-		}
-		expandScanDirs(config)
+		return fmt.Errorf("%s: directories are not accepted as arguments. "+
+			"Use --path to open one project, or scandirs.include in the "+
+			"configuration file to choose what the picker searches",
+			c.Args().First())
 	}
+
+	config, err := scanner.ParseConfigFile(c.String("config"), defaultConfig)
+	if err != nil {
+		return err
+	}
+	expandScanDirs(config)
 
 	// A setting that no longer has an effect is reported rather than swallowed.
 	// YAML ignores keys it does not know, so without this a released config

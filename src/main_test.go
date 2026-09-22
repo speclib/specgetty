@@ -329,14 +329,65 @@ func TestRunAppInDebugModeScansAndReturns(t *testing.T) {
 	}
 }
 
-func TestRunAppTakesArgumentsOverTheConfig(t *testing.T) {
+// TestRunAppRefusesADirectoryArgument replaces one asserting that arguments
+// overrode the configured scan directories.
+//
+// Refusing is the point rather than a detail: urfave/cli hands a positional
+// argument through without complaint, so a version that merely dropped the
+// feature would open the working directory and look like it had honoured the
+// argument.
+func TestRunAppRefusesADirectoryArgument(t *testing.T) {
 	base := t.TempDir()
 	mkProject(t, filepath.Join(base, "alpha"))
-	cfg := writeConfigFile(t, filepath.Join(t.TempDir(), "nowhere"))
+	cfg := writeConfigFile(t, base)
 
 	err := newApp().Run([]string{"specgetty", "--config", cfg, "--debug", base})
-	if err != nil {
-		t.Fatalf("arguments override the configured scan directories: %v", err)
+
+	if err == nil {
+		t.Fatal("a directory argument must be refused, not ignored")
+	}
+	for _, want := range []string{base, "--path", "scandirs.include"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error should name %q, so the reader knows what to use\n  got: %v",
+				want, err)
+		}
+	}
+}
+
+func TestRunAppRefusesBeforeReadingAnything(t *testing.T) {
+	// The refusal comes first, so nothing is read and nothing is walked on the
+	// strength of an argument. Proved by ordering rather than by watching for
+	// absence: the configuration path here does not exist, so if it were read
+	// the error would be that one instead.
+	missing := filepath.Join(t.TempDir(), "no-such-config.yml")
+
+	err := newApp().Run([]string{"specgetty", "--config", missing, "--debug", t.TempDir()})
+
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	if !strings.Contains(err.Error(), "not accepted as arguments") {
+		t.Errorf("the argument is refused before the configuration is read\n  got: %v", err)
+	}
+}
+
+// TestABrokenConfigErrorsWithAnArgumentPresent replaces
+// TestRunAppTakesArgumentsEvenWhenTheConfigIsUnreadable, which asserted the
+// behaviour this change removes.
+//
+// This is the case that used to segfault: arguments suppressed the
+// configuration error, and the nil config was then written to. The guard that
+// fixed it existed only for this branch and goes with it, so what used to be a
+// crash and then a silent success is now an error.
+func TestABrokenConfigErrorsWithAnArgumentPresent(t *testing.T) {
+	broken := filepath.Join(t.TempDir(), "broken.yml")
+	if err := os.WriteFile(broken, []byte("scandirs: [unclosed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := newApp().Run([]string{"specgetty", "--config", broken, "--debug", t.TempDir()})
+	if err == nil {
+		t.Fatal("a run with an argument must not succeed")
 	}
 }
 
@@ -418,20 +469,6 @@ func TestRunAppReportsAnUnreadableConfig(t *testing.T) {
 	}
 }
 
-func TestRunAppTakesArgumentsEvenWhenTheConfigIsUnreadable(t *testing.T) {
-	// Directory arguments replace the configured scan directories outright, so
-	// a broken configuration does not stand in their way.
-	path := filepath.Join(t.TempDir(), "config.yml")
-	if err := os.WriteFile(path, []byte("scandirs: [unclosed\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	base := t.TempDir()
-	mkProject(t, filepath.Join(base, "alpha"))
-	if err := newApp().Run([]string{"specgetty", "--config", path, "--debug", base}); err != nil {
-		t.Errorf("arguments override the configuration: %v", err)
-	}
-}
-
 func TestDebugStillLogs(t *testing.T) {
 	// `--debug` never enters the interface, so its logging is the one place
 	// this output is useful and correct. It must survive the panel's removal.
@@ -452,5 +489,29 @@ func TestDebugStillLogs(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("debug output lost %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestDebugReportsAScanThatFailed covers the one error path `--debug` has.
+//
+// With `-i=false` a directory the walk cannot read stops the scan rather than
+// being logged, and the command has to report it rather than printing an empty
+// list as though nothing were there.
+func TestDebugReportsAScanThatFailed(t *testing.T) {
+	base := t.TempDir()
+	locked := filepath.Join(base, "locked")
+	if err := os.Mkdir(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o700) })
+	if _, err := os.ReadDir(locked); err == nil {
+		t.Skip("this user can read a 0000 directory, so the walk cannot fail here")
+	}
+
+	cfg := writeConfigFile(t, locked)
+
+	err := newApp().Run([]string{"specgetty", "--config", cfg, "--debug", "-i=false"})
+	if err == nil {
+		t.Fatal("a scan that could not read a directory must be reported")
 	}
 }

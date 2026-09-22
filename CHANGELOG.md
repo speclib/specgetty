@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Directories as positional arguments. `spg ~/work` overrode `scandirs.include`
+  from your configuration; use `--path` to open one project, or edit
+  `scandirs.include` to choose what the picker searches. An argument is now
+  refused rather than ignored, so it cannot look as though it had been honoured.
+
 ### Added
 
 - The README has pictures in it. Seven recordings show the change list, a
