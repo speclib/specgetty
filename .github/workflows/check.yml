@@ -1,0 +1,53 @@
+# The gate, run where everyone can see it.
+#
+# `nix flake check` and nothing else. It builds the package, vets it, runs the
+# suite and enforces the coverage ratchet in scripts/coverage-gate.sh, which is
+# exactly what scripts/ship-change.sh runs before a change is allowed to ship.
+# A workflow that reproduced those steps instead would be a second opinion about
+# whether the tree is good, and two gates that can disagree are worse than one:
+# the disagreement is found when a change is already believed to be finished.
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nix
+        uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Cache the store
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Run the gate
+        run: nix flake check --print-build-logs
+
+      # The number the gate measured, kept for the badge job to publish. Taken
+      # rather than measured again: a second measurement can disagree with the
+      # one that decides whether a change may ship.
+      - name: Record the coverage the gate measured
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          total=$(bash scripts/coverage-gate.sh | grep -oE 'TOTAL +[0-9.]+%' | grep -oE '[0-9.]+')
+          echo "Coverage measured by the gate: ${total}%"
+          mkdir -p badge
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"brightgreen"}\n' \
+            "$total" > badge/coverage.json
+
+      - name: Keep it for the badge job
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-badge
+          path: badge/coverage.json
+          retention-days: 1
