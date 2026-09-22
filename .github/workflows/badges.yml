@@ -30,6 +30,15 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      # The action returns to `main` by name when it is done, and a checkout of
+      # a bare commit is detached, so there is no such branch to return to. It
+      # published correctly and then failed on that last step. Naming the branch
+      # here satisfies it without giving up the commit: the badges still
+      # describe the commit that passed rather than whatever main's tip has
+      # become by the time this runs.
+      - name: Give the commit a branch name the action can return to
+        run: git checkout -B main
+
       # Creates gh-pages on its first run, and writes the four OpenSpec metrics:
       # specs, requirements, the task ratio and open changes.
       - name: OpenSpec metrics

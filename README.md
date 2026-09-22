@@ -1,18 +1,19 @@
 # specgetty
 
-Do you work with multiple projects that use OpenSpec for managing specifications?
-
-Have you ever lost track of which OpenSpec projects exist on your local machine
-or what state they're in?
-
-`spg` (specgetty) is a text-mode UI tool to find and report the status of
-OpenSpec projects on your local machine.
+`Specgetty`, spg for short is a text-mode UI tool for reviewing OpenSpec changes and specifications. Specgetty is optimized for speed and focus.
 
 ![A spec opened as an outline beside a card](demo/recordings/hero.gif)
 
-The recordings on this page are made against a fixture harbour under `demo/`,
-not against anyone's disk. `make demo` remakes them; `demo/recordings/
-RECORDED_AT` says which version they show.
+## Features
+
+- Fast navigation through changes/specs/archive
+- Review specs in focussed card view
+- Change deltas marked added, modified, removed
+- Task checkboxes ticked off in place
+- Every openspec project on your machine, searchable
+- Archive, discard and export a change
+- Shared spec stores followed
+- Unreadable specs reported with the reason and the line
 
 ## Source-mode installation
 
@@ -76,14 +77,14 @@ between them.
 
 ### Keys everywhere
 
-| Key                        | Action                  |
-| -------------------------- | ----------------------- |
-| `j`/`k` or `<up>`/`<down>` | Move the cursor         |
-| `<enter>`                  | Go one level deeper     |
-| `<esc>`                    | Go one level back       |
+| Key                        | Action                       |
+|:---------------------------|:-----------------------------|
+| `j`/`k` or `<up>`/`<down>` | Move the cursor              |
+| `<enter>`                  | Go one level deeper          |
+| `<esc>`                    | Go one level back            |
 | `E`                        | Open the file in your editor |
-| `p`                        | Open the project picker |
-| `q` / `ctrl-C`             | Quit                    |
+| `p`                        | Open the project picker      |
+| `q` / `ctrl-C`             | Quit                         |
 
 There is no rescan key. The open project is watched and re-read whenever
 anything under its `openspec/` changes, and the two things that live outside
@@ -105,13 +106,13 @@ you are already in, which re-resolves and re-reads it.
 `E` hands the file a pane is showing to your own editor. It is bound wherever a
 pane shows exactly one file, and nowhere else:
 
-| Pane                                        | What `E` opens        |
-| ------------------------------------------- | --------------------- |
-| a change's proposal, design or tasks        | that artifact's file  |
-| a spec on the specs tab                     | that spec's `spec.md` |
-| the project row of the properties tab       | the configuration file |
-| a change's specs sub-tab                    | nothing: several files |
-| the schema and store rows                   | nothing: no file      |
+| Pane                                  | What `E` opens         |
+|:--------------------------------------|:-----------------------|
+| a change's proposal, design or tasks  | that artifact's file   |
+| a spec on the specs tab               | that spec's `spec.md`  |
+| the project row of the properties tab | the configuration file |
+| a change's specs sub-tab              | nothing: several files |
+| the schema and store rows             | nothing: no file       |
 
 The nav bar lists `E` exactly where it would do something, so the pane itself
 tells you whether the key applies.
@@ -169,30 +170,14 @@ showing whichever one the cursor is on. The card is the spec rewritten for
 reading: one requirement or one scenario at a time, clauses laid out with their
 keyword above the text, rather than the raw markdown.
 
-```
- +----------------------------+ +-------------------------------------+
- | Purpose                    | |                                     |
- | A change opens at its own  | |    Scenario: Ascend from a change   |
- |   navigation level         | |                                     |
- |   Descend from the list    | |    WHEN                             |
- | > Ascend from a change     | |       a change is open and the      |
- |   An open change names its | |       user presses esc              |
- |     schema                 | |                                     |
- | Artifact sub-navigation    | |    THEN                             |
- |   Right arrow at the last  | |       the change list SHALL be      |
- |     sub-tab                | |       displayed with the same       |
- |   Left arrow at the first  | |       change under the cursor       |
- +----------------------------+ +-------------------------------------+
-```
-
-| Key                        | Action                                        |
-| -------------------------- | --------------------------------------------- |
+| Key                        | Action                                             |
+|:---------------------------|:---------------------------------------------------|
 | `<tab>`                    | Move the keyboard between the outline and the card |
-| `j`/`k` or `<up>`/`<down>` | Move one node, or scroll the card             |
-| `^f`/`^b`                  | Page the outline, or the card                 |
-| `^d`/`^u`                  | Half a page                                   |
-| `gg` / `G`                 | First and last                                |
-| `<esc>`                    | Back to the specs tab, same spec selected     |
+| `j`/`k` or `<up>`/`<down>` | Move one node, or scroll the card                  |
+| `^f`/`^b`                  | Page the outline, or the card                      |
+| `^d`/`^u`                  | Half a page                                        |
+| `gg` / `G`                 | First and last                                     |
+| `<esc>`                    | Back to the specs tab, same spec selected          |
 
 A label too long for the outline wraps rather than being cut, and the cursor
 still moves one requirement or scenario per keystroke however many rows it
@@ -210,12 +195,12 @@ A spec is written in a small vocabulary, and specgetty draws it wherever
 markdown is rendered: the specs tab, the detail card, a change's spec deltas,
 and the proposal and design documents.
 
-| word                                  | role                            |
-| ------------------------------------- | ------------------------------- |
-| `GIVEN`, `WHEN`                       | opens a condition               |
-| `THEN`                                | opens the assertion             |
-| `AND`                                 | continues the clause above it   |
-| `SHALL`, `SHALL NOT`, `MUST`, `MUST NOT` | binds                        |
+| word                                     | role                            |
+| ---------------------------------------- | ------------------------------- |
+| `GIVEN`, `WHEN`                          | opens a condition               |
+| `THEN`                                   | opens the assertion             |
+| `AND`                                    | continues the clause above it   |
+| `SHALL`, `SHALL NOT`, `MUST`, `MUST NOT` | binds                           |
 
 The three clause roles are drawn apart from one another, so the shape of a
 scenario reads before the words do. The four words that bind are drawn wherever
@@ -245,35 +230,22 @@ A change carries a spec delta per capability it touches, and the specs sub-tab
 lists them all as one document. `enter` opens them as an outline instead, marked
 with what the change does to each requirement:
 
-```
- +----------------------------+ +-------------------------------------+
- | change-search              | | [diff] old  new                     |
- | + The prompt names the     | |                                     |
- |     matchers it accepts    | |    Scenario: The legend             |
- |     The prompt is opened   | |                                     |
- |   ~ The first character    | |    WHEN                             |
- |   + Too narrow to say it   | |       the prompt is focused and     |
- | ~ A failed name search     | |       empty has been typed          |
- | - The old grammar          | |                                     |
- +----------------------------+ +-------------------------------------+
-```
-
-| Mark | On a requirement      | On a scenario                          |
-| ---- | --------------------- | -------------------------------------- |
-| `+`  | the change adds it    | the change introduces it                |
-| `~`  | the change modifies it | the change edits it                    |
-| `-`  | the change removes it | never: a delta cannot drop one          |
-|      |                       | unchanged, and drawn back to say so     |
+| Mark       | On a requirement       | On a scenario                       |
+|:-----------|:-----------------------|:------------------------------------|
+| `+`        | the change adds it     | the change introduces it            |
+| `~`        | the change modifies it | the change edits it                 |
+| `-`        | the change removes it  | never: a delta cannot drop one      |
+|            |                        | unchanged, and drawn back to say so |
 
 The marks on scenarios are the useful half. A modified requirement is restated
 in full even to change one sentence, and more than half of what it restates is
 usually text it does not touch. The outline says which half is which without
 your reading it.
 
-| Key                | Action                                              |
-| ------------------ | --------------------------------------------------- |
+| Key                | Action                                                |
+|:-------------------|:------------------------------------------------------|
 | `<left>`/`<right>` | Move between the difference, the original and the new |
-| `<esc>`            | Back to the change, specs sub-tab selected           |
+| `<esc>`            | Back to the change, specs sub-tab selected            |
 
 Everything else is the same as a spec: `tab`, `j`/`k`, the paging keys and `E`
 all behave as they do one level across.
@@ -321,13 +293,13 @@ The rules are OpenSpec's own, transcribed from its parser rather than invented
 here, so a file specgetty will not structure is one `openspec validate` also
 rejects:
 
-| rule                                                  | why it matters             |
-| ----------------------------------------------------- | -------------------------- |
+| rule                                                  | why it matters                    |
+|:------------------------------------------------------|:----------------------------------|
 | requirements live under one `## Requirements` heading | openspec parses only that section |
-| a `## Purpose` section                                | required of every spec     |
-| `### Requirement: <name>` inside that section         | outside it, it is invisible |
-| a `#### ` heading with content under it               | that is a scenario         |
-| no `## ADDED Requirements` and the like               | delta headers belong in a change |
+| a `## Purpose` section                                | required of every spec            |
+| `### Requirement: <name>` inside that section         | outside it, it is invisible       |
+| a `#### ` heading with content under it               | that is a scenario                |
+| no `## ADDED Requirements` and the like               | delta headers belong in a change  |
 
 What OpenSpec does not define is how a scenario's content is written. Its own
 model for a scenario is raw text, so specgetty accepts whatever is there rather
@@ -350,17 +322,6 @@ than requiring a convention no tool enforces.
 `e` asks where to put the zip. The prompt opens on `export_dir` from your
 config, or your home directory when that is unset, and `tab` completes a path
 against the filesystem:
-
-```
- ╭────────────────────────────────────────────╮
- │  Export "follow-the-store"                 │
- │                                            │
- │  → ~/Downloads/                            │
- │    follow-the-store-2026-09-21.zip         │
- │                                            │
- │  tab completes   ⏎ export   esc cancel     │
- ╰────────────────────────────────────────────╯
-```
 
 You type a directory; the filename is generated from the change name and the
 date. Editing the directory redirects that one export and leaves your config
@@ -428,18 +389,6 @@ that finds nothing suggests the same term as a `:` search.
 The third tab reports what the project is and where its parts come from, as a
 list of rows beside their content:
 
-```
- ╭──────────────────╮ ╭────────────────────────────────────────╮
- │ PROJECT          │ │ schema: spec-driven                    │
- │   config         │ │ default: yes                           │
- │   store          │ │ changes: 26                            │
- │                  │ │ source: package                        │
- │ SCHEMAS          │ │ artifacts:                             │
- │   spec-driven    │ │   proposal -> proposal.md              │
- │   tinychange     │ ╰────────────────────────────────────────╯
- ╰──────────────────╯
-```
-
 ![The properties tab](demo/recordings/properties.gif)
 
 The rows are grouped under headers the cursor skips over. A group keeps its
@@ -447,10 +396,10 @@ header when it holds nothing, so a project with no recorded schema still says
 so.
 
 | Row        | Shows                                                         |
-| ---------- | ------------------------------------------------------------- |
-| `config`   | the one configuration that applies, and the file it came from  |
-| `store`    | where the content comes from, or `local`                       |
-| a schema   | one row per workflow schema the project's changes record       |
+|:-----------|:--------------------------------------------------------------|
+| `config`   | the one configuration that applies, and the file it came from |
+| `store`    | where the content comes from, or `local`                      |
+| a schema   | one row per workflow schema the project's changes record      |
 
 The list takes twenty columns wherever the panel can spare them, and no more:
 its labels are short and fixed, so every column a wider terminal adds goes to
@@ -543,13 +492,13 @@ from `change_fields` in the config file, and `--change-fields` overrides that:
 spg --change-fields=name,tasks,specs,archived
 ```
 
-| Field      | Shows                                            |
-| ---------- | ------------------------------------------------ |
-| `name`     | The change name. Takes the leftover width        |
-| `tasks`    | Task progress as `done/total`                    |
-| `specs`    | How many specs the change touches                |
+| Field      | Shows                                                                                          |
+|:-----------|:-----------------------------------------------------------------------------------------------|
+| `name`     | The change name. Takes the leftover width                                                      |
+| `tasks`    | Task progress as `done/total`                                                                  |
+| `specs`    | How many specs the change touches                                                              |
 | `archived` | Whether the change is active or archived. Redundant against the group header, so not a default |
-| `date`     | The archive date, for archived changes           |
+| `date`     | The archive date, for archived changes                                                         |
 
 The default is `name,tasks,specs,date`. On a narrow terminal, columns are
 dropped from the right rather than squeezing the name past readability.
