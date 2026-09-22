@@ -1,2 +1,8 @@
 spg
 *.xcf
+
+# The demo recordings under demo/recordings/ are committed: the README shows
+# them, so a GIF that only exists after `make demo` would be a broken image.
+# What is not committed is the scratch a recording leaves behind.
+demo/out/
+demo/data/

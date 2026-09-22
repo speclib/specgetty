@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The README has pictures in it. Seven recordings show the change list, a
+  change's spec deltas with what the change does to each requirement, the specs
+  tab, a spec in detail, the properties tab, the project picker and an export.
+  They are recorded against a fixture harbour under `demo/`, never against the
+  machine doing the recording, and `make demo` remakes them.
+
 ### Changed
 
 - A release publishes the changelog entry for the version it releases. The

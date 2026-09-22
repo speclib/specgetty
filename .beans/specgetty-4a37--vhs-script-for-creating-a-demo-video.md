@@ -1,11 +1,11 @@
 ---
 # specgetty-4a37
 title: VHS script for creating a demo video
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-09-21T16:47:36Z
-updated_at: 2026-09-21T22:27:03Z
+updated_at: 2026-09-22T07:19:21Z
 parent: specgetty-ab9u
 ---
 

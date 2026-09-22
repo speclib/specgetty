@@ -1,0 +1,16 @@
+# The configuration the demo records against.
+#
+# It names only the fixture projects, so a recording shows the harbour and never
+# whatever OpenSpec projects happen to be on the machine doing the recording.
+# `make demo` passes this with --config.
+scandirs:
+  include:
+    - $SPECGETTY_DEMO/projects
+  exclude: []
+
+followsymlinks: false
+
+# The export shot writes a zip. It goes under demo/, which is generated and
+# ignored, so recording twice leaves nothing behind and touches no home
+# directory.
+export_dir: $SPECGETTY_DEMO/out

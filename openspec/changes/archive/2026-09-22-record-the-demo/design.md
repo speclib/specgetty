@@ -105,12 +105,32 @@ The export shot writes a zip. The demo config sets `export_dir` into
 `demo/out/`, which the target creates and `.gitignore` covers, so recording the
 demo twice leaves nothing behind and touches no home directory.
 
+### The recordings are committed, and staged from a neutral path
+
+Two things were found by recording and reading the frame rather than by
+thinking about it.
+
+The project header prints the project's absolute path, so recording in the
+checkout published the recorder's home directory and directory layout in every
+frame. The fixture is copied to a fixed neutral path and recorded from there,
+which also means a clone lands wherever it lands and still records the same
+content.
+
+And the recordings have to be committed, because the README shows them: a GIF
+that only exists after `make demo` is a broken image for everyone who did not
+run it. That is 2.5 MB in the repository and another 2.5 MB in its history
+every time they are re-recorded, which is the price of a README with pictures in
+it and is worth naming rather than discovering.
+
 ## Risks / Trade-offs
 
 - The recordings go stale silently, and nothing fails when they do. → The target
-  stamps the version it recorded at into the output directory, so a stale GIF
-  can be identified as one. Recording at release time is the real answer and is
-  deferred rather than pretended at.
+  stamps the version and commit it recorded at into `RECORDED_AT`, so a stale
+  GIF can be identified as one. Recording at release time is the real answer and
+  is deferred rather than pretended at.
+- Re-recording rewrites 2.5 MB of binaries, and git keeps every version. → The
+  alternative is a README with no pictures. Worth knowing before the tenth
+  re-record rather than after it.
 - A fixture spec has to be good enough to read on screen and is written by the
   same hand as the tool. → It is short. Four requirements across two specs is
   enough to fill an outline, and more would be a second thing to maintain.

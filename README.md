@@ -8,6 +8,12 @@ or what state they're in?
 `spg` (specgetty) is a text-mode UI tool to find and report the status of
 OpenSpec projects on your local machine.
 
+![A spec opened as an outline beside a card](demo/recordings/hero.gif)
+
+The recordings on this page are made against a fixture harbour under `demo/`,
+not against anyone's disk. `make demo` remakes them; `demo/recordings/
+RECORDED_AT` says which version they show.
+
 ## Source-mode installation
 
 ```bash
@@ -63,6 +69,8 @@ second level `enter` reaches depends on the tab you are standing on.
 Active and archived changes are shown together in one list, grouped, with the
 active group first. There is no separate archive tab and no filter to choose
 between them.
+
+![The grouped change list, and a change opened at its artifacts](demo/recordings/changes.gif)
 
 ### Keys everywhere
 
@@ -150,6 +158,8 @@ change.
 headings do not follow the OpenSpec structure does not open: the status line
 says so and the cursor stays where it was.
 
+![The specs tab, and a spec opened in detail](demo/recordings/specs.gif)
+
 ### Keys in a spec
 
 A spec opens as an outline of its requirements and scenarios beside a card
@@ -224,6 +234,8 @@ it:
 Keywords are matched in upper case only, and never inside a span between
 backticks, so a spec that names `SHALL` as a word rather than using one reads as
 what it is.
+
+![A change's deltas, marked with what the change does](demo/recordings/change-specs.gif)
 
 ### Keys in a change's specs
 
@@ -331,6 +343,8 @@ than requiring a convention no tool enforces.
 
 ### Exporting a change
 
+![Exporting a change as a zip](demo/recordings/export.gif)
+
 `e` asks where to put the zip. The prompt opens on `export_dir` from your
 config, or your home directory when that is unset, and `tab` completes a path
 against the filesystem:
@@ -390,6 +404,8 @@ Press `p` from anywhere. It lists every OpenSpec project it has found, with its
 spec, change and task counts, and `enter` switches to the highlighted one. You
 land on that project's change list.
 
+![The project picker](demo/recordings/picker.gif)
+
 | Key       | Action                             |
 | --------- | ---------------------------------- |
 | `<enter>` | Switch to the highlighted project  |
@@ -421,6 +437,8 @@ list of rows beside their content:
  │   tinychange     │ ╰────────────────────────────────────────╯
  ╰──────────────────╯
 ```
+
+![The properties tab](demo/recordings/properties.gif)
 
 The rows are grouped under headers the cursor skips over. A group keeps its
 header when it holds nothing, so a project with no recorded schema still says

@@ -1,0 +1,3 @@
+version: 1
+id: tideclock
+remote: https://example.invalid/harbour/tideclock.git

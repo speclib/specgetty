@@ -1,0 +1,3 @@
+# This repository keeps no specs of its own. It reads them from a store, which
+# is how several repositories around one harbour plan together.
+store: tideclock
