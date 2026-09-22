@@ -25,9 +25,6 @@ jobs:
       - name: Install nix
         uses: DeterminateSystems/nix-installer-action@v16
 
-      - name: Cache the store
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
       - name: Run the gate
         run: nix flake check --print-build-logs
 
