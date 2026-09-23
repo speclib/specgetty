@@ -150,8 +150,17 @@ func TestTheProjectsOwnChangelogIsReadable(t *testing.T) {
 func TestTheWorkflowPublishesTheChangelogEntry(t *testing.T) {
 	wf := readFile(t, filepath.Join("..", ".github", "workflows", "release.yml"))
 
-	if n := strings.Count(wf, "--release-notes=release-notes.md"); n != 2 {
+	if n := strings.Count(wf, "--release-notes="); n != 2 {
 		t.Errorf("got %d goreleaser runs given the notes, want both", n)
+	}
+	// Outside the checkout. GoReleaser validates git state before it releases
+	// and counts an untracked file as dirty, so notes written into the tree
+	// stop the release with "git is in a dirty state". v0.7.3 failed that way.
+	if strings.Contains(wf, "--release-notes=release-notes.md") {
+		t.Error("the notes are written into the checkout, which dirties the tree goreleaser validates")
+	}
+	if n := strings.Count(wf, `"$RUNNER_TEMP/release-notes.md"`); n != 2 {
+		t.Errorf("got %d jobs writing the notes outside the checkout, want both", n)
 	}
 	if n := strings.Count(wf, "changelog-entry.sh"); n != 2 {
 		t.Errorf("got %d jobs extracting the entry, want both", n)
@@ -166,9 +175,18 @@ func TestTheWorkflowPublishesTheChangelogEntry(t *testing.T) {
 	}
 
 	for _, f := range []string{".goreleaser-linux.yaml", ".goreleaser-darwin.yaml"} {
-		cfg := readFile(t, filepath.Join("..", f))
-		if !strings.Contains(cfg, "disable: true") {
-			t.Errorf("%s still assembles notes from commits", f)
+		// Comments stripped first. These files explain in prose which switches
+		// are wrong and why, and a plain substring match reads an explanation
+		// of a mistake as the mistake itself.
+		cfg := withoutComments(readFile(t, filepath.Join("..", f)))
+		// Not `changelog: disable: true`. That switch turns off the pipe that
+		// reads --release-notes, so the release publishes with no body at all;
+		// v0.7.3 shipped empty until the notes were set by hand. What stops the
+		// commit-derived list is --release-notes itself, which replaces the
+		// body goreleaser would otherwise generate. The filters below are what
+		// assert that list is gone.
+		if strings.Contains(cfg, "disable: true") {
+			t.Errorf("%s disables the changelog pipe, which is what reads --release-notes", f)
 		}
 		for _, gone := range []string{"sort: asc", "^docs:", "Merge pull request"} {
 			if strings.Contains(cfg, gone) {
@@ -176,6 +194,19 @@ func TestTheWorkflowPublishesTheChangelogEntry(t *testing.T) {
 			}
 		}
 	}
+}
+
+// withoutComments drops whole-line YAML comments, so an assertion about what a
+// config does is not satisfied or broken by what it says about itself.
+func withoutComments(yaml string) string {
+	var kept []string
+	for _, line := range strings.Split(yaml, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }
 
 // TestTheReleaseScriptRefusesAnEmptyEntry asserts the check exists and runs
