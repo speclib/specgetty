@@ -24,20 +24,25 @@ jobs:
 
       - name: Extract the release notes from the changelog
         run: |
+          # Written outside the checkout on purpose. GoReleaser validates git
+          # state before it releases and counts an untracked file as dirty, so
+          # a build artifact left in the tree stops the release with "git is in
+          # a dirty state". That is what broke v0.7.3.
           version="${GITHUB_REF_NAME#v}"
-          bash scripts/changelog-entry.sh "$version" CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
+          notes="$RUNNER_TEMP/release-notes.md"
+          bash scripts/changelog-entry.sh "$version" CHANGELOG.md > "$notes"
+          if [ ! -s "$notes" ]; then
             echo "CHANGELOG.md has no entry for $version" >&2
             exit 1
           fi
-          cat release-notes.md
+          cat "$notes"
 
       - name: Run GoReleaser (Linux)
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean -f .goreleaser-linux.yaml --release-notes=release-notes.md
+          args: release --clean -f .goreleaser-linux.yaml --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -57,19 +62,24 @@ jobs:
 
       - name: Extract the release notes from the changelog
         run: |
+          # Written outside the checkout on purpose. GoReleaser validates git
+          # state before it releases and counts an untracked file as dirty, so
+          # a build artifact left in the tree stops the release with "git is in
+          # a dirty state". That is what broke v0.7.3.
           version="${GITHUB_REF_NAME#v}"
-          bash scripts/changelog-entry.sh "$version" CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
+          notes="$RUNNER_TEMP/release-notes.md"
+          bash scripts/changelog-entry.sh "$version" CHANGELOG.md > "$notes"
+          if [ ! -s "$notes" ]; then
             echo "CHANGELOG.md has no entry for $version" >&2
             exit 1
           fi
-          cat release-notes.md
+          cat "$notes"
 
       - name: Run GoReleaser (Darwin)
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean -f .goreleaser-darwin.yaml --release-notes=release-notes.md
+          args: release --clean -f .goreleaser-darwin.yaml --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
