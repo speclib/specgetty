@@ -6,3 +6,8 @@ spg
 # What is not committed is the scratch a recording leaves behind.
 demo/out/
 demo/data/
+
+# goreleaser's output. A local `goreleaser release` leaves it behind, and an
+# untracked file in the tree is what stops the next release: goreleaser
+# validates git state and counts one as dirty.
+dist/

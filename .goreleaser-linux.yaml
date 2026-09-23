@@ -33,5 +33,10 @@ checksum:
 # it would be a second account of the same release, written in another register,
 # and the two would disagree the first time a commit subject and a changelog
 # entry described one change differently.
-changelog:
-  disable: true
+#
+# `--release-notes` alone is what suppresses that list: it replaces the body
+# goreleaser would otherwise generate. `changelog: disable: true` was tried
+# first and is the wrong switch. It turns the changelog pipe off, and that pipe
+# is what reads `--release-notes`, so v0.7.3 published with no notes at all
+# until they were set by hand. The log says which: with the pipe off there is
+# no `generating changelog` line.
