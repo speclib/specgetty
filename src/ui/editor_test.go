@@ -16,10 +16,10 @@ import (
 
 func TestTheEditorComesFromTheEnvironment(t *testing.T) {
 	for _, c := range []struct {
-		name          string
+		name           string
 		visual, editor string
-		wantName      string
-		wantReason    bool
+		wantName       string
+		wantReason     bool
 	}{
 		{name: "both set, VISUAL wins", visual: "nvim", editor: "ed", wantName: "nvim"},
 		{name: "only EDITOR", editor: "ed", wantName: "ed"},
