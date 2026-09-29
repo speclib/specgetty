@@ -1,11 +1,11 @@
 ---
 # specgetty-z97b
 title: 'CI: run the gate on every push, publish badges'
-status: completed
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-09-22T15:25:04Z
-updated_at: 2026-09-22T15:51:42Z
+updated_at: 2026-09-29T11:57:37Z
 parent: specgetty-ab9u
 ---
 
