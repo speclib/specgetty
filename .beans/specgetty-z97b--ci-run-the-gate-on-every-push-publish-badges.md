@@ -1,11 +1,11 @@
 ---
 # specgetty-z97b
 title: 'CI: run the gate on every push, publish badges'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-09-22T15:25:04Z
-updated_at: 2026-09-29T11:57:37Z
+updated_at: 2026-09-29T11:59:00Z
 parent: specgetty-ab9u
 ---
 
@@ -80,3 +80,43 @@ its floor with no margin, and ui and TOTAL have 0.1. They pass today. The floors
 were set from local readings and CI reads slightly lower, so an unrelated change
 could turn main red on a rounding difference. `scripts/coverage-gate.sh` forbids
 lowering a floor, so this is reported rather than quietly adjusted.
+
+
+## The verification pass, 2026-09-29
+
+The workflows landed in 54267b9 and the follow-up 0725ebf, but the change kept
+fifteen unchecked verification tasks and was never archived. Each one is now
+ticked against a run that can be read back, and the change is archived as
+`2026-09-29-add-continuous-integration` in commit 30edb10.
+
+What the evidence says today, rechecked rather than copied from above:
+
+| task | evidence                                                            |
+|------|---------------------------------------------------------------------|
+| 1.2  | run 35747526608 failed, naming TestCIProbeDeliberateFailure         |
+| 1.3  | run 35748030961: every package ok, ratchet failed on src/ui         |
+| 1.4  | run 35749229755 checked out pull/7/merge                            |
+| 1.5  | ten runs on main, 62s to 146s, most near 80s                        |
+| 2.1  | gate printed 90.8%, gh-pages coverage.json reads 90.8%              |
+| 2.2  | raw JSON 200, shields endpoint 200                                  |
+| 2.3  | badge runs skipped for 529c2d3 and bafc146, no gh-pages commit      |
+| 3.2  | 65b451c created the branch, bd414da wrote the four SVGs             |
+| 3.3  | badges read 28 specs and 192 requirements, which is what is here    |
+| 3.4  | SVGs from bd414da, coverage.json from 77941f3, all five coexist     |
+| 4.1  | commit 54267b9 carries gate success beside publish failure          |
+| 5.1  | nix flake check passes locally, TOTAL 90.8% >= 90.5%                |
+| 5.2  | every badge URL in README.md answers 200                            |
+
+Two were read from the workflows rather than exercised, there being no second
+account to fork from, and the tasks say so: a fork pull request runs the gate
+because check.yml names no secret and asks only for `contents: read`, and it
+cannot be failed by publishing because badges.yml fires only on a workflow_run
+of Check with `branches: [main]`.
+
+One thing worth knowing about 4.1: the gate stayed green under a failing badge
+run, which is what the requirement asks, but GitHub counts the failed publish
+job in the aggregate state for the commit. The badge failure is visible there;
+it is just not a verdict on the software.
+
+No CHANGELOG entry: the user-facing half of this shipped in 0.7.3, which already
+describes continuous integration and the badges.
