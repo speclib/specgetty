@@ -44,7 +44,10 @@ func (m model) listPage() int {
 			rows--
 		}
 		return max(1, rows)
-	case tabSpecs, tabProperties:
+	case tabSpecs:
+		lines := specLines(m.currentSpecNames())
+		return max(1, ownersOfSpecs(lines).fit(m.specCursor, max(1, region-boxRows)))
+	case tabProperties:
 		return max(1, region-boxRows)
 	}
 	return 1

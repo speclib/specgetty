@@ -40,6 +40,12 @@ requirements under it and each requirement's scenarios under that.
 - **THEN** the outline SHALL show each capability as a node, with its own
   requirements beneath it
 
+#### Scenario: Deltas that share a parent segment
+- **WHEN** a change carries `specs/tenancy/projects/spec.md` and
+  `specs/publish/act/spec.md`
+- **THEN** the outline SHALL show `tenancy/projects` and `publish/act` as two
+  capability nodes, neither having replaced the other
+
 #### Scenario: The order is stable
 - **WHEN** the same change is opened twice
 - **THEN** the capabilities SHALL be in the same order both times, and each
@@ -114,6 +120,15 @@ presented as the original.
 - **WHEN** a `MODIFIED` requirement is shown
 - **THEN** the live spec's version of that requirement SHALL be used as the
   original
+
+#### Scenario: A delta for a nested capability
+- **GIVEN** an active change whose delta is at
+  `specs/tenancy/projects/spec.md`
+- **WHEN** the project's live spec at
+  `openspec/specs/tenancy/projects/spec.md` holds the requirement being
+  modified
+- **THEN** that requirement SHALL be found as the original, so the delta's
+  scenario marks are drawn rather than left off
 
 #### Scenario: An archived change
 - **GIVEN** an archived change

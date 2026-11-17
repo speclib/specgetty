@@ -1,10 +1,11 @@
 ---
 # specgetty-9xiu
 title: Nested capability folders under specs/ are not shown
-status: todo
+status: in-progress
 type: bug
+priority: normal
 created_at: 2026-11-16T18:45:05Z
-updated_at: 2026-11-16T18:45:05Z
+updated_at: 2026-11-16T22:27:46Z
 ---
 
 Capabilities nested in subdirectories are invisible. OpenSpec allows a
@@ -30,3 +31,18 @@ The main specs there are all nested too (`platform/release`,
 
 Expected: walk `specs/` recursively and treat every directory holding a
 `spec.md` as a capability, named by its path relative to `specs/`.
+
+
+## Implementation checklist
+
+- [x] 1.1 capability discovery helper
+- [x] 1.2 both scan call sites use it
+- [x] 1.3 delta and live names agree
+- [x] 2.1 grouped specs list
+- [x] 2.2 paging over drawn lines
+- [x] 2.3 changelog
+- [x] 3.1 tests and build
+- [x] 3.2 verify against chatcms-app
+
+
+- [x] 3.3 End-to-end fixture test: scan a nested project from disk, render the grouped specs tab, compare the delta

@@ -87,9 +87,11 @@ func TestParseProjectInfo(t *testing.T) {
 		os.MkdirAll(filepath.Join(openspec, "specs", "cap-a"), 0755)
 		os.MkdirAll(filepath.Join(openspec, "specs", "cap-b"), 0755)
 		os.MkdirAll(filepath.Join(openspec, "specs", "cap-c"), 0755)
+		os.MkdirAll(filepath.Join(openspec, "specs", "nested", "inner"), 0755)
 		os.WriteFile(filepath.Join(openspec, "specs", "cap-a", "spec.md"), []byte("# Cap A"), 0644)
 		os.WriteFile(filepath.Join(openspec, "specs", "cap-b", "spec.md"), []byte("# Cap B"), 0644)
-		// cap-c has no spec.md
+		os.WriteFile(filepath.Join(openspec, "specs", "nested", "inner", "spec.md"), []byte("# Inner"), 0644)
+		// cap-c holds no spec.md and groups nothing, so it is not a capability
 		os.MkdirAll(filepath.Join(openspec, "changes", "change-1"), 0755)
 		os.MkdirAll(filepath.Join(openspec, "changes", "change-2"), 0755)
 		os.MkdirAll(filepath.Join(openspec, "changes", "archive", "old-change"), 0755)
@@ -104,11 +106,18 @@ func TestParseProjectInfo(t *testing.T) {
 		if info.SpecNames[0] != "cap-a" {
 			t.Errorf("SpecNames[0] = %q, want cap-a", info.SpecNames[0])
 		}
+		if info.SpecNames[2] != "nested/inner" {
+			t.Errorf("SpecNames[2] = %q, want nested/inner", info.SpecNames[2])
+		}
 		if info.SpecContents["cap-a"] != "# Cap A" {
 			t.Errorf("SpecContents[cap-a] = %q, want '# Cap A'", info.SpecContents["cap-a"])
 		}
+		if info.SpecContents["nested/inner"] != "# Inner" {
+			t.Errorf("SpecContents[nested/inner] = %q, want '# Inner'",
+				info.SpecContents["nested/inner"])
+		}
 		if _, ok := info.SpecContents["cap-c"]; ok {
-			t.Error("cap-c should not have content (no spec.md)")
+			t.Error("cap-c should not be a capability (no spec.md)")
 		}
 		if len(info.ActiveChanges) != 2 {
 			t.Errorf("ActiveChanges = %d, want 2", len(info.ActiveChanges))
@@ -299,5 +308,105 @@ func TestParseTaskStats(t *testing.T) {
 				t.Errorf("done = %d, want %d", done, tt.wantDone)
 			}
 		})
+	}
+}
+
+func TestCapabilities(t *testing.T) {
+	write := func(t *testing.T, dir string, files ...string) {
+		t.Helper()
+		for _, f := range files {
+			path := filepath.Join(dir, filepath.FromSlash(f))
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("# Spec"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	specs := func(subs ...string) string {
+		dir := t.TempDir()
+		write(t, dir, subs...)
+		return dir
+	}
+	equal := func(t *testing.T, got, want []string) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("capabilities = %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("capabilities = %v, want %v", got, want)
+			}
+		}
+	}
+
+	t.Run("two nested capabilities", func(t *testing.T) {
+		dir := specs("content/editing/spec.md", "content/pages/spec.md")
+		equal(t, capabilities(dir), []string{"content/editing", "content/pages"})
+	})
+
+	t.Run("a container holding no spec of its own", func(t *testing.T) {
+		dir := specs("tenancy/organisations/spec.md", "tenancy/projects/spec.md")
+		equal(t, capabilities(dir), []string{
+			"tenancy/organisations", "tenancy/projects",
+		})
+	})
+
+	t.Run("a container that is also a capability", func(t *testing.T) {
+		dir := specs("platform/spec.md", "platform/release/spec.md")
+		equal(t, capabilities(dir), []string{"platform", "platform/release"})
+	})
+
+	t.Run("a flat tree is unchanged", func(t *testing.T) {
+		dir := specs("cap-a/spec.md", "cap-b/spec.md", "cap-c")
+		equal(t, capabilities(dir), []string{"cap-a", "cap-b"})
+	})
+
+	t.Run("no specs directory", func(t *testing.T) {
+		equal(t, capabilities(filepath.Join(t.TempDir(), "specs")), nil)
+	})
+
+	t.Run("an unreadable subtree is skipped", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root reads a directory whatever its mode says")
+		}
+		dir := specs("content/pages/spec.md", "locked/hidden/spec.md")
+		locked := filepath.Join(dir, "locked")
+		if err := os.Chmod(locked, 0000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(locked, 0755) })
+		equal(t, capabilities(dir), []string{"content/pages"})
+	})
+}
+
+func TestNestedDeltaNamesMatchLiveSpecNames(t *testing.T) {
+	dir := t.TempDir()
+	openspec := filepath.Join(dir, "openspec")
+	liveDir := filepath.Join(openspec, "specs", "tenancy", "projects")
+	deltaDir := filepath.Join(openspec, "changes", "nested-change", "specs", "tenancy", "projects")
+	for _, d := range []string{liveDir, deltaDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(liveDir, "spec.md"), []byte("# Projects"), 0644)
+	os.WriteFile(filepath.Join(deltaDir, "spec.md"), []byte("## MODIFIED Requirements"), 0644)
+
+	info := ParseProjectInfo(dir)
+	if len(info.Changes) != 1 {
+		t.Fatalf("Changes = %d, want 1", len(info.Changes))
+	}
+	if len(info.Changes[0].SpecNames) != 1 {
+		t.Fatalf("delta names = %v, want one", info.Changes[0].SpecNames)
+	}
+	name := info.Changes[0].SpecNames[0]
+	if name != "tenancy/projects" {
+		t.Errorf("delta name = %q, want tenancy/projects", name)
+	}
+	if _, ok := info.SpecContents[name]; !ok {
+		t.Errorf("no live spec named %q, so the delta has no original; specs are %v",
+			name, info.SpecNames)
 	}
 }

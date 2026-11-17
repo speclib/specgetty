@@ -1974,33 +1974,10 @@ func (m model) renderSpecsTab(width int, height int) string {
 	}
 
 	// Render spec list
-	var listB strings.Builder
-	offset := 0
-	if m.specCursor >= rows {
-		offset = m.specCursor - rows + 1
-	}
-	end := offset + rows
-	if end > len(info.SpecNames) {
-		end = len(info.SpecNames)
-	}
-
-	for i := offset; i < end; i++ {
-		if i > offset {
-			listB.WriteString("\n")
-		}
-		name := info.SpecNames[i]
-		switch {
-		case i == m.specCursor && m.focus == focusListPane:
-			listB.WriteString(selectedStyle.Width(listWidth).Render(name))
-		case i == m.specCursor && m.focus == focusContentPane:
-			// Still the selected spec, but the keys belong to the content now.
-			listB.WriteString(dimSelectedStyle.Width(listWidth).Render(name))
-		default:
-			listB.WriteString(normalStyle.Render(name))
-		}
-	}
-
-	specList := truncateContent(listB.String(), rows)
+	lines := specLines(info.SpecNames)
+	specList := truncateContent(
+		renderSpecList(lines, m.specCursor, listWidth, rows, m.focus == focusContentPane),
+		rows)
 	specContentStr := truncateContent(m.docViewport.View(), rows)
 
 	// Each half says for itself whether the keyboard is in it. Exactly one of

@@ -230,6 +230,31 @@ func ListOpenSpecContents(dir string) ([]FileEntry, error) {
 	return entries, nil
 }
 
+func capabilities(specsDir string) []string {
+	var names []string
+	_ = filepath.WalkDir(specsDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if path == specsDir || d == nil || !d.IsDir() {
+			return nil
+		}
+		if _, err := os.Stat(filepath.Join(path, "spec.md")); err != nil {
+			return nil
+		}
+		rel, err := filepath.Rel(specsDir, path)
+		if err == nil {
+			names = append(names, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	sort.Strings(names)
+	return names
+}
+
 // parseChangeDir reads a change directory and returns a ChangeInfo.
 func parseChangeDir(dir string, name string) ChangeInfo {
 	ci := ChangeInfo{
@@ -262,18 +287,13 @@ func parseChangeDir(dir string, name string) ChangeInfo {
 
 	// Read specs within the change
 	specsDir := filepath.Join(dir, "specs")
-	if specEntries, err := os.ReadDir(specsDir); err == nil {
-		for _, se := range specEntries {
-			if se.IsDir() {
-				ci.SpecNames = append(ci.SpecNames, se.Name())
-				specFile := filepath.Join(specsDir, se.Name(), "spec.md")
-				if b, err := os.ReadFile(specFile); err == nil {
-					ci.SpecContents[se.Name()] = string(b)
-				}
-			}
+	for _, name := range capabilities(specsDir) {
+		ci.SpecNames = append(ci.SpecNames, name)
+		specFile := filepath.Join(specsDir, filepath.FromSlash(name), "spec.md")
+		if b, err := os.ReadFile(specFile); err == nil {
+			ci.SpecContents[name] = string(b)
 		}
 	}
-	sort.Strings(ci.SpecNames)
 
 	return ci
 }
@@ -286,19 +306,14 @@ func ParseProjectInfo(dir string) ProjectInfo {
 	// Specs: subdirectories in openspec/specs/, read spec.md contents
 	specsDir := filepath.Join(openspecDir, "specs")
 	info.SpecContents = make(map[string]string)
-	if entries, err := os.ReadDir(specsDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() {
-				info.SpecCount++
-				info.SpecNames = append(info.SpecNames, e.Name())
-				specFile := filepath.Join(specsDir, e.Name(), "spec.md")
-				if b, err := os.ReadFile(specFile); err == nil {
-					info.SpecContents[e.Name()] = string(b)
-				}
-			}
+	for _, name := range capabilities(specsDir) {
+		info.SpecNames = append(info.SpecNames, name)
+		specFile := filepath.Join(specsDir, filepath.FromSlash(name), "spec.md")
+		if b, err := os.ReadFile(specFile); err == nil {
+			info.SpecContents[name] = string(b)
 		}
 	}
-	sort.Strings(info.SpecNames)
+	info.SpecCount = len(info.SpecNames)
 
 	// Active changes: subdirectories in openspec/changes/
 	changesDir := filepath.Join(openspecDir, "changes")

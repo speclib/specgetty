@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Capabilities that live under a group folder are listed again. A project whose
+  `openspec/specs/` nests capabilities two levels deep, as `chatcms-app` does,
+  showed a row for each of its 14 folders and none of the 52 specs inside them.
+  A capability is now the directory that holds the `spec.md`, named by its path
+  below `specs/`, and the specs tab draws its groups as headers with their
+  counts. A change under the same folders no longer collapses its deltas into
+  one row, so a nested project's modified marks appear again.
+
 ## [0.7.3] - 2026-09-23
 
 ### Changed
