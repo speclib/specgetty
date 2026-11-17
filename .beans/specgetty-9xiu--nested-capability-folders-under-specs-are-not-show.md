@@ -1,11 +1,11 @@
 ---
 # specgetty-9xiu
 title: Nested capability folders under specs/ are not shown
-status: in-progress
+status: completed
 type: bug
 priority: normal
 created_at: 2026-11-16T18:45:05Z
-updated_at: 2026-11-16T22:27:46Z
+updated_at: 2026-11-17T19:23:54Z
 ---
 
 Capabilities nested in subdirectories are invisible. OpenSpec allows a
@@ -46,3 +46,26 @@ Expected: walk `specs/` recursively and treat every directory holding a
 
 
 - [x] 3.3 End-to-end fixture test: scan a nested project from disk, render the grouped specs tab, compare the delta
+
+## Summary of Changes
+
+Capabilities are discovered by the spec.md they hold, not by one os.ReadDir
+level, so any directory depth under specs/ is visible. Names are the path
+relative to specs/ with `/` separators, and the main tree and change deltas use
+the same names, which stops deltas collapsing into one entry and brings the
+MODIFIED marks back.
+
+The specs tab draws grouped rows: a header per first path segment with the
+number of specs it holds, the remaining path on each row, a blank line between
+groups, and flat capabilities as bare rows. Paging counts every drawn line, the
+cursor only lands on capabilities, and wide rows are truncated instead of
+spilling out of the panel.
+
+Covered by tests in src/scanner (helper, both call sites, delta and live name
+agreement, unreadable subtree) and src/ui (grouping, truncation, paging,
+cursor), plus an end-to-end fixture test that scans a nested project from disk,
+renders the tab and checks the delta comparison.
+
+Shipped as commit 0b385d7, archived as 2026-11-17-nested-capability-specs. Gate:
+go vet and go test clean; coverage src 88.7, scanner 95.4, ui 90.3, watcher
+88.2, total 91.1.
